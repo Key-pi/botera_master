@@ -1,0 +1,162 @@
+# Assumptions
+
+Status: discovery draft, not approved.
+
+## ASSUMPTION
+
+- The main user value in MVP is order in appointments, basic client base, and reminders.
+- Telegram bot interaction is more important than a rich web admin experience for the first version.
+- The admin panel can initially focus on operational setup and management rather than being the primary daily interface.
+- Client self-booking requires checking service duration against working hours, existing bookings, and blocked time.
+- Appointment confirmation by master may be configurable per partner, because some partners may want auto-confirmed bookings.
+- Partner-specific texts and behavior imply a settings/configuration layer, but the exact technical approach is undecided.
+- Repeat visits and smart broadcast segmentation are important future growth features; basic broadcasts are needed in MVP.
+- Django and aiogram are plausible technologies, but no final architecture is approved during discovery.
+- TableOS may provide reusable conceptual patterns for BoteraMaster partner setup, bot setup, bot texts, and configurable bot behavior, but this requires review before adoption.
+- The product may need to feel complete as a small connected bundle rather than win through one isolated feature.
+- TableOS admin scoping by `partner_id` may be a suitable reference for BoteraMaster, because each master/partner should only see data in their own area.
+- A simpler version of the TableOS `TelegramAccount` plus partner-scoped customer profile pattern may fit BoteraMaster better than copying the full `apps/users` staff/admin-access setup.
+- Future partner roles/permissions may be deferred because MVP partner-side access is owner/master-only.
+- BoteraMaster can use a TableOS-like content/settings idea: default texts and button labels with partner-level overrides. Unlike TableOS, BoteraMaster needs multilingual content from MVP.
+- BoteraMaster can use TableOS-like validation ideas for bot tokens and partner settings: reject invalid tokens/settings during save where possible, and protect runtime startup from unsafe active bot configs.
+- Multilingual partner-edited content uses fallback behavior so partners are not forced into perfect three-language setup before using the bot.
+
+## CONFIRMED
+
+- The first MVP user is a solo beauty master without a team.
+- The user wants BoteraMaster to preserve the TableOS-style idea that partners/customers do not worry about servers, hosting, or technical setup.
+- The idea for BoteraMaster came from building TableOS and recognizing that a similar partner-owned bot/service model could fit masters and appointment-based services.
+- BoteraMaster is part of a broader Botera ecosystem direction where multiple vertical products may later share promotions, bonuses, and partner-program mechanics.
+- In MVP, partner means master.
+- Each partner/master should have their own Telegram bot.
+- The partner/master provides a Telegram bot token, and BoteraMaster operates the bot through polling.
+- More than one bot per partner is possible only as a custom/paid extension, not the baseline MVP.
+- There is no concrete observed "before BoteraMaster" user scenario from a master available now; the product origin is TableOS analogy plus the broader Botera ecosystem idea, with informal positive feedback.
+- Clients should see the business actor as a "master"; platform/back-office can call the same tenant boundary a "partner".
+- Partner-scoped settings should be editable by the partner/master; global application settings are superuser/platform-admin-only.
+- Mandatory configurable bot settings include message texts, button labels, auto/manual appointment confirmation, reminder/notification timings, and whether phone number is required.
+- The client personal area is for clients of a partner/master and should be sufficiently useful, not a bare minimum that feels poor.
+- Internal documentation/code naming should use `partner` for the tenant boundary.
+- Client personal area MVP includes a client card/profile, client data display/editing, visit count, and an additional free-text field.
+- The client can enter or edit profile data that was not collected earlier.
+- Bot multilingual support is part of MVP: the client chooses a language in the client personal area, and the bot speaks to them in that language.
+- The partner chooses their own language in admin and can also change it in their bot personal area.
+- Default MVP language is Ukrainian; Russian and English are available choices.
+- Required client data for booking is configurable per partner.
+- The partner can self-manage their own bot token.
+- MVP partner-side role is owner/master only; additional partner roles are deferred.
+- Partner can manage services, prices, schedule, blocked time, appointments, clients, bot texts, button labels, and reminder/notification behavior for their own bot.
+- Partner-editable settings are settings that affect only that partner; global/root/multi-partner-impact settings are superuser-only.
+- Client personal area MVP includes future appointments, cancellation, and visit history.
+- Client personal area MVP includes direct contact with the master through bot-mediated messages.
+- Client history should show all appointment history, not only completed visits.
+- "Repeat previous service" is deferred beyond MVP.
+- Default client fields should be minimal; if the partner requires additional data, the client fills it in when needed.
+- Partner-configurable required booking fields should start with a minimal set and be expanded later if needed.
+- Default client fields include name, phone, language, automatically captured Telegram identity, Telegram username if available, Telegram Premium status if available, and booking comment.
+- Date of birth is not required in MVP by default.
+- Partner configures cancellation restrictions, such as "not later than N hours before appointment".
+- Partner may configure a late-cancellation penalty, such as adding 20 UAH to the next visit.
+- Late-cancellation penalties are real monetary add-ons to the next visit, not just informational notes.
+- Both client and master should see the penalty.
+- Late-cancellation penalties are reflected in the next appointment total so the master sees that the visit costs more.
+- Multiple late-cancellation penalties accumulate.
+- The master separately marks whether a penalty was paid.
+- The master can manually waive/remove a penalty.
+- Penalties should be shown as a separate line in income/revenue reports, not merged invisibly into service revenue.
+- No-show marker is required in MVP; prepayment for no-show consequences is deferred beyond MVP.
+- Master replies to client messages through the bot.
+- Client-to-master bot-mediated messages can be initiated from the client personal area without linking to a specific appointment.
+- Partner-edited multilingual texts/buttons use defaults for missing language-specific overrides.
+- MVP currency is UAH.
+- MVP appointment statuses are `requested`, `confirmed`, `cancelled_by_client`, `cancelled_by_master`, `completed`, and `no_show`.
+- No separate `rejected` status is required for MVP.
+- Auto-confirmed bookings start as `confirmed`; manually confirmed bookings start as `requested`.
+- If two clients try to book the same slot concurrently, the second one should receive a "time already occupied, choose another slot" response.
+- Confirmed MVP transitions are `requested -> confirmed`, `requested -> cancelled_by_master`, `requested -> cancelled_by_client`, `confirmed -> completed`, `confirmed -> no_show`, `confirmed -> cancelled_by_client`, and `confirmed -> cancelled_by_master`.
+- If a client cancels a `requested` appointment before confirmation, it becomes `cancelled_by_client`.
+- Created appointments preserve the booked service price even if the partner later changes the service price.
+- Created appointments also preserve the booked service duration; changing service duration affects only new appointments.
+- If schedule changes create conflicts with existing appointments, the system should ask the master to process those conflicts rather than silently moving or invalidating appointments.
+- For schedule conflicts, the master should see a list of conflict appointments and actions: leave as is, propose reschedule, cancel, or message the client.
+- When proposing a reschedule, the master can send concrete alternative slots. If they do not fit, the client can choose another available slot or cancel.
+- Bulk actions for conflict appointments, such as sending all affected clients a reschedule request, are included in MVP.
+- Partner schedule editing likely needs a convenient calendar-like admin UI for weekly/monthly planning and available hours.
+- Client reminder intervals are configurable by the partner in MVP.
+- Default client reminders for a new partner are enabled at 24 hours and 2 hours before the appointment.
+- Master reminders before appointments are configurable by the partner in MVP; a partner may enable/disable them and choose timing.
+- Default master reminder before an appointment is 45 minutes.
+- If a client reminder is not delivered, the master should see/know about it so they can act.
+- If a client reminder is not delivered, the master sees an immediate bot notification and the appointment shows a "reminder not delivered" status/marker.
+- Failed reminder notification should include inline actions: retry sending, write to client, and view client.
+- Failed reminder retry can be triggered without a limit/cooldown.
+- Morning daily appointment digest for the master should be included in MVP as a simple message.
+- Morning digest time is configurable by the partner in bot settings.
+- Default morning digest time is 08:00 in the partner timezone.
+- If the master has no appointments today, the morning digest should still be sent with a "no appointments today" message.
+- Master reminders before appointments are sent for every `confirmed` appointment when enabled.
+- Client reminders are sent only for `confirmed` appointments, not for `requested` appointments.
+- If a `requested` appointment remains unprocessed longer than a partner-configured interval, the bot reminds the master that a client wants to book and the request is still unhandled.
+- Default unprocessed `requested` reminder interval is 3 hours.
+- Repeated reminders for unprocessed `requested` appointments should use a decreasing interval pattern: first after the configured interval, then after half of that interval, then after a quarter of that interval. For the default 3-hour interval, repeats would be after 3 hours, then 1.5 hours, then 45 minutes.
+- Repeated reminders for unprocessed `requested` appointments should respect partner quiet hours.
+- Quiet hours are required in MVP for both partner/master notifications and client notifications.
+- Default quiet hours for both clients and partners are 22:00-08:00 in the partner timezone.
+- If a reminder falls inside quiet hours, it should be sent immediately after quiet hours end.
+- Minimum interval for repeated unprocessed-request reminders is 30 minutes.
+- Audit log is required in MVP and should be partner-scoped: partners see logs for their own area, while superuser/platform admin sees all logs.
+- Required audit events include appointment creation/update/cancellation, appointment status changes, penalties, reminder send/failure events, and client-master messages.
+- Partner-visible audit log should contain only events that concern the partner's own area; internal technical payloads and platform-wide diagnostics should be platform-only.
+- Sensitive data includes bot tokens, client phone numbers, client-master messages, and master notes about clients.
+- After saving, partners should not see the full bot token; the UI should show only a safe status or encrypted/masked representation.
+- Masters can see full client phone numbers when needed in their own client context, but phone numbers should not be unnecessarily exposed elsewhere.
+- Phone numbers can be stored in normal usable form in the database, subject to access controls and log hygiene.
+- The partner/master sees client-master conversations for their own clients.
+- Superuser/platform admin may access client-master conversations for support and incident investigation.
+- Master notes about clients are visible only to the master/partner, not to the superuser by default.
+- Appointment/request comment text is separate from private master notes and is visible to both client and master.
+- Visit history and penalties are not considered highly sensitive by default, but still belong to partner-scoped client/business data.
+- Data export is not required in MVP.
+- Client self-service data deletion request through the bot is not part of MVP, but should be added later.
+- Initial real usage may start with only a few masters, including at least one interested nail master using the product around a second-job/side-work context.
+- The MVP should not be designed as throwaway/prototype-only; it should leave room to scale beyond the first few masters.
+- Initial load target can use 50 partners, 500 appointments per day total, and 10 active bots as a reasonable early benchmark, while preserving room to scale higher later.
+- Client and appointment data should be stored indefinitely while the partner is active.
+- If a partner disconnects, stops paying, or is suspended/frozen, their bot should stop and their data should be retained.
+- MVP readiness includes partner/bot setup, partner-scoped admin isolation, service/schedule/bot/reminder settings, client registration, booking, cancellation, rescheduling, partner-side appointment processing, notifications, reminders, client personal area, and basic broadcasts.
+- MVP broadcasts support filters: all clients, long-absent clients, clients who had a specific service, clients with future appointments, and clients without future appointments.
+- Broadcasts can be sent immediately or scheduled for later.
+- Clients can unsubscribe from marketing broadcasts while still receiving service appointment notifications.
+- Broadcast content should support text, photo, and buttons, including a desired "Book" button.
+- MVP broadcast buttons are enough with: "Book", "My appointments", and external link.
+- Partner should not have a strict business limit like "one broadcast per day" in MVP.
+- Broadcast delivery must respect Telegram limits and handle Telegram rate limiting, including possible `429` responses; large recipient lists may take a long time to send.
+- Broadcast sending should be paced, for example through queued sending with small delays between messages.
+- Partner should see broadcast statistics. MVP statuses should be `queued`, `sent`, and `failed`; `delivered` should not be promised if Telegram does not provide reliable delivery confirmation.
+- Broadcasts can be composed manually, and partners should be able to save reusable broadcast templates.
+- The "long-absent clients" filter period is chosen by the partner.
+- Broadcast buttons should be supported generally, with exact button types expandable over time.
+- Broadcast recipients should include only clients who have not unsubscribed from marketing broadcasts.
+- If a client blocks the bot, the client should be marked unavailable for broadcasts, while their profile and history remain stored.
+- Broadcast audit events are not clearly required yet; their value should be reconsidered if needed.
+- Post-MVP exclusions include reviews, employee roles, online payments, self-service deletion, repeat previous service, Google Calendar, and loyalty.
+- Cross-product Botera partner program, shared bonuses, and ecosystem-level promotions are outside BoteraMaster MVP.
+- Future code should use helpful comments for hard-to-understand logic and deliberate workarounds.
+- Test coverage should focus first on important, fragile, business-critical, and foundational behavior rather than every trivial detail.
+
+## Needs Validation
+
+- Whether reminders are mandatory for MVP. Current signal: likely yes, as part of the expected basic bundle.
+- Whether client cancellation is mandatory for MVP.
+- Whether money is only displayed as service price or used for payments/accounting.
+- Which parts of TableOS are suitable references and which should be rejected for this market.
+- Whether partner/master should remain one concept in naming, or whether the data model should preserve a more general tenant/business account concept for future salons.
+- How multilingual partner-edited bot texts and button labels should be stored, edited, and validated.
+- Exact post-MVP rules for no-show consequences and prepayment requirements.
+- Exact bot-mediated messaging context, privacy, abuse, and failure handling.
+- Exact sensitive data protection expectations.
+- Exact internal audit/diagnostic events that are platform-only.
+- Exact post-MVP manual prepayment lifecycle and confirmation flow.
+- Concrete load target beyond the first few real users.
+- Exact technical broadcast pacing/rate-limit strategy for Telegram and multiple active bots.
+- Whether broadcast audit events are needed in MVP.
