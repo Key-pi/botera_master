@@ -1,65 +1,57 @@
 # Open Questions
 
-Status: discovery draft, not approved.
+Status: consistency pass on 2026-10-02 before implementation planning.
 
-## Product Problem And Users
+This file contains questions that remain open after discovery approval and technical-spec interviews. They are separated by whether they block implementation planning, are design details that can be resolved during implementation, or are explicitly post-MVP/future topics.
 
-- What is the minimal bundle of features that makes the product feel like it "works as expected" for a solo beauty master and their clients?
-- What makes a user choose BoteraMaster instead of Google Calendar, Telegram notes, existing booking systems, or manual messages?
-- How will the product problem be validated before or during MVP, given that the product origin is TableOS analogy and Botera ecosystem strategy rather than a concrete observed master scenario?
+## Blocks Implementation Planning
 
-## Roles And Tenant Boundaries
+These do not reopen the product direction, but they should be settled before creating code, models, migrations, or final architecture instructions.
 
-- What exact permissions does the MVP owner/master role have?
-- Product language is confirmed: clients see "master", platform/back-office and internal documentation/code use `partner`.
-- Can the same Telegram user interact with multiple masters while their history, notes, and partner-specific client data remain separate per partner?
-- Which TableOS partner/bot patterns are relevant for BoteraMaster, and which are specific to hospitality and should not be copied?
+No blocking open questions remain at the product/specification level before implementation planning. Exact code-level names, migration details, command names, and UI polish still need to be handled during implementation planning/build.
 
-## MVP Scope
+## Implementation Design Details
 
-- Is the proposed broad MVP boundary approved as-is, or should it be cut before final specification?
-- Are the proposed outside-MVP items approved as-is?
-- What exact technical broadcast pacing/rate-limit strategy is required for Telegram and multiple active bots?
-- Are broadcast audit events needed at all in MVP, and if yes, which ones?
-- What validation/recovery is required when a partner changes their own bot token?
-- For multilingual partner-edited text/button overrides, should the admin UI show all languages at once or edit one language at a time?
+These are important for quality, but they should not block the high-level final MVP specification if we consciously leave them for detailed implementation design.
 
-## Data And Lifecycle
+- What exact calendar visual treatment, component behavior, conflict UI, proposal UI, and mobile interactions should be used?
+- What exact localized labels and visual/detail treatment should appointment history use for cancelled, rescheduled, completed, no-show, penalty, and failed-notification events?
+- What exact localized copy should Telegram pagination controls use for each supported language?
+- What exact default localized wording should be seeded for the approved multilingual content registry in `uk`, `ru`, and `en`?
+- What exact visual/copy treatment should the partner onboarding checklist/setup guide use in admin?
+- What exact broadcast backoff intervals, global broadcast safety limits, worker thresholds, and alert thresholds should be used beyond the approved 0.5 seconds per bot minimum pacing?
+- What business-friendly failure reason labels should be shown for Telegram delivery failures without exposing raw technical payloads?
+- What confirmed MVP features can be delayed if implementation gets too large, and what is the minimum pilot path for the first real partner?
 
-- What are the core entities in MVP?
-- Which cancelled/no-show records are shown in client history, and with what labels/details?
-- How is an appointment total calculated when service price, accumulated penalties, discounts, or manual adjustments are present?
+## Resolved During Later Consistency Passes
 
-## Money
+- Exact min/max values for slot step, booking horizon, reminders, quiet hours, cancellation deadline, near-fit tolerance, stale requested reminders, and morning digest are approved and belong in settings validation.
+- Multilingual content registry is approved at key group/editable-vs-system-only/placeholder-validation level. Exact localized default wording remains an implementation/copy task.
+- `ClientProfile` communication flags stay on the partner-scoped client profile in MVP; no separate communication-state model is required.
+- Confirmed appointment overlap protection is scoped to `BookingResource`, not directly to whole partner. Solo-master MVP has one default booking resource per partner.
+- `docs/spec/SCHEMA_DRAFT.md` is approved as the implementation-planning data map. Exact Django model/field names and migration details can still be adjusted during implementation, but entity boundaries and approved invariants should not drift without an explicit decision.
+- Booking-resource advisory-lock helper is approved: immutable unique `BookingResource.advisory_lock_key`, fixed PostgreSQL advisory-lock namespace, and `pg_advisory_xact_lock(namespace, advisory_lock_key)` inside the same transaction as the fresh overlap check and appointment write.
+- Sensitive-data helper strategy is approved: encrypted bot tokens through a `cryptography`/Fernet-style key-ring wrapper, non-reversible HMAC token fingerprints for duplicate-token checks, normalized unencrypted phone/message/private-note business storage in MVP, and shared masking/redaction helpers for logs, diagnostics, audit payloads, exceptions, and raw external payloads.
+- `docs/spec/RUNBOOK_DRAFT.md` is approved as the MVP operational runbook direction. Exact Docker Compose service names, Django management commands, URLs, and host log commands are finalized during implementation when those artifacts exist.
+- `docs/spec/DIAGNOSTICS_TAXONOMY.md` is approved as the MVP platform-diagnostic taxonomy. Exact enum/class names, metadata schemas, aggregation/deduplication behavior, and superuser dashboard filters are finalized during implementation.
+- Operational retention direction is approved: noisy delivery/broadcast/system diagnostic records default to 3 months, partner-visible audit to 6 months, and core business history is retained while partner data is retained.
 
-- What precision is required for money calculations?
-- Are discounts, promo codes, or loyalty balances part of MVP?
-- Should no-show penalties, if added after MVP, be shown together with cancellation penalties or as a separate report line?
+## Product Validation And Risk
+
+These should be tracked during MVP/pilot, but they do not block writing a coherent technical plan.
+
+- How will the product problem be validated before or during MVP, given that the product origin is TableOS analogy and Botera ecosystem strategy rather than a concrete observed "before BoteraMaster" scenario from a master?
+- What business metrics define success for the first release? Examples may include active partners, bookings created, repeat usage, reminder reliability, broadcast usage, and partner retention.
+- What makes a solo master choose BoteraMaster instead of Google Calendar, Telegram notes, existing booking systems, or manual messages?
+
+## Future And Post-MVP Design
+
+These are explicitly not required to start the MVP implementation.
+
+- How should future discounts, promo codes, bonuses, loyalty balances, and manual price adjustments extend appointment totals after MVP?
 - For post-MVP manual prepayment by requisites, how should it be marked: requested, sent, confirmed, rejected, expired?
 - For post-MVP manual prepayment, should the client send proof through the bot and the master approve it with inline buttons?
-
-## Integrations
-
-- Which external systems are required at MVP?
-- Telegram is required at launch. Are any other integrations required for MVP?
-- Is Google Calendar sync required or future-only?
-- Are Instagram, WhatsApp, SMS, email, or payment systems in scope?
-
-## Operations, Safety, And Reliability
-
-- What should happen when Telegram delivery fails?
-- What should happen if client-to-master bot-mediated messaging fails?
-- How should conversation context be preserved when master and client exchange bot-mediated messages?
-- What recovery flow is needed if reminder sending fails?
-- What should happen if a partner misconfigures required bot texts, button labels, confirmation behavior, reminder timings, or phone requirements?
-- What should happen if a partner misconfigures required booking fields?
-- What should happen if multilingual custom content is missing or invalid for one of the supported languages?
-- How should sensitive data be protected in product UX, storage, logs, and exports?
-- Which exact internal audit/diagnostic events are platform-only?
-
-## Readiness
-
-- What business metrics define success for the first release?
-- What future directions should be preserved without being built now?
-- How much TableOS bot/content/settings architecture should be reused conceptually, and where should BoteraMaster deliberately diverge?
 - How should the future Botera ecosystem layer, including cross-product promotions, bonuses, and partner programs, stay separate from BoteraMaster MVP?
+- How should future studio/multi-master support extend the current partner model without breaking MVP assumptions?
+- Which future external integrations, if any, should be prioritized after MVP: Google Calendar, online payments, Instagram, WhatsApp, SMS, email, or something else?
+- What moderation/abuse/reporting controls should be added later if bot-mediated client-master messages create support or misuse cases?

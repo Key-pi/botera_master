@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8">
+<style>
+:root{--bg:#110E18;--ink:#F6F1FA;--mut:#A79DB5;--pink:#FF6FA5;--blue:#2AABEE;--card:#1B1625;--card2:#231C30;--line:#30283F;--green:#3DDC97;--amber:#FFB547}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);font-family:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+#stage{position:absolute;inset:0;overflow:hidden;background:var(--bg)}
+.glow{position:absolute;border-radius:50%;width:1400px;height:1400px;margin:-700px 0 0 -700px}
+#g1{background:radial-gradient(circle,rgba(255,111,165,.30) 0%,rgba(255,111,165,0) 60%)}
+#g2{background:radial-gradient(circle,rgba(42,171,238,.26) 0%,rgba(42,171,238,0) 60%)}
+.scene{position:absolute;inset:0;opacity:0;will-change:transform,opacity}
+.grad{background:linear-gradient(90deg,var(--pink),#C58BFF 55%,var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent}
+.a{opacity:0;will-change:transform,opacity}
+.kick{font-size:26px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--pink)}
+.h{font-weight:800;letter-spacing:-.025em;line-height:1.04}
+.sub{color:var(--mut);font-size:34px;line-height:1.35;font-weight:500}
+
+/* s1 */
+#s1 .wrap{position:absolute;left:0;right:0;top:300px;text-align:center}
+#s1 .h{font-size:148px}
+#chips{position:absolute;left:0;right:0;top:720px;display:flex;justify-content:center;gap:18px}
+.chip{padding:14px 28px;border-radius:999px;border:2px solid var(--line);background:var(--card);font-size:32px;font-weight:600;color:#E4DAEE}
+
+/* logo */
+.logo{display:flex;align-items:center;gap:22px}
+.mark{width:88px;height:88px;border-radius:26px;background:linear-gradient(135deg,var(--pink),#9C7BFF 55%,var(--blue));display:flex;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(255,111,165,.35)}
+.mark svg{width:56%;height:56%}
+.word{font-size:56px;font-weight:800;letter-spacing:-.02em}
+.word b{font-weight:800;color:var(--pink)}
+
+/* s2 */
+#s2 .left{position:absolute;left:150px;top:250px;width:860px}
+#s2 .h{font-size:92px;margin-top:56px}
+#s2 .sub{margin-top:36px}
+.panel{position:absolute;background:var(--card);border:2px solid var(--line);border-radius:36px;box-shadow:0 40px 120px rgba(0,0,0,.45)}
+#botcard{left:1080px;top:190px;width:690px;height:700px;padding:44px}
+.ptitle{display:flex;justify-content:space-between;align-items:center}
+.ptitle .t{font-size:40px;font-weight:800}
+.pill{padding:10px 22px;border-radius:999px;font-size:24px;font-weight:700}
+.pill.warn{background:rgba(255,181,71,.14);color:var(--amber)}
+.pill.ok{background:rgba(61,220,151,.15);color:var(--green)}
+.tabs{display:flex;gap:20px;margin-top:26px;font-size:23px;color:var(--mut);font-weight:600;border-bottom:2px solid var(--line);padding-bottom:16px}
+.tabs .on{color:var(--ink)}
+.check{display:flex;align-items:center;gap:18px;font-size:29px;font-weight:600;margin-top:22px}
+.check .c{width:38px;height:38px;border-radius:12px;background:rgba(61,220,151,.16);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900}
+.lab{font-size:23px;color:var(--mut);font-weight:600;margin-top:34px}
+.inp{margin-top:12px;height:74px;border-radius:18px;background:#120E19;border:2px solid var(--line);display:flex;align-items:center;padding:0 24px;font-family:"SF Mono",Menlo,monospace;font-size:28px;color:#E9E0F2}
+.caret{display:inline-block;width:3px;height:34px;background:var(--pink);margin-left:3px}
+.btn{margin-top:28px;height:80px;border-radius:20px;background:linear-gradient(90deg,var(--pink),#B07CFF);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#fff}
+
+/* s3 */
+#s3 .left{position:absolute;left:150px;top:300px;width:960px}
+#s3 .h{font-size:80px;margin-top:22px}
+#s3 .sub{margin-top:34px}
+#phone{position:absolute;left:1150px;top:60px;width:500px;height:960px;border-radius:72px;background:#05040A;padding:16px;box-shadow:0 50px 140px rgba(0,0,0,.6),0 0 0 2px #2A2436}
+#screen{position:relative;width:100%;height:100%;border-radius:58px;overflow:hidden;background:#0E1621}
+.tghead{position:absolute;top:0;left:0;right:0;height:132px;background:#17212B;display:flex;align-items:flex-end;padding:0 24px 18px;gap:16px;z-index:2}
+.ava{width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,var(--pink),#B07CFF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:26px}
+.tgn{font-size:24px;font-weight:700}.tgs{font-size:19px;color:#6D8196;margin-top:3px}
+#chat{position:absolute;top:132px;bottom:84px;left:0;right:0;display:flex;flex-direction:column;justify-content:flex-end;padding:0 16px 10px;overflow:hidden}
+.mw{overflow:hidden;flex:none}
+.mi{padding-top:10px}
+.b{max-width:380px;padding:14px 18px;border-radius:20px;font-size:21px;line-height:1.35}
+.b.bot{background:#182533;border-bottom-left-radius:6px}
+.b.me{background:#2B5278;margin-left:auto;border-bottom-right-radius:6px;width:max-content}
+.kb{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;max-width:400px}
+.k{flex:1 1 auto;min-width:30%;text-align:center;padding:13px 10px;border-radius:12px;background:rgba(95,125,160,.28);font-size:19px;font-weight:600;color:#DDEAF6}
+.k.full{flex-basis:100%}
+.k.on{background:#2AABEE;color:#fff}
+.tgin{position:absolute;bottom:0;left:0;right:0;height:84px;background:#17212B;display:flex;align-items:center;padding:0 24px;color:#56687A;font-size:21px}
+.ring{position:absolute;width:70px;height:70px;margin:-35px 0 0 -35px;border-radius:50%;border:4px solid rgba(255,255,255,.9);background:rgba(255,255,255,.18);opacity:0;z-index:5;pointer-events:none}
+
+/* s4 */
+#s4 .title{position:absolute;left:150px;top:64px;display:flex;align-items:baseline;gap:28px}
+#s4 .h{font-size:64px}
+#adm{left:150px;top:190px;width:1620px;height:830px;overflow:hidden;display:flex}
+.nav{width:260px;border-right:2px solid var(--line);padding:34px 20px;flex:none}
+.nav .it{font-size:23px;font-weight:600;color:var(--mut);padding:13px 18px;border-radius:14px;margin-bottom:4px}
+.nav .it.on{background:var(--card2);color:var(--ink)}
+.cal{flex:1;padding:30px 36px;position:relative}
+.calh{font-size:34px;font-weight:800;display:flex;justify-content:space-between;align-items:center}
+.calh span{font-size:22px;color:var(--mut);font-weight:600}
+.grid{position:absolute;left:36px;right:36px;top:100px}
+.row{height:84px;border-top:2px solid var(--line);position:relative}
+.row i{position:absolute;left:0;top:8px;font-style:normal;font-size:20px;color:var(--mut);font-weight:600}
+.ap{position:absolute;left:96px;right:10px;border-radius:16px;padding:14px 20px;font-size:23px;font-weight:700;border-left:6px solid}
+.ap small{display:block;font-size:19px;font-weight:600;opacity:.75;margin-top:4px}
+.ap.x{background:rgba(42,171,238,.12);border-color:var(--blue);color:#CFEAFB}
+.ap.n{background:rgba(255,111,165,.16);border-color:var(--pink);color:#FFE1EC}
+.tag{position:absolute;right:18px;top:14px;font-size:18px;font-weight:800;padding:6px 14px;border-radius:999px;background:var(--pink);color:#fff}
+.side{width:430px;border-left:2px solid var(--line);padding:30px 28px;flex:none}
+.side .st{font-size:28px;font-weight:800}
+.req{margin-top:22px;background:var(--card2);border-radius:22px;padding:24px;border:2px solid var(--line)}
+.req .nm{font-size:25px;font-weight:800}
+.req .dt{font-size:21px;color:var(--mut);margin-top:6px;font-weight:600}
+.rb{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.rb div{padding:12px 16px;border-radius:12px;font-size:19px;font-weight:700;background:rgba(255,255,255,.07)}
+.rb .y{background:var(--green);color:#0B2A1C}
+.done{margin-top:18px;font-size:21px;font-weight:700;color:var(--green)}
+#cur{position:absolute;width:40px;height:40px;z-index:9;left:0;top:0}
+
+/* s5 */
+#s5 .left{position:absolute;left:150px;top:150px;width:1000px}
+#s5 .h{font-size:84px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:60px}
+.tile{background:var(--card);border:2px solid var(--line);border-radius:28px;padding:32px;height:210px}
+.tile .e{font-size:44px}
+.tile .tt{font-size:34px;font-weight:800;margin-top:16px}
+.tile .dd{font-size:22px;color:var(--mut);font-weight:600;margin-top:8px}
+.nt{position:absolute;left:1240px;width:540px;background:rgba(40,33,54,.92);border:2px solid #3A3150;border-radius:30px;padding:24px 28px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.nt .top{display:flex;align-items:center;gap:14px;font-size:21px;color:var(--mut);font-weight:700}
+.nt .top .ava{width:40px;height:40px;font-size:18px}
+.nt .top em{margin-left:auto;font-style:normal;font-weight:600}
+.nt .tx{font-size:25px;font-weight:600;margin-top:12px;line-height:1.35}
+
+/* s6 */
+#s6 .wrap{position:absolute;left:0;right:0;top:250px;display:flex;flex-direction:column;align-items:center}
+#s6 .mark{width:150px;height:150px;border-radius:44px}
+#s6 .word{font-size:124px;margin-top:40px}
+#s6 .tl{font-size:50px;font-weight:700;margin-top:26px;color:#E9DFF3}
+#langs{display:flex;gap:16px;margin-top:54px}
+</style></head>
+<body><div id="stage">
+<div class="glow" id="g1"></div><div class="glow" id="g2"></div>
+<div class="scene" id="s1">
+  <div class="wrap">
+    <div class="h a" id="h1">Ви — майстер,</div>
+    <div class="h a" id="h2">а не <span class="grad">айтішник.</span></div>
+  </div>
+  <div id="chips">
+    <div class="chip a">💅 манікюр</div><div class="chip a">брови</div><div class="chip a">вії</div><div class="chip a">волосся</div><div class="chip a">масаж</div><div class="chip a">тату</div><div class="chip a">макіяж</div>
+  </div>
+</div>
+<div class="scene" id="s2">
+  <div class="left">
+    <div class="logo a" id="s2logo"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/><path d="M8.5 14.5l2.4 2.4 4.6-4.6"/></svg></div><div class="word">Botera<b>Master</b></div></div>
+    <div class="h a" id="s2h">Свій Telegram-бот<br>для запису <span class="grad">клієнтів</span></div>
+    <div class="sub a" id="s2s">Потрібен лише токен бота.<br>Сервери й хостинг — не ваш клопіт.</div>
+  </div>
+  <div class="panel a" id="botcard">
+    <div class="ptitle"><div class="t">Бот</div><div><div class="pill warn" id="pw">Потрібне налаштування</div><div class="pill ok" id="po" style="display:none">● Активний</div></div></div>
+    <div class="tabs"><span class="on">Підключення</span><span>Налаштування</span><span>Тексти</span><span>Сповіщення</span></div>
+    <div class="check a"><div class="c">✓</div>Мова і часовий пояс</div>
+    <div class="check a"><div class="c">✓</div>Послуги та категорії</div>
+    <div class="check a"><div class="c">✓</div>Вікна для запису</div>
+    <div class="check a"><div class="c">✓</div>Режим підтвердження</div>
+    <div class="lab">Токен бота від @BotFather</div>
+    <div class="inp"><span id="tok"></span><span class="caret" id="caret"></span></div>
+    <div class="btn" id="launch">Запустити бота</div>
+  </div>
+</div>
+<div class="scene" id="s3">
+  <div class="left">
+    <div class="kick a" id="s3k">Для клієнта</div>
+    <div class="h a" id="s3h">Записується сам —<br>просто у <span class="grad">вашому боті</span></div>
+    <div class="sub a" id="s3s">Категорія → послуги → дата → час.<br>Без дзвінків і листування.</div>
+  </div>
+  <div id="phone" class="a"><div id="screen">
+    <div class="tghead"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот</div></div></div>
+    <div id="chat">
+      <div class="mw" data-t="0.3"><div class="mi"><div class="b bot">Вітаю! Я бот майстрині Олі 💅<br>Оберіть категорію:</div>
+        <div class="kb"><div class="k" id="k1">Манікюр</div><div class="k">Педикюр</div><div class="k">Брови</div></div></div></div>
+      <div class="mw" data-t="1.2"><div class="mi"><div class="b me">Манікюр</div></div></div>
+      <div class="mw" data-t="1.5"><div class="mi"><div class="b bot">Оберіть послуги:</div>
+        <div class="kb"><div class="k full" id="k2"><span class="m">○</span> Гель-лак · 650 ₴</div><div class="k full" id="k3"><span class="m">○</span> Дизайн · 150 ₴</div><div class="k full" id="k4">Готово →</div></div></div></div>
+      <div class="mw" data-t="2.8"><div class="mi"><div class="b bot"><b>Гель-лак + дизайн</b><br>1 год 30 хв · 800 ₴<br><br>Чт, 2 жовтня — вільно:</div>
+        <div class="kb"><div class="k">11:00</div><div class="k" id="k5">14:00</div><div class="k">16:30</div></div></div></div>
+      <div class="mw" data-t="3.7"><div class="mi"><div class="b me">14:00</div></div></div>
+      <div class="mw" data-t="4.0"><div class="mi"><div class="b bot">✅ <b>Вас записано!</b><br>Чт, 2 жовтня · 14:00<br>Гель-лак + дизайн · 800 ₴<br>Нагадаю напередодні 🔔</div></div></div>
+    </div>
+    <div class="tgin">Повідомлення</div>
+    <div class="ring" id="ring"></div>
+  </div></div>
+</div>
+<style>
+#stage .t2 .h{font-size:60px}
+.t2{position:absolute;left:150px;top:52px}
+.t2 .h{margin-top:10px}
+.tgc{position:absolute;background:#0E1621;border-radius:32px;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.5);border:2px solid #1E2C3A}
+.tgc .hd{height:92px;background:#17212B;display:flex;align-items:center;gap:16px;padding:0 26px}
+.tgc .hd .ava{width:54px;height:54px}
+.tgc .tgn{font-size:27px}.tgc .tgs{font-size:20px}
+.tgc .bd{padding:22px 24px}
+.tgc .b{max-width:none;font-size:26px;padding:18px 22px}
+.tgc .b.me{font-size:26px}
+.tgc .kb{max-width:none;gap:8px;margin-top:8px}
+.tgc .k{min-width:30%;font-size:23px;padding:16px 12px;border-radius:14px}
+.tgc .k.half{min-width:45%}
+.rw{margin-top:14px}
+.note{font-size:21px;color:#8BA3BB;font-weight:600;margin-top:12px}
+.av{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;flex:none}
+.am{background:linear-gradient(135deg,#FF6FA5,#B07CFF)}
+.ak{background:linear-gradient(135deg,#FFB547,#FF6B6B)}
+.ad{background:linear-gradient(135deg,#2AABEE,#8A7CFF)}
+/* calendar */
+#adm2{position:absolute;left:150px;top:230px;width:1620px;height:790px;display:flex;overflow:hidden}
+#adm2 .cal{flex:1;padding:30px 36px;position:relative}
+.addb{font-size:21px;font-weight:800;padding:10px 18px;border-radius:12px;background:linear-gradient(90deg,var(--pink),#B07CFF);color:#fff}
+.det{width:470px;border-left:2px solid var(--line);padding:30px 28px;flex:none}
+.det .nm{font-size:30px;font-weight:800}
+.det .dt{font-size:22px;color:var(--mut);font-weight:600;margin-top:8px;line-height:1.4}
+.acts{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+.acts div{padding:15px 18px;border-radius:14px;background:rgba(255,255,255,.06);font-size:22px;font-weight:700}
+.acts .gr{background:rgba(61,220,151,.15);color:var(--green)}
+.donep{position:absolute;right:18px;bottom:14px;font-size:18px;font-weight:800;padding:6px 14px;border-radius:999px;background:var(--green);color:#0B2A1C}
+/* reminders */
+.tiles2{position:absolute;left:150px;top:250px;width:1020px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.tile .e{font-size:44px}
+/* finance */
+#fin{left:150px;top:250px;width:820px;padding:40px}
+.ct{font-size:32px;font-weight:800}
+.frw{margin-top:26px}
+.frw .l{display:flex;justify-content:space-between;font-size:26px;font-weight:700}
+.frw .l span{color:var(--mut);font-size:20px;font-weight:600}
+.fb{height:22px;border-radius:99px;background:rgba(255,255,255,.07);margin-top:12px;overflow:hidden}
+.fb i{display:block;height:100%;width:0;border-radius:99px}
+.fnote{font-size:21px;color:var(--mut);font-weight:600;margin-top:28px;line-height:1.4}
+#pen{left:1010px;top:250px;width:760px;padding:36px}
+#bc2{left:1010px;top:480px;width:760px;padding:36px}
+.rc{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.rc .chip{font-size:23px;padding:10px 18px}
+/* languages */
+.lcard{position:absolute;left:150px;width:780px;background:var(--card);border:2px solid var(--line);border-radius:26px;padding:26px 30px}
+.lcard .lh{display:flex;align-items:center;gap:14px;font-size:24px;font-weight:800}
+.lcard .lt{font-size:27px;margin-top:12px;color:#E9DFF3;font-weight:600}
+.defb{font-size:17px;font-weight:800;padding:5px 12px;border-radius:99px;background:rgba(255,111,165,.18);color:#FFC3D8}
+#ed{left:1010px;top:250px;width:760px;padding:38px}
+.key{font-family:"SF Mono",Menlo,monospace;font-size:22px;color:#BFE0FF;background:rgba(42,171,238,.12);padding:6px 12px;border-radius:10px;display:inline-block;margin-top:16px}
+.ta{margin-top:18px;min-height:150px;border-radius:18px;background:#120E19;border:2px solid var(--line);padding:22px;font-size:28px;line-height:1.4;color:#F1E9F8}
+.ta .ph{color:#FFB547}
+.sv{margin-top:22px;height:72px;border-radius:18px;background:linear-gradient(90deg,var(--pink),#B07CFF);display:flex;align-items:center;justify-content:center;font-size:27px;font-weight:800;color:#fff}
+/* eco */
+.eco4{position:absolute;left:150px;top:330px;width:1620px;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.ec{background:var(--card);border:2px solid var(--line);border-radius:32px;padding:36px 28px;text-align:center}
+.ec.me{border-color:rgba(255,111,165,.7);box-shadow:0 0 60px rgba(255,111,165,.2)}
+.ec .mark{width:100px;height:100px;border-radius:30px;margin:0 auto}
+.ec .nn{font-size:34px;font-weight:800;margin-top:24px}
+.ec .dd{font-size:23px;color:var(--mut);font-weight:600;margin-top:10px}
+#s11 .wrap{position:absolute;left:0;right:0;top:250px;display:flex;flex-direction:column;align-items:center}
+#s11 .mark{width:150px;height:150px;border-radius:44px}
+#s11 .word{font-size:124px;margin-top:40px}
+#s11 .tl{font-size:50px;font-weight:700;margin-top:26px;color:#E9DFF3}
+#cur{opacity:0;z-index:20}
+</style>
+
+<!-- S4 requests / manual confirm -->
+<div class="scene" id="s4">
+  <div class="t2 a" id="s4t"><div class="kick">Ручне підтвердження</div><div class="h">Заявки — <span class="grad">під вашим контролем</span></div></div>
+  <div class="tgc a" id="mreq" style="left:150px;top:250px;width:800px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для майстра</div></div></div>
+    <div class="bd">
+      <div class="rw a" id="r1"><div class="b bot">📩 <b>Нова заявка</b><br>Катя · Вії · Пт, 3 жовтня · 12:00</div>
+        <div class="kb"><div class="k">Підтвердити</div><div class="k">Відхилити</div><div class="k full" id="kp">Запропонувати інший час</div></div></div>
+      <div class="rw a" id="r2"><div class="b bot">Оберіть варіанти для клієнтки:</div>
+        <div class="kb"><div class="k" id="ka">13:00</div><div class="k" id="kb2">15:30</div><div class="k">17:00</div></div></div>
+      <div class="rw a" id="r3"><div class="note">✓ Надіслано 2 варіанти — клієнтка обере сама</div></div>
+    </div>
+  </div>
+  <div class="tgc a" id="creq" style="left:1010px;top:250px;width:760px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для клієнтки</div></div></div>
+    <div class="bd">
+      <div class="rw"><div class="b bot">Майстриня пропонує інший час для запису «Вії»:</div>
+        <div class="kb"><div class="k half">Пт, 13:00</div><div class="k half" id="kc">Пт, 15:30</div><div class="k full">Обрати інший час</div></div></div>
+      <div class="rw a" id="cr2"><div class="b bot">✅ <b>Вас записано!</b><br>Пт, 3 жовтня · 15:30 · Вії</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- S5 calendar with detail panel -->
+<div class="scene" id="s5">
+  <div class="t2 a" id="s5t"><div class="kick">Для майстра</div><div class="h">Усе — <span class="grad">у вашому календарі</span></div></div>
+  <div class="panel a" id="adm2">
+    <div class="nav">
+      <div class="it">Дашборд</div><div class="it on">Календар</div><div class="it">Записи</div><div class="it">Клієнти</div><div class="it">Каталог</div><div class="it">Розсилки</div><div class="it">Фінанси</div><div class="it">Бот</div><div class="it">Журнал</div>
+    </div>
+    <div class="cal">
+      <div class="calh">Четвер, 2 жовтня <div class="addb">+ Запис вручну</div></div>
+      <div class="grid">
+        <div class="row"><i>10:00</i></div><div class="row"><i>11:00</i></div><div class="row"><i>12:00</i></div><div class="row"><i>13:00</i></div><div class="row"><i>14:00</i></div><div class="row"><i>15:00</i></div><div class="row"><i>16:00</i></div><div class="row"><i>17:00</i></div>
+        <div class="ap x" style="top:6px;height:72px">Марія · Брови<small>10:00–11:00</small></div>
+        <div class="ap x" style="top:132px;height:120px">Іра · Манікюр<small>11:30–13:00</small></div>
+        <div class="ap n a" id="newap" style="top:342px;height:120px">Анна · Гель-лак + дизайн<small>14:00–15:30 · 800 ₴</small><div class="tag">через бота</div><div class="donep" id="donep" style="display:none">✓ Виконано</div></div>
+        <div class="ap x" style="top:552px;height:120px">Світлана · Педикюр<small>16:30–18:00</small></div>
+      </div>
+    </div>
+    <div class="det a" id="det">
+      <div class="nm">Анна · Гель-лак + дизайн</div>
+      <div class="dt">Чт, 2 жовтня · 14:00–15:30<br>800 ₴ · записалась через бота</div>
+      <div class="acts"><div>✏️ Редагувати</div><div>🔁 Запропонувати перенесення</div><div id="dn">✅ Позначити «Виконано»</div><div>🚫 Неявка</div><div>✖️ Скасувати</div><div>✉️ Написати клієнтці</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- S6 client cabinet + messages -->
+<div class="scene" id="s6">
+  <div class="t2 a" id="s6t"><div class="kick">Для клієнта</div><div class="h">Особистий кабінет — <span class="grad">прямо в боті</span></div></div>
+  <div class="tgc a" id="cab" style="left:150px;top:250px;width:800px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для клієнтки</div></div></div>
+    <div class="bd">
+      <div class="rw a" id="c1"><div class="b bot">👤 <b>Мій кабінет</b> · Анна</div>
+        <div class="kb"><div class="k half" id="kz">📅 Мої записи</div><div class="k half">🗂 Історія</div><div class="k half">✉️ Написати майстру</div><div class="k half">✏️ Мої дані</div></div></div>
+      <div class="rw a" id="c2"><div class="b bot">📅 <b>Чт, 2 жовтня · 14:00</b><br>Гель-лак + дизайн · 800 ₴</div>
+        <div class="kb"><div class="k half">🔁 Перенести</div><div class="k half">✖️ Скасувати</div></div></div>
+    </div>
+  </div>
+  <div class="tgc a" id="msg" style="left:1010px;top:250px;width:760px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для майстра</div></div></div>
+    <div class="bd">
+      <div class="rw"><div class="b bot">✉️ <b>Повідомлення від Анни</b><br>Можна прийти на 10 хвилин раніше?</div></div>
+      <div class="rw a" id="m2"><div class="b me" style="margin-left:auto;width:max-content">Так, чекаю о 13:50 ✨</div></div>
+      <div class="rw a" id="m3"><div class="note" style="text-align:right">Відповідь піде клієнтці через бот</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- S7 reminders -->
+<div class="scene" id="s7">
+  <div class="t2 a" id="s7t"><div class="kick">Нагадування</div><div class="h">Ніхто не забуде — <span class="grad">бот нагадає</span></div></div>
+  <div class="tiles2">
+    <div class="tile a"><div class="e">🔔</div><div class="tt">Клієнту</div><div class="dd">нагадування перед візитом</div></div>
+    <div class="tile a"><div class="e">📋</div><div class="tt">Вам</div><div class="dd">про записи й заявки без відповіді</div></div>
+    <div class="tile a"><div class="e">☀️</div><div class="tt">Ранковий дайджест</div><div class="dd">план на день — зранку</div></div>
+    <div class="tile a"><div class="e">🌙</div><div class="tt">Тихі години</div><div class="dd">жодних сповіщень уночі</div></div>
+  </div>
+  <div class="nt a" id="n1" style="top:250px"><div class="top"><div class="ava">О</div>Оля Nails · бот<em>зараз</em></div><div class="tx">🔔 Нагадуємо: завтра о 14:00 — манікюр. До зустрічі!</div></div>
+  <div class="nt a" id="n2" style="top:450px"><div class="top"><div class="ava">B</div>BoteraMaster<em>08:00</em></div><div class="tx">☀️ Доброго ранку! Ваші записи на сьогодні готові.</div></div>
+  <div class="nt a" id="n3" style="top:650px"><div class="top"><div class="ava">B</div>BoteraMaster<em>11:20</em></div><div class="tx">⏳ Заявка Каті чекає на вашу відповідь.</div></div>
+</div>
+
+<!-- S8 money, penalties, broadcasts -->
+<div class="scene" id="s8">
+  <div class="t2 a" id="s8t"><div class="kick">Фінанси й правила</div><div class="h">Гроші, штрафи й розсилки — <span class="grad">під контролем</span></div></div>
+  <div class="panel a" id="fin">
+    <div class="ct">📊 Звіт · жовтень</div>
+    <div class="frw a"><div class="l">Фактичний дохід<span>з виконаних записів</span></div><div class="fb"><i style="background:linear-gradient(90deg,#3DDC97,#2AABEE)"></i></div></div>
+    <div class="frw a"><div class="l">Очікуваний дохід<span>майбутні підтверджені</span></div><div class="fb"><i style="background:linear-gradient(90deg,#8A7CFF,#2AABEE);opacity:.7"></i></div></div>
+    <div class="frw a"><div class="l">Штрафи<span>окремим рядком</span></div><div class="fb"><i style="background:#FFB547"></i></div></div>
+    <div class="frw a"><div class="l">Витрати<span>вносите вручну</span></div><div class="fb"><i style="background:#FF6FA5"></i></div></div>
+  </div>
+  <div class="panel a" id="pen">
+    <div class="ct">⏰ Штрафи — якщо ввімкнете</div>
+    <div class="rc"><div class="chip a">за пізнє скасування</div><div class="chip a">за неявку</div><div class="chip a">за запізнення</div></div>
+  </div>
+  <div class="panel a" id="bc2">
+    <div class="ct">📣 Розсилки клієнтам</div>
+    <div class="rc"><div class="chip a">фото й кнопки</div><div class="chip a">одразу чи за розкладом</div><div class="chip a">фільтри клієнтів</div><div class="chip a">відписка</div></div>
+  </div>
+</div>
+
+<!-- S9 languages + editable texts -->
+<div class="scene" id="s9">
+  <div class="t2 a" id="s9t"><div class="kick">Мова й тексти</div><div class="h">Бот говорить <span class="grad">мовою клієнта</span></div></div>
+  <div class="lcard a" style="top:250px"><div class="lh">🇺🇦 Українська <span class="defb">за замовчуванням</span></div><div class="lt">Вітаю! Я бот майстрині Олі 💅</div></div>
+  <div class="lcard a" style="top:440px"><div class="lh">Русский</div><div class="lt">Здравствуйте! Я бот мастера Оли 💅</div></div>
+  <div class="lcard a" style="top:630px"><div class="lh">English</div><div class="lt">Hi! I'm Olya's booking bot 💅</div></div>
+  <div class="panel a" id="ed">
+    <div class="ct">✏️ Тексти й кнопки бота</div>
+    <div class="key">start.welcome · Українська</div>
+    <div class="ta"><span id="typed"></span><span class="caret" id="caret2"></span></div>
+    <div class="sv" id="sv">Зберегти</div>
+  </div>
+</div>
+
+<!-- S10 ecosystem -->
+<div class="scene" id="s10">
+  <div class="t2 a" id="s10t" style="left:0;right:0;text-align:center;top:120px"><div class="kick">А далі — більше</div><div class="h" style="font-size:72px">Частина екосистеми <span class="grad">Botera</span></div></div>
+  <div class="eco4">
+    <div class="ec me a"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/><path d="M8.5 14.5l2.4 2.4 4.6-4.6"/></svg></div><div class="nn">BoteraMaster</div><div class="dd">майстри й запис</div></div>
+    <div class="ec a"><div class="mark" style="background:linear-gradient(135deg,#FFB547,#FF6B6B 55%,#2AABEE)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5l1.6-5h12.8l1.6 5"/><path d="M5.5 12v8h13v-8"/><path d="M10 20v-4.5h4V20"/></svg></div><div class="nn">BoteraMarket</div><div class="dd">заклади й магазини</div></div>
+    <div class="ec a"><div class="mark" style="background:linear-gradient(135deg,#FF6FA5,#FFB547 50%,#2AABEE)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="6" cy="7" r="2.6"/><circle cx="18" cy="7" r="2.6"/><circle cx="12" cy="18" r="2.6"/><path d="M8.6 7h6.8M7.4 9.3l3.3 6.3M16.6 9.3l-3.3 6.3"/></svg></div><div class="nn">Партнерські програми</div><div class="dd">нагороди між бізнесами</div></div>
+    <div class="ec a"><div class="mark" style="background:linear-gradient(135deg,#2AABEE,#8A7CFF 50%,#FF6FA5)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5l5 5"/></svg></div><div class="nn">Discovery</div><div class="dd">клієнти знаходять вас</div></div>
+  </div>
+</div>
+
+<!-- S11 outro -->
+<div class="scene" id="s11">
+  <div class="wrap">
+    <div class="mark a" id="s11m"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/><path d="M8.5 14.5l2.4 2.4 4.6-4.6"/></svg></div>
+    <div class="word a" id="s11w">Botera<b>Master</b></div>
+    <div class="tl a" id="s11t">Ваш бот. Ваші клієнти. Без серверів.</div>
+    <div id="langs"><div class="chip a">Українська</div><div class="chip a">Русский</div><div class="chip a">English</div></div>
+  </div>
+</div>
+<svg id="cur" viewBox="0 0 24 24"><path d="M4 2.5l15 9.2-6.6 1.4 3.8 7.2-3 1.5-3.8-7.3L4 19.5z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
+
+</div>
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const cl=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const p=(t,a,d)=>cl((t-a)/d);
+const eo=x=>1-Math.pow(1-x,3);
+const eio=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const back=x=>{const c=1.5;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+const SC=[['s1',0,3.6],['s2',3.6,8.4],['s3',8.4,14.4],['s4',14.4,19.8],['s5',19.8,25.8],['s6',25.8,31.2],['s7',31.2,36.6],['s8',36.6,42],['s9',42,46.8],['s10',46.8,51],['s11',51,55.2]];
+const FD=.45;
+function rise(el,t,a,d=.55,dy=40){const k=p(t,a,d),e=eo(k);el.style.opacity=k;el.style.transform=`translateY(${(1-e)*dy}px)`;}
+function slide(el,t,a,d=.55,dx=140){const k=p(t,a,d);el.style.opacity=cl(k*1.5);el.style.transform=`translateX(${(1-eo(k))*dx}px)`;}
+function pop(el,t,a,d=.5){const k=p(t,a,d);el.style.opacity=cl(k*2);el.style.transform=`scale(${.85+.15*back(k)})`;}
+function path(s,wp){if(s<=wp[0][0])return wp[0];
+  for(let i=1;i<wp.length;i++){const [t1,x1,y1]=wp[i],[t0,x0,y0]=wp[i-1];if(s<=t1){const k=eio((s-t0)/(t1-t0));return [s,x0+(x1-x0)*k,y0+(y1-y0)*k];}}
+  return wp[wp.length-1];}
+let H=[],P={};
+const TOK='7812345678:AAH4kP9•••••••••••';
+const TXT='Вітаю! Я бот майстрині {partner_name} 💅 Оберіть послугу:';
+function init(){$$('.scene').forEach(e=>e.style.display='block');
+  H=$$('#chat .mw').map(w=>{w.style.height='auto';return w.offsetHeight;});
+  const c=q=>{const b=$(q).getBoundingClientRect();return[b.left+b.width*.5,b.top+b.height*.55]};
+  P.ap=c('#newap');P.dn=c('#dn');}
+function tapRing(s,sel){const ring=$('#ring');let shown=false;
+  for(const [q,a] of sel){const k=(s-(a-.08))/.45;if(k>=0&&k<=1){const r=$(q).getBoundingClientRect(),sr=$('#screen').getBoundingClientRect();
+    ring.style.left=(r.left-sr.left+r.width/2)+'px';ring.style.top=(r.top-sr.top+r.height/2)+'px';ring.style.opacity=.9*(1-k);ring.style.transform=`scale(${.5+.9*eo(k)})`;shown=true;}}
+  if(!shown)ring.style.opacity=0;}
+function render(t){
+  $('#g1').style.left=(420+120*Math.sin(t*.3))+'px';$('#g1').style.top=(260+80*Math.cos(t*.25))+'px';
+  $('#g2').style.left=(1550+110*Math.cos(t*.24))+'px';$('#g2').style.top=(860+70*Math.sin(t*.28))+'px';
+  let cur=null;
+  for(const [id,a,b] of SC){const el=$('#'+id),last=id==='s11';const vin=p(t,a,FD),vout=last?0:p(t,b-FD,FD);
+    el.style.display=(t>=a-.001&&t<b+.001)?'block':'none';el.style.opacity=vin*(1-vout);el.style.transform=`translateY(${-vout*24}px)`;}
+  const W=id=>{const r=SC.find(x=>x[0]===id);return t>r[1]-.1&&t<r[2]+.1?t-r[1]:null;};
+  let s;
+  if(t<3.7){rise($('#h1'),t,.05,.55,60);rise($('#h2'),t,.45,.55,60);$$('#chips .chip').forEach((c,i)=>pop(c,t,1.1+i*.09));}
+  if((s=W('s2'))!==null){rise($('#s2logo'),s,.1);rise($('#s2h'),s,.3,.6);rise($('#s2s'),s,1.0);rise($('#botcard'),s,.2,.6,60);
+    $$('#botcard .check').forEach((c,i)=>rise(c,s,.55+i*.12,.35,16));
+    const n=Math.floor(cl((s-1.4)/1.0)*TOK.length);$('#tok').textContent=TOK.slice(0,n);
+    $('#caret').style.opacity=(s<2.7&&(Math.floor(s*3)%2===0||(s>1.4&&s<2.4)))?1:0;
+    const pr=s>2.7&&s<2.85;$('#launch').style.transform=`scale(${pr?.96:1})`;
+    const ok=s>=2.85;$('#pw').style.display=ok?'none':'block';$('#po').style.display=ok?'block':'none';
+    $('#po').style.transform=`scale(${ok?.8+.2*back(p(s,2.85,.35)):1})`;$('#launch').textContent=ok?'✓ Бота запущено':'Запустити бота';}
+  if((s=W('s3'))!==null){rise($('#s3k'),s,.1);rise($('#s3h'),s,.2,.6);rise($('#s3s'),s,.8);rise($('#phone'),s,.05,.6,80);
+    $$('#chat .mw').forEach((w,i)=>{const a=+w.dataset.t,k=p(s,a,.35);w.style.height=(H[i]*eo(k))+'px';const m=w.firstElementChild;m.style.opacity=cl(k*1.4);m.style.transform=`translateY(${(1-eo(k))*14}px)`;});
+    const sel=[['#k1',1.0],['#k2',2.0],['#k3',2.2],['#k4',2.5],['#k5',3.5]];
+    sel.forEach(([q,a])=>{const e=$(q);e.classList.toggle('on',s>=a);const m=e.querySelector('.m');if(m)m.textContent=s>=a?'✓':'○';});
+    $('#k4').classList.toggle('on',s>=2.5&&s<2.9);tapRing(s,sel);}
+  if((s=W('s4'))!==null){rise($('#s4t'),s,.1);rise($('#mreq'),s,.25,.6,50);rise($('#r1'),s,.5,.4,14);
+    $('#kp').classList.toggle('on',s>=1.4);rise($('#r2'),s,1.6,.4,14);$('#ka').classList.toggle('on',s>=1.9);$('#kb2').classList.toggle('on',s>=2.1);
+    rise($('#r3'),s,2.4,.4,10);slide($('#creq'),s,2.8,.6);$('#kc').classList.toggle('on',s>=3.8);rise($('#cr2'),s,4.1,.4,14);}
+  if((s=W('s5'))!==null){rise($('#s5t'),s,.1);rise($('#adm2'),s,.2,.6,50);
+    const k=p(s,.6,.5),n=$('#newap');n.style.opacity=cl(k*1.6);n.style.transform=`translateX(${(1-eo(k))*80}px)`;
+    n.style.boxShadow=`0 0 ${50*(1-p(s,1.1,1.0))}px rgba(255,111,165,${.7*(1-p(s,1.1,1.0))})`;
+    slide($('#det'),s,2.0,.55,120);if(s<2)$('#det').style.opacity=0;
+    const d=s>=3.45;$('#donep').style.display=d?'block':'none';$('#dn').classList.toggle('gr',d);$('#newap').querySelector('.tag').style.display=d?'none':'block';
+    const [,x,y]=path(s,[[1.0,1100,1000],[1.7,...P.ap],[2.1,...P.ap],[2.9,...P.dn],[3.5,...P.dn],[4.2,P.dn[0]-120,P.dn[1]+220]]);
+    cur=[x,y,p(s,.9,.2)*(1-p(s,4.1,.4)),(s>1.7&&s<1.85)||(s>3.3&&s<3.45)];}
+  if((s=W('s6'))!==null){rise($('#s6t'),s,.1);rise($('#cab'),s,.25,.6,50);rise($('#c1'),s,.5,.4,14);$('#kz').classList.toggle('on',s>=1.2);rise($('#c2'),s,1.4,.4,14);
+    slide($('#msg'),s,2.4,.6);rise($('#m2'),s,3.4,.4,14);rise($('#m3'),s,3.8,.4,10);}
+  if((s=W('s7'))!==null){rise($('#s7t'),s,.1);$$('#s7 .tile').forEach((e,i)=>rise(e,s,.35+i*.15,.5,30));
+    [['#n1',.7],['#n2',1.4],['#n3',2.1]].forEach(([q,a])=>slide($(q),s,a,.55,120));}
+  if((s=W('s8'))!==null){rise($('#s8t'),s,.1);rise($('#fin'),s,.25,.6,50);
+    const W2=[82,64,14,36];$$('#fin .frw').forEach((r,i)=>{rise(r,s,.5+i*.15,.4,12);r.querySelector('i').style.width=(W2[i]*eo(p(s,.6+i*.15,.6)))+'%';});
+    rise($('#pen'),s,.8,.55,40);rise($('#bc2'),s,1.4,.55,40);$$('#pen .chip').forEach((c,i)=>pop(c,s,1.1+i*.1,.4));$$('#bc2 .chip').forEach((c,i)=>pop(c,s,1.7+i*.1,.4));}
+  if((s=W('s9'))!==null){rise($('#s9t'),s,.1);$$('#s9 .lcard').forEach((e,i)=>rise(e,s,.4+i*.25,.5,30));rise($('#ed'),s,.5,.6,50);
+    const n=Math.floor(cl((s-1.3)/1.2)*TXT.length);const tx=TXT.slice(0,n).replace('{partner_name}','<span class="ph">{partner_name}</span>');
+    $('#typed').innerHTML=n<TXT.indexOf('{')+14&&n>TXT.indexOf('{')?TXT.slice(0,n):tx;
+    $('#caret2').style.opacity=s<2.9?(Math.floor(s*3)%2===0||(s>1.3&&s<2.5)?1:0):0;
+    const sv=s>=2.9;$('#sv').textContent=sv?'✓ Збережено':'Зберегти';$('#sv').style.filter=(s>2.75&&s<2.9)?'brightness(.85)':'none';}
+  if((s=W('s10'))!==null){rise($('#s10t'),s,.1);$$('#s10 .ec').forEach((e,i)=>pop(e,s,.4+i*.2,.55));}
+  if((s=W('s11'))!==null){pop($('#s11m'),s,.05,.6);rise($('#s11w'),s,.35,.6,40);rise($('#s11t'),s,.8,.55,30);
+    $$('#langs .chip').forEach((c,i)=>pop(c,s,1.3+i*.12));$('#s11m').style.boxShadow=`0 20px ${60+30*Math.sin(s*2)}px rgba(255,111,165,.4)`;}
+  const c=$('#cur');if(cur){c.style.opacity=cur[2];c.style.transform=`translate(${cur[0]}px,${cur[1]}px) scale(${cur[3]?.85:1})`;}else c.style.opacity=0;
+}
+window.__init=async()=>{await document.fonts.ready;init();render(0);};
+window.__render=render;
+</script>
+</body></html>

@@ -1,0 +1,210 @@
+<style>
+#stage .t2 .h{font-size:60px}
+.t2{position:absolute;left:150px;top:52px}
+.t2 .h{margin-top:10px}
+.tgc{position:absolute;background:#0E1621;border-radius:32px;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.5);border:2px solid #1E2C3A}
+.tgc .hd{height:92px;background:#17212B;display:flex;align-items:center;gap:16px;padding:0 26px}
+.tgc .hd .ava{width:54px;height:54px}
+.tgc .tgn{font-size:27px}.tgc .tgs{font-size:20px}
+.tgc .bd{padding:22px 24px}
+.tgc .b{max-width:none;font-size:26px;padding:18px 22px}
+.tgc .b.me{font-size:26px}
+.tgc .kb{max-width:none;gap:8px;margin-top:8px}
+.tgc .k{min-width:30%;font-size:23px;padding:16px 12px;border-radius:14px}
+.tgc .k.half{min-width:45%}
+.rw{margin-top:14px}
+.note{font-size:21px;color:#8BA3BB;font-weight:600;margin-top:12px}
+.av{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;flex:none}
+.am{background:linear-gradient(135deg,#FF6FA5,#B07CFF)}
+.ak{background:linear-gradient(135deg,#FFB547,#FF6B6B)}
+.ad{background:linear-gradient(135deg,#2AABEE,#8A7CFF)}
+/* calendar */
+#adm2{position:absolute;left:150px;top:230px;width:1620px;height:790px;display:flex;overflow:hidden}
+#adm2 .cal{flex:1;padding:30px 36px;position:relative}
+.addb{font-size:21px;font-weight:800;padding:10px 18px;border-radius:12px;background:linear-gradient(90deg,var(--pink),#B07CFF);color:#fff}
+.det{width:470px;border-left:2px solid var(--line);padding:30px 28px;flex:none}
+.det .nm{font-size:30px;font-weight:800}
+.det .dt{font-size:22px;color:var(--mut);font-weight:600;margin-top:8px;line-height:1.4}
+.acts{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+.acts div{padding:15px 18px;border-radius:14px;background:rgba(255,255,255,.06);font-size:22px;font-weight:700}
+.acts .gr{background:rgba(61,220,151,.15);color:var(--green)}
+.donep{position:absolute;right:18px;bottom:14px;font-size:18px;font-weight:800;padding:6px 14px;border-radius:999px;background:var(--green);color:#0B2A1C}
+/* reminders */
+.tiles2{position:absolute;left:150px;top:250px;width:1020px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.tile .e{font-size:44px}
+/* finance */
+#fin{left:150px;top:250px;width:820px;padding:40px}
+.ct{font-size:32px;font-weight:800}
+.frw{margin-top:26px}
+.frw .l{display:flex;justify-content:space-between;font-size:26px;font-weight:700}
+.frw .l span{color:var(--mut);font-size:20px;font-weight:600}
+.fb{height:22px;border-radius:99px;background:rgba(255,255,255,.07);margin-top:12px;overflow:hidden}
+.fb i{display:block;height:100%;width:0;border-radius:99px}
+.fnote{font-size:21px;color:var(--mut);font-weight:600;margin-top:28px;line-height:1.4}
+#pen{left:1010px;top:250px;width:760px;padding:36px}
+#bc2{left:1010px;top:590px;width:760px;padding:36px}
+.rc{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.rc .chip{font-size:23px;padding:10px 18px}
+/* languages */
+.lcard{position:absolute;left:150px;width:780px;background:var(--card);border:2px solid var(--line);border-radius:26px;padding:26px 30px}
+.lcard .lh{display:flex;align-items:center;gap:14px;font-size:24px;font-weight:800}
+.lcard .lt{font-size:27px;margin-top:12px;color:#E9DFF3;font-weight:600}
+.defb{font-size:17px;font-weight:800;padding:5px 12px;border-radius:99px;background:rgba(255,111,165,.18);color:#FFC3D8}
+#ed{left:1010px;top:250px;width:760px;padding:38px}
+.key{font-family:"SF Mono",Menlo,monospace;font-size:22px;color:#BFE0FF;background:rgba(42,171,238,.12);padding:6px 12px;border-radius:10px;display:inline-block;margin-top:16px}
+.ta{margin-top:18px;min-height:150px;border-radius:18px;background:#120E19;border:2px solid var(--line);padding:22px;font-size:28px;line-height:1.4;color:#F1E9F8}
+.ta .ph{color:#FFB547}
+.sv{margin-top:22px;height:72px;border-radius:18px;background:linear-gradient(90deg,var(--pink),#B07CFF);display:flex;align-items:center;justify-content:center;font-size:27px;font-weight:800;color:#fff}
+/* eco */
+.eco4{position:absolute;left:150px;top:330px;width:1620px;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.ec{background:var(--card);border:2px solid var(--line);border-radius:32px;padding:36px 28px;text-align:center}
+.ec.me{border-color:rgba(255,111,165,.7);box-shadow:0 0 60px rgba(255,111,165,.2)}
+.ec .mark{width:100px;height:100px;border-radius:30px;margin:0 auto}
+.ec .nn{font-size:34px;font-weight:800;margin-top:24px}
+.ec .dd{font-size:23px;color:var(--mut);font-weight:600;margin-top:10px}
+#s11 .wrap{position:absolute;left:0;right:0;top:250px;display:flex;flex-direction:column;align-items:center}
+#s11 .mark{width:150px;height:150px;border-radius:44px}
+#s11 .word{font-size:124px;margin-top:40px}
+#s11 .tl{font-size:50px;font-weight:700;margin-top:26px;color:#E9DFF3}
+#cur{opacity:0;z-index:20}
+</style>
+
+<!-- S4 requests / manual confirm -->
+<div class="scene" id="s4">
+  <div class="t2 a" id="s4t"><div class="kick">Ручне підтвердження</div><div class="h">Заявки — <span class="grad">під вашим контролем</span></div></div>
+  <div class="tgc a" id="mreq" style="left:150px;top:250px;width:800px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для майстра</div></div></div>
+    <div class="bd">
+      <div class="rw a" id="r1"><div class="b bot">📩 <b>Нова заявка</b><br>Катя · Вії · Пт, 3 жовтня · 12:00</div>
+        <div class="kb"><div class="k">Підтвердити</div><div class="k">Відхилити</div><div class="k full" id="kp">Запропонувати інший час</div></div></div>
+      <div class="rw a" id="r2"><div class="b bot">Оберіть варіанти для клієнтки:</div>
+        <div class="kb"><div class="k" id="ka">13:00</div><div class="k" id="kb2">15:30</div><div class="k">17:00</div></div></div>
+      <div class="rw a" id="r3"><div class="note">✓ Надіслано 2 варіанти — клієнтка обере сама</div></div>
+    </div>
+  </div>
+  <div class="tgc a" id="creq" style="left:1010px;top:250px;width:760px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для клієнтки</div></div></div>
+    <div class="bd">
+      <div class="rw"><div class="b bot">Майстриня пропонує інший час для запису «Вії»:</div>
+        <div class="kb"><div class="k half">Пт, 13:00</div><div class="k half" id="kc">Пт, 15:30</div><div class="k full">Обрати інший час</div></div></div>
+      <div class="rw a" id="cr2"><div class="b bot">✅ <b>Вас записано!</b><br>Пт, 3 жовтня · 15:30 · Вії</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- S5 calendar with detail panel -->
+<div class="scene" id="s5">
+  <div class="t2 a" id="s5t"><div class="kick">Для майстра</div><div class="h">Усе — <span class="grad">у вашому календарі</span></div></div>
+  <div class="panel a" id="adm2">
+    <div class="nav">
+      <div class="it">Дашборд</div><div class="it on">Календар</div><div class="it">Записи</div><div class="it">Клієнти</div><div class="it">Каталог</div><div class="it">Розсилки</div><div class="it">Фінанси</div><div class="it">Бот</div><div class="it">Журнал</div>
+    </div>
+    <div class="cal">
+      <div class="calh">Четвер, 2 жовтня <div class="addb">+ Запис вручну</div></div>
+      <div class="grid">
+        <div class="row"><i>10:00</i></div><div class="row"><i>11:00</i></div><div class="row"><i>12:00</i></div><div class="row"><i>13:00</i></div><div class="row"><i>14:00</i></div><div class="row"><i>15:00</i></div><div class="row"><i>16:00</i></div><div class="row"><i>17:00</i></div>
+        <div class="ap x" style="top:6px;height:72px">Марія · Брови<small>10:00–11:00</small></div>
+        <div class="ap x" style="top:132px;height:120px">Іра · Манікюр<small>11:30–13:00</small></div>
+        <div class="ap n a" id="newap" style="top:342px;height:120px">Анна · Гель-лак + дизайн<small>14:00–15:30 · 800 ₴</small><div class="tag">через бота</div><div class="donep" id="donep" style="display:none">✓ Виконано</div></div>
+        <div class="ap x" style="top:552px;height:120px">Світлана · Педикюр<small>16:30–18:00</small></div>
+      </div>
+    </div>
+    <div class="det a" id="det">
+      <div class="nm">Анна · Гель-лак + дизайн</div>
+      <div class="dt">Чт, 2 жовтня · 14:00–15:30<br>800 ₴ · записалась через бота</div>
+      <div class="acts"><div>✏️ Редагувати</div><div>🔁 Запропонувати перенесення</div><div id="dn">✅ Позначити «Виконано»</div><div>🚫 Неявка</div><div>✖️ Скасувати</div><div>✉️ Написати клієнтці</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- S6 client cabinet + messages -->
+<div class="scene" id="s6">
+  <div class="t2 a" id="s6t"><div class="kick">Для клієнта</div><div class="h">Особистий кабінет — <span class="grad">прямо в боті</span></div></div>
+  <div class="tgc a" id="cab" style="left:150px;top:250px;width:800px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для клієнтки</div></div></div>
+    <div class="bd">
+      <div class="rw a" id="c1"><div class="b bot">👤 <b>Мій кабінет</b> · Анна</div>
+        <div class="kb"><div class="k half" id="kz">📅 Мої записи</div><div class="k half">🗂 Історія</div><div class="k half">✉️ Написати майстру</div><div class="k half">✏️ Мої дані</div></div></div>
+      <div class="rw a" id="c2"><div class="b bot">📅 <b>Чт, 2 жовтня · 14:00</b><br>Гель-лак + дизайн · 800 ₴</div>
+        <div class="kb"><div class="k half">🔁 Перенести</div><div class="k half">✖️ Скасувати</div></div></div>
+    </div>
+  </div>
+  <div class="tgc a" id="msg" style="left:1010px;top:250px;width:760px">
+    <div class="hd"><div class="ava">О</div><div><div class="tgn">Оля Nails</div><div class="tgs">бот · для майстра</div></div></div>
+    <div class="bd">
+      <div class="rw"><div class="b bot">✉️ <b>Повідомлення від Анни</b><br>Можна прийти на 10 хвилин раніше?</div></div>
+      <div class="rw a" id="m2"><div class="b me" style="margin-left:auto;width:max-content">Так, чекаю о 13:50 ✨</div></div>
+      <div class="rw a" id="m3"><div class="note" style="text-align:right">Відповідь піде клієнтці через бот</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- S7 reminders -->
+<div class="scene" id="s7">
+  <div class="t2 a" id="s7t"><div class="kick">Нагадування</div><div class="h">Ніхто не забуде — <span class="grad">бот нагадає</span></div></div>
+  <div class="tiles2">
+    <div class="tile a"><div class="e">🔔</div><div class="tt">Клієнту</div><div class="dd">нагадування перед візитом</div></div>
+    <div class="tile a"><div class="e">📋</div><div class="tt">Вам</div><div class="dd">про записи й заявки без відповіді</div></div>
+    <div class="tile a"><div class="e">☀️</div><div class="tt">Ранковий дайджест</div><div class="dd">план на день — зранку</div></div>
+    <div class="tile a"><div class="e">🌙</div><div class="tt">Тихі години</div><div class="dd">жодних сповіщень уночі</div></div>
+  </div>
+  <div class="nt a" id="n1" style="top:250px"><div class="top"><div class="ava">О</div>Оля Nails · бот<em>зараз</em></div><div class="tx">🔔 Нагадуємо: завтра о 14:00 — манікюр. До зустрічі!</div></div>
+  <div class="nt a" id="n2" style="top:450px"><div class="top"><div class="ava">B</div>BoteraMaster<em>08:00</em></div><div class="tx">☀️ Доброго ранку! Ваші записи на сьогодні готові.</div></div>
+  <div class="nt a" id="n3" style="top:650px"><div class="top"><div class="ava">B</div>BoteraMaster<em>11:20</em></div><div class="tx">⏳ Заявка Каті чекає на вашу відповідь.</div></div>
+</div>
+
+<!-- S8 money, penalties, broadcasts -->
+<div class="scene" id="s8">
+  <div class="t2 a" id="s8t"><div class="kick">Фінанси й правила</div><div class="h">Гроші, штрафи й розсилки — <span class="grad">під контролем</span></div></div>
+  <div class="panel a" id="fin">
+    <div class="ct">📊 Звіт · жовтень</div>
+    <div class="frw a"><div class="l">Фактичний дохід<span>з виконаних записів</span></div><div class="fb"><i style="background:linear-gradient(90deg,#3DDC97,#2AABEE)"></i></div></div>
+    <div class="frw a"><div class="l">Очікуваний дохід<span>майбутні підтверджені</span></div><div class="fb"><i style="background:linear-gradient(90deg,#8A7CFF,#2AABEE);opacity:.7"></i></div></div>
+    <div class="frw a"><div class="l">Штрафи<span>окремим рядком</span></div><div class="fb"><i style="background:#FFB547"></i></div></div>
+    <div class="frw a"><div class="l">Витрати<span>вносите вручну</span></div><div class="fb"><i style="background:#FF6FA5"></i></div></div>
+  </div>
+  <div class="panel a" id="pen">
+    <div class="ct">⏰ Штрафи — якщо ввімкнете</div>
+    <div class="rc"><div class="chip a">за пізнє скасування</div><div class="chip a">за неявку</div><div class="chip a">за запізнення</div></div>
+  </div>
+  <div class="panel a" id="bc2">
+    <div class="ct">📣 Розсилки клієнтам</div>
+    <div class="rc"><div class="chip a">фото й кнопки</div><div class="chip a">одразу чи за розкладом</div><div class="chip a">фільтри клієнтів</div><div class="chip a">відписка</div></div>
+  </div>
+</div>
+
+<!-- S9 languages + editable texts -->
+<div class="scene" id="s9">
+  <div class="t2 a" id="s9t"><div class="kick">Мова й тексти</div><div class="h">Бот говорить <span class="grad">мовою клієнта</span></div></div>
+  <div class="lcard a" style="top:250px"><div class="lh">🇺🇦 Українська <span class="defb">за замовчуванням</span></div><div class="lt">Вітаю! Я бот майстрині Олі 💅</div></div>
+  <div class="lcard a" style="top:440px"><div class="lh">Русский</div><div class="lt">Здравствуйте! Я бот мастера Оли 💅</div></div>
+  <div class="lcard a" style="top:630px"><div class="lh">English</div><div class="lt">Hi! I'm Olya's booking bot 💅</div></div>
+  <div class="panel a" id="ed">
+    <div class="ct">✏️ Тексти й кнопки бота</div>
+    <div class="key">start.welcome · Українська</div>
+    <div class="ta"><span id="typed"></span><span class="caret" id="caret2"></span></div>
+    <div class="sv" id="sv">Зберегти</div>
+  </div>
+</div>
+
+<!-- S10 ecosystem -->
+<div class="scene" id="s10">
+  <div class="t2 a" id="s10t" style="left:0;right:0;text-align:center;top:120px"><div class="kick">А далі — більше</div><div class="h" style="font-size:72px">Частина екосистеми <span class="grad">Botera</span></div></div>
+  <div class="eco4">
+    <div class="ec me a"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/><path d="M8.5 14.5l2.4 2.4 4.6-4.6"/></svg></div><div class="nn">BoteraMaster</div><div class="dd">майстри й запис</div></div>
+    <div class="ec a"><div class="mark" style="background:linear-gradient(135deg,#FFB547,#FF6B6B 55%,#2AABEE)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5l1.6-5h12.8l1.6 5"/><path d="M5.5 12v8h13v-8"/><path d="M10 20v-4.5h4V20"/></svg></div><div class="nn">BoteraMarket</div><div class="dd">заклади й магазини</div></div>
+    <div class="ec a"><div class="mark" style="background:linear-gradient(135deg,#FF6FA5,#FFB547 50%,#2AABEE)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="6" cy="7" r="2.6"/><circle cx="18" cy="7" r="2.6"/><circle cx="12" cy="18" r="2.6"/><path d="M8.6 7h6.8M7.4 9.3l3.3 6.3M16.6 9.3l-3.3 6.3"/></svg></div><div class="nn">Партнерські програми</div><div class="dd">нагороди між бізнесами</div></div>
+    <div class="ec a"><div class="mark" style="background:linear-gradient(135deg,#2AABEE,#8A7CFF 50%,#FF6FA5)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5l5 5"/></svg></div><div class="nn">Discovery</div><div class="dd">клієнти знаходять вас</div></div>
+  </div>
+</div>
+
+<!-- S11 outro -->
+<div class="scene" id="s11">
+  <div class="wrap">
+    <div class="mark a" id="s11m"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/><path d="M8.5 14.5l2.4 2.4 4.6-4.6"/></svg></div>
+    <div class="word a" id="s11w">Botera<b>Master</b></div>
+    <div class="tl a" id="s11t">Ваш бот. Ваші клієнти. Без серверів.</div>
+    <div id="langs"><div class="chip a">Українська</div><div class="chip a">Русский</div><div class="chip a">English</div></div>
+  </div>
+</div>
+<svg id="cur" viewBox="0 0 24 24"><path d="M4 2.5l15 9.2-6.6 1.4 3.8 7.2-3 1.5-3.8-7.3L4 19.5z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
