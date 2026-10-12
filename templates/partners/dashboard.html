@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Partner dashboard</title>
+  </head>
+  <body>
+    <main>
+      <h1>Partner dashboard</h1>
+      {% if partners %}
+        <ul>
+          {% for partner in partners %}
+            <li>{{ partner.name }} - {{ partner.status }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No partner access.</p>
+      {% endif %}
+    </main>
+  </body>
+</html>

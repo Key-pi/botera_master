@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "botera-master"
+version = "0.1.0"
+description = "Telegram-first CRM and scheduling platform for solo masters."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "Django>=5.1,<6.0",
+  "aiogram>=3.7,<4.0",
+  "celery[redis]>=5.4,<6.0",
+  "cryptography>=43.0.0",
+  "psycopg[binary]>=3.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-django>=4.9.0",
+  "ruff>=0.13,<0.14",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps", "bot", "core"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "core.settings.test"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*.py" = ["E501", "I001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

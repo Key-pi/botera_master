@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-botera_master}
+      POSTGRES_USER: ${POSTGRES_USER:-botera_master}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-botera_master}
+      POSTGRES_USER: ${POSTGRES_USER:-botera_master}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  postgres_data:
