@@ -168,6 +168,21 @@ def set_marketing_opt_out(*, client_profile: ClientProfile, opt_out: bool) -> Cl
     return client_profile
 
 
+def update_client_profile_language(
+    *,
+    client_profile: ClientProfile,
+    language: str,
+) -> ClientProfile:
+    """Set the client's preferred bot language in partner scope."""
+
+    cleaned_language = language.strip().lower()
+    if cleaned_language not in SUPPORTED_CLIENT_LANGUAGES:
+        raise ValidationError({"language": "Unsupported client language."})
+    client_profile.language = cleaned_language
+    client_profile.save(update_fields=["language", "updated_at"])
+    return client_profile
+
+
 def mark_client_unreachable(
     *,
     client_profile: ClientProfile,

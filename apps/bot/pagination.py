@@ -7,6 +7,9 @@ from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
+DEFAULT_TELEGRAM_ENTITY_PAGE_SIZE = 5
+MAX_TELEGRAM_ENTITY_PAGE_SIZE = 10
+
 
 @dataclass(frozen=True)
 class Page(Generic[T]):
@@ -49,3 +52,18 @@ def paginate_sequence(items: Sequence[T], *, page: int = 1, per_page: int = 5) -
         total_items=total_items,
         total_pages=total_pages,
     )
+
+
+def paginate_telegram_entities(
+    items: Sequence[T],
+    *,
+    page: int = 1,
+    per_page: int = DEFAULT_TELEGRAM_ENTITY_PAGE_SIZE,
+    max_per_page: int = MAX_TELEGRAM_ENTITY_PAGE_SIZE,
+) -> Page[T]:
+    """Paginate entity-bound Telegram lists with a conservative button limit."""
+
+    if max_per_page <= 0:
+        raise ValueError("max_per_page must be positive.")
+    bounded_per_page = min(per_page, max_per_page)
+    return paginate_sequence(items, page=page, per_page=bounded_per_page)

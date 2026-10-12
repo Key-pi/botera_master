@@ -8,7 +8,8 @@ after explicit user approval. Bot Runtime milestone implementation started on
 implementation started on 2026-10-12 after explicit user approval. Schedule
 milestone implementation started on 2026-10-12 after explicit user approval.
 Appointment Core milestone implementation started on 2026-10-12 after explicit
-user approval.
+user approval. Client Booking Flow milestone implementation started on
+2026-10-12 after explicit user approval.
 Application code is allowed only within the currently approved milestone scope.
 
 ## System summary

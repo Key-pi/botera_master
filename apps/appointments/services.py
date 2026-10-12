@@ -241,6 +241,41 @@ def transition_appointment_status(
     return appointment
 
 
+def cancel_requested_appointment_by_client(
+    *,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    reason: str = "",
+) -> Appointment:
+    """Cancel a pending request from the client bot context."""
+
+    if appointment.client_profile_id != client_profile.id:
+        raise ValidationError({"appointment": "Appointment does not belong to this client."})
+
+    now = timezone.now()
+    with transaction.atomic():
+        appointment = Appointment.objects.select_for_update().get(id=appointment.id)
+        if appointment.client_profile_id != client_profile.id:
+            raise ValidationError({"appointment": "Appointment does not belong to this client."})
+        if appointment.status != Appointment.Status.REQUESTED:
+            raise ValidationError({"status": "Only requested appointments can be cancelled here."})
+
+        appointment.status = Appointment.Status.CANCELLED_BY_CLIENT
+        appointment.client_visible_reason = reason
+        appointment.cancelled_at = now
+        appointment.status_changed_at = now
+        appointment.save(
+            update_fields=[
+                "status",
+                "client_visible_reason",
+                "cancelled_at",
+                "status_changed_at",
+                "updated_at",
+            ]
+        )
+    return appointment
+
+
 def correct_final_appointment_status(
     *,
     actor: User,

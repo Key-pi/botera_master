@@ -302,6 +302,8 @@ Exit criteria:
 
 ## Client Booking Flow Milestone
 
+Status: implemented on 2026-10-12.
+
 Goal:
 - Build the client-facing happy path before advanced reschedule/penalty flows.
 
