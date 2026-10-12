@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,6 +25,9 @@ EXTERNAL_SETUP_STEPS = (
     SetupStep.BOOKING_CONFIRMATION_MODE,
 )
 
+SetupChecker = Callable[[Partner], set[str]]
+_SETUP_CHECKERS: dict[str, SetupChecker] = {}
+
 
 @dataclass(frozen=True)
 class PartnerSetupStatus:
@@ -46,7 +50,9 @@ def get_partner_setup_status(
     apps can report their own facts, their required launch steps remain missing.
     """
 
-    completed_external_steps = completed_external_steps or set()
+    completed_external_steps = _completed_registered_steps(partner) | (
+        completed_external_steps or set()
+    )
     missing_steps: list[str] = []
 
     if not partner.default_language:
@@ -60,6 +66,19 @@ def get_partner_setup_status(
             missing_steps.append(step)
 
     return PartnerSetupStatus(partner=partner, missing_steps=tuple(missing_steps))
+
+
+def register_setup_checker(name: str, checker: SetupChecker) -> None:
+    """Register an app-owned setup checker by stable app key."""
+
+    _SETUP_CHECKERS[name] = checker
+
+
+def _completed_registered_steps(partner: Partner) -> set[str]:
+    completed: set[str] = set()
+    for checker in _SETUP_CHECKERS.values():
+        completed.update(checker(partner))
+    return completed
 
 
 def is_partner_runtime_eligible(

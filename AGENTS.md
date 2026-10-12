@@ -3,8 +3,9 @@
 Status: approved project rules after `PROJECT_RULES_APPROVED` on 2026-10-11.
 Foundation milestone implementation started on 2026-10-12 after explicit user
 approval. Tenant And Admin milestone implementation started on 2026-10-12
-after explicit user approval. Application code is allowed only within the
-currently approved milestone scope.
+after explicit user approval. Bot Runtime milestone implementation started on
+2026-10-12 after explicit user approval. Application code is allowed only
+within the currently approved milestone scope.
 
 ## System summary
 

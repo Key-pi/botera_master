@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
+
 SENSITIVE_KEY_PARTS = ("token", "phone", "message", "note", "secret", "password")
+TELEGRAM_BOT_TOKEN_RE = re.compile(r"\b\d{5,20}:[A-Za-z0-9_-]{20,}\b")
 
 
 def mask_token(value: str) -> str:
@@ -26,6 +29,12 @@ def mask_text(value: str, *, visible: int = 0) -> str:
     if visible <= 0:
         return "***"
     return f"{value[:visible]}***"
+
+
+def mask_sensitive_text(value: str) -> str:
+    """Mask known sensitive patterns inside otherwise useful diagnostic text."""
+
+    return TELEGRAM_BOT_TOKEN_RE.sub(lambda match: mask_token(match.group(0)), value)
 
 
 def redact_mapping(value: dict) -> dict:
