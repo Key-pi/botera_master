@@ -331,6 +331,8 @@ Exit criteria:
 
 ## Notifications Milestone
 
+Status: implemented on 2026-10-12.
+
 Goal:
 - Make reminders and service notifications durable/idempotent.
 

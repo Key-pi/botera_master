@@ -63,6 +63,13 @@ def create_partner_with_owner(
         from apps.schedule.services import initialize_partner_schedule
 
         initialize_partner_schedule(partner=partner)
+        from apps.notifications.services import (
+            ensure_default_reminder_rules,
+            get_or_create_notification_settings,
+        )
+
+        get_or_create_notification_settings(partner=partner)
+        ensure_default_reminder_rules(partner=partner)
 
     return CreatedPartnerOwner(partner=partner, owner=owner, membership=membership)
 

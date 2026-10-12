@@ -5,7 +5,7 @@ CRM, reminders, messaging, broadcasts, and lightweight finance for solo masters.
 
 The repository is in approved early MVP implementation. Foundation,
 Tenant/Admin, Bot Runtime, Identity/Catalog, Schedule, Appointment Core, and
-Client Booking Flow foundations are in place. See `AGENTS.md` and
+Client Booking Flow, and Notifications foundations are in place. See `AGENTS.md` and
 `docs/spec/IMPLEMENTATION_PLAN.md` before changing code.
 
 ## Local checks

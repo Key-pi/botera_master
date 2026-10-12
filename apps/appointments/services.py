@@ -98,6 +98,7 @@ def create_requested_appointment(
             appointment=appointment,
             snapshot_items=snapshot_items,
         )
+        _on_commit_schedule_requested_notifications(appointment.id)
     return appointment
 
 
@@ -149,6 +150,7 @@ def create_confirmed_appointment(
             appointment=appointment,
             snapshot_items=snapshot_items,
         )
+        _on_commit_schedule_confirmed_notifications(appointment.id)
     return appointment
 
 
@@ -203,6 +205,7 @@ def confirm_requested_appointment(*, actor: User, appointment: Appointment) -> A
         appointment.save(
             update_fields=["status", "confirmed_at", "status_changed_at", "updated_at"]
         )
+        _on_commit_refresh_confirmed_notifications(appointment.id)
     return appointment
 
 
@@ -238,6 +241,7 @@ def transition_appointment_status(
                 "updated_at",
             ]
         )
+        _on_commit_stale_appointment_notifications(appointment.id)
     return appointment
 
 
@@ -273,6 +277,7 @@ def cancel_requested_appointment_by_client(
                 "updated_at",
             ]
         )
+        _on_commit_stale_appointment_notifications(appointment.id)
     return appointment
 
 
@@ -325,6 +330,10 @@ def correct_final_appointment_status(
                 "updated_at",
             ]
         )
+        if new_status == Appointment.Status.CONFIRMED:
+            _on_commit_refresh_confirmed_notifications(appointment.id)
+        else:
+            _on_commit_stale_appointment_notifications(appointment.id)
     return appointment
 
 
@@ -339,6 +348,60 @@ def acquire_booking_resource_advisory_lock_if_supported(
         namespace=BOOKING_RESOURCE_ADVISORY_LOCK_NAMESPACE,
         lock_key=booking_resource.advisory_lock_key,
     )
+
+
+def _on_commit_schedule_requested_notifications(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_requested_notifications(appointment_id))
+
+
+def _on_commit_schedule_confirmed_notifications(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_confirmed_notifications(appointment_id))
+
+
+def _on_commit_refresh_confirmed_notifications(appointment_id) -> None:
+    transaction.on_commit(lambda: _refresh_confirmed_notifications(appointment_id))
+
+
+def _on_commit_stale_appointment_notifications(appointment_id) -> None:
+    transaction.on_commit(lambda: _stale_appointment_notifications(appointment_id))
+
+
+def _schedule_requested_notifications(appointment_id) -> None:
+    from apps.notifications.services import schedule_stale_requested_notification
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_stale_requested_notification(appointment=appointment)
+
+
+def _schedule_confirmed_notifications(appointment_id) -> None:
+    from apps.notifications.services import schedule_reminders_for_confirmed_appointment
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_reminders_for_confirmed_appointment(appointment=appointment)
+
+
+def _refresh_confirmed_notifications(appointment_id) -> None:
+    from apps.notifications.services import (
+        cancel_pending_notifications_for_appointment,
+        schedule_reminders_for_confirmed_appointment,
+    )
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    cancel_pending_notifications_for_appointment(appointment=appointment)
+    schedule_reminders_for_confirmed_appointment(appointment=appointment)
+
+
+def _stale_appointment_notifications(appointment_id) -> None:
+    from apps.notifications.services import cancel_pending_notifications_for_appointment
+
+    appointment = Appointment.objects.get(id=appointment_id)
+    cancel_pending_notifications_for_appointment(appointment=appointment)
 
 
 def _prepare_appointment_data(
