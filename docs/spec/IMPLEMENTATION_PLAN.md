@@ -1,9 +1,9 @@
 # BoteraMaster Implementation Plan
 
-Status: approved implementation-planning document after `IMPLEMENTATION_PLAN_APPROVED` on 2026-10-08; no application code approved yet.
-Last updated: 2026-10-08.
+Status: approved implementation-planning document after `IMPLEMENTATION_PLAN_APPROVED` on 2026-10-08; early milestone implementation is in progress after explicit approvals.
+Last updated: 2026-10-12.
 
-This document translates the approved MVP specification into an implementation sequence. It does not create or approve application code, migrations, dependencies, AGENTS.md, or project skills by itself.
+This document translates the approved MVP specification into an implementation sequence. It does not create or approve future application code, migrations, dependencies, AGENTS.md changes, or project skills by itself.
 
 ## Approval Boundary
 
@@ -15,12 +15,11 @@ Approved for implementation planning:
 - Operational runbook direction in `RUNBOOK_DRAFT.md`.
 - Platform diagnostics taxonomy in `DIAGNOSTICS_TAXONOMY.md`.
 
-Still requires explicit technical approval before coding:
-- AGENTS.md/project rules
-- exact settings layout and dependency/version choices
-- model/migration implementation details
+Still requires explicit approval before future milestone work:
 - project skills, if any
-- application code
+- dependencies or version changes not already approved
+- migrations/models outside the currently approved milestone
+- application code outside the currently approved milestone
 
 ## Recommended Stack
 
@@ -275,6 +274,8 @@ Exit criteria:
 - Schedule data is partner/resource scoped and indexed in the planned query shape.
 
 ## Appointment Core Milestone
+
+Status: implemented on 2026-10-12.
 
 Goal:
 - Implement appointments, snapshots, statuses, and confirmed overlap safety.
