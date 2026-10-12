@@ -3,9 +3,9 @@
 BoteraMaster is a planned Django modular monolith for Telegram-first scheduling,
 CRM, reminders, messaging, broadcasts, and lightweight finance for solo masters.
 
-The repository is in approved early MVP implementation. Foundation and
-Tenant/Admin are in place, and Bot Runtime work has started. See `AGENTS.md` and
-`docs/spec/IMPLEMENTATION_PLAN.md` before changing code.
+The repository is in approved early MVP implementation. Foundation,
+Tenant/Admin, Bot Runtime, and Identity/Catalog foundations are in place. See
+`AGENTS.md` and `docs/spec/IMPLEMENTATION_PLAN.md` before changing code.
 
 ## Local checks
 

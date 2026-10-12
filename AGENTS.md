@@ -4,8 +4,9 @@ Status: approved project rules after `PROJECT_RULES_APPROVED` on 2026-10-11.
 Foundation milestone implementation started on 2026-10-12 after explicit user
 approval. Tenant And Admin milestone implementation started on 2026-10-12
 after explicit user approval. Bot Runtime milestone implementation started on
-2026-10-12 after explicit user approval. Application code is allowed only
-within the currently approved milestone scope.
+2026-10-12 after explicit user approval. Identity And Catalog milestone
+implementation started on 2026-10-12 after explicit user approval. Application
+code is allowed only within the currently approved milestone scope.
 
 ## System summary
 
@@ -39,8 +40,8 @@ Read these before implementation work:
   `docs/discovery/OPEN_QUESTIONS.md`
 
 `docs/spec/IMPLEMENTATION_PLAN.md` is approved as an implementation plan, but
-application code remains gated by the next explicit approval. Do not treat draft
-or advisory text as stronger than approved decisions.
+future milestone implementation remains gated by explicit approval. Do not
+treat draft or advisory text as stronger than approved decisions.
 
 ## Mandatory workflow
 

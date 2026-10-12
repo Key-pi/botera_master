@@ -220,6 +220,8 @@ Exit criteria:
 
 ## Identity And Catalog Milestone
 
+Status: implemented on 2026-10-12.
+
 Goal:
 - Establish client identity/profile separation and partner-defined service catalog.
 

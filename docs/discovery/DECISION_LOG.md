@@ -17,6 +17,8 @@ Status: discovery approved on 2026-08-07.
 - 2026-10-12: Tenant/Admin foundation includes partner owner membership, superuser-created partner + owner account service, partner-scope selectors/admin filtering, setup-required checks, runtime eligibility guard tests, and a tenant-scoped dashboard placeholder.
 - 2026-10-12: Bot Runtime milestone implementation started after explicit user approval.
 - 2026-10-12: Bot Runtime foundation includes BotInstance, encrypted token storage, token fingerprint duplicate safety, masked token display, status guards, explicit Telegram connection check, runtime config loading, simple polling command skeleton, partner context middleware shell, and focused runtime tests.
+- 2026-10-12: Identity And Catalog milestone implementation started after explicit user approval.
+- 2026-10-12: Identity/Catalog foundation includes shared TelegramIdentity, partner-scoped ClientProfile with communication flags, manual client creation and explicit Telegram linking support, partner-defined service categories/services, catalog setup-step completion, admin CRUD, bot pagination primitives, and focused identity/catalog tests.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.
