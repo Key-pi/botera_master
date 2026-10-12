@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from django.core.exceptions import PermissionDenied, ValidationError
+from asgiref.sync import async_to_sync
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.services import ensure_partner_access
 from apps.bot.models import BotInstance
+from apps.bot.telegram import fetch_bot_identity
 from apps.bot.token_validation import validate_bot_token_format
 from apps.partners.models import Partner
 from core.security.crypto import decrypt_text, encrypt_text
@@ -96,4 +98,46 @@ def mark_bot_error(
             "updated_at",
         ]
     )
+    return bot_instance
+
+
+def check_bot_connection(bot_instance: BotInstance, *, actor: User | None = None) -> BotInstance:
+    """Run an explicit Telegram getMe check and persist safe health fields."""
+
+    if actor is not None:
+        ensure_partner_access(actor, bot_instance.partner)
+
+    try:
+        token = decrypt_bot_token(bot_instance)
+        identity = async_to_sync(fetch_bot_identity)(token)
+    except (ImproperlyConfigured, ValidationError) as exc:
+        return mark_bot_error(
+            bot_instance,
+            code="bot_config_invalid",
+            message=str(exc),
+        )
+    except Exception as exc:
+        return mark_bot_error(
+            bot_instance,
+            code="telegram_connection_failed",
+            message=str(exc),
+        )
+
+    update_fields = [
+        "telegram_bot_id",
+        "telegram_username",
+        "last_error_code",
+        "last_error_message_masked",
+        "last_checked_at",
+        "updated_at",
+    ]
+    bot_instance.telegram_bot_id = identity.telegram_bot_id
+    bot_instance.telegram_username = identity.username
+    bot_instance.last_error_code = ""
+    bot_instance.last_error_message_masked = ""
+    bot_instance.last_checked_at = timezone.now()
+    if bot_instance.status == BotInstance.Status.ERROR:
+        bot_instance.status = BotInstance.Status.PAUSED
+        update_fields.append("status")
+    bot_instance.save(update_fields=update_fields)
     return bot_instance

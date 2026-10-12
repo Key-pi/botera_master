@@ -20,4 +20,5 @@ ruff check .
 
 ```bash
 python manage.py run_partner_bots --dry-run
+python manage.py check_bot_connection --partner-id <partner-uuid>
 ```

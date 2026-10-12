@@ -6,11 +6,13 @@ from apps.accounts.models import User
 from apps.bot.models import BotInstance
 from apps.bot.runtime import load_runtime_bot_configs
 from apps.bot.services import (
+    check_bot_connection,
     decrypt_bot_token,
     mark_bot_error,
     set_bot_status,
     set_bot_token,
 )
+from apps.bot.telegram import TelegramBotIdentity
 from apps.partners.models import Partner
 from apps.partners.services import create_partner_with_owner
 from apps.partners.setup import SetupStep, get_partner_setup_status
@@ -224,5 +226,59 @@ def test_mark_bot_error_masks_token_like_text(partner_with_owner):
     bot_instance.refresh_from_db()
 
     assert bot_instance.status == BotInstance.Status.ERROR
+    assert VALID_TOKEN not in bot_instance.last_error_message_masked
+    assert "123456789:***fghi" in bot_instance.last_error_message_masked
+
+
+@pytest.mark.django_db
+def test_check_bot_connection_updates_identity(monkeypatch, partner_with_owner):
+    created = partner_with_owner
+    bot_instance = set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    bot_instance.status = BotInstance.Status.ERROR
+    bot_instance.last_error_code = "old_error"
+    bot_instance.save(update_fields=["status", "last_error_code"])
+
+    async def fake_fetch_bot_identity(raw_token: str) -> TelegramBotIdentity:
+        assert raw_token == VALID_TOKEN
+        return TelegramBotIdentity(
+            telegram_bot_id=8829120637,
+            username="Nails_1test1_bot",
+            first_name="NailsTest",
+        )
+
+    monkeypatch.setattr("apps.bot.services.fetch_bot_identity", fake_fetch_bot_identity)
+
+    check_bot_connection(bot_instance)
+    bot_instance.refresh_from_db()
+
+    assert bot_instance.status == BotInstance.Status.PAUSED
+    assert bot_instance.telegram_bot_id == 8829120637
+    assert bot_instance.telegram_username == "Nails_1test1_bot"
+    assert bot_instance.last_error_code == ""
+
+
+@pytest.mark.django_db
+def test_check_bot_connection_masks_failure_message(monkeypatch, partner_with_owner):
+    created = partner_with_owner
+    bot_instance = set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+
+    async def fake_fetch_bot_identity(raw_token: str) -> TelegramBotIdentity:
+        raise RuntimeError(f"failed token {VALID_TOKEN}")
+
+    monkeypatch.setattr("apps.bot.services.fetch_bot_identity", fake_fetch_bot_identity)
+
+    check_bot_connection(bot_instance)
+    bot_instance.refresh_from_db()
+
+    assert bot_instance.status == BotInstance.Status.ERROR
+    assert bot_instance.last_error_code == "telegram_connection_failed"
     assert VALID_TOKEN not in bot_instance.last_error_message_masked
     assert "123456789:***fghi" in bot_instance.last_error_message_masked
