@@ -246,6 +246,8 @@ Exit criteria:
 
 ## Schedule Milestone
 
+Status: implemented on 2026-10-12.
+
 Goal:
 - Build the time availability engine before appointments rely on it.
 

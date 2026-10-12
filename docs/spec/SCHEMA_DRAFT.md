@@ -128,6 +128,7 @@ Key fields:
 - `late_arrival_penalty_amount`: default 2000 UAH
 
 Notes:
+- schedule-specific settings are implemented in `PartnerScheduleSettings` under the `schedule` module. A future Bot settings admin UI may expose these fields, but the schedule domain owns their persistence and validation.
 - client reminder offsets should be separate rules, with default 24h and 2h before appointment.
 - max 5 client reminder rules per partner.
 - invalid saved settings use safe defaults plus warnings when possible.
@@ -254,6 +255,21 @@ Rules:
 - partner manually sorts services.
 
 ## Schedule
+
+### PartnerScheduleSettings
+
+Partner-owned schedule behavior settings.
+
+Implemented fields:
+- `partner`
+- `confirmation_mode`: blank/setup-required, auto, manual
+- `slot_step_minutes`: allowed 5, 10, 15, 20, 30, 60; default 15
+- `booking_horizon_days`: min 1, max 365; default 30
+- `near_fit_tolerance_minutes`: min 0, max 30; default 10
+
+Rules:
+- `confirmation_mode` completes the booking confirmation setup step only when set to auto or manual.
+- schedule settings may be shown in a Bot settings UI later, but persistence and validation belong to the schedule module.
 
 ### AvailabilityWindow
 

@@ -60,6 +60,9 @@ def create_partner_with_owner(
             partner=partner,
             role=PartnerMembership.Role.OWNER,
         )
+        from apps.schedule.services import initialize_partner_schedule
+
+        initialize_partner_schedule(partner=partner)
 
     return CreatedPartnerOwner(partner=partner, owner=owner, membership=membership)
 
