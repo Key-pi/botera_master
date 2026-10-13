@@ -19,6 +19,7 @@ from apps.schedule.models import (
     MAX_AVAILABILITY_WINDOW_LENGTH,
     MAX_BLOCKED_TIME_LENGTH,
     MAX_BOOKING_HORIZON_DAYS,
+    MAX_CANCELLATION_DEADLINE_HOURS,
     MAX_NEAR_FIT_TOLERANCE_MINUTES,
     AvailabilityTemplate,
     AvailabilityTemplateWindow,
@@ -85,6 +86,7 @@ def update_schedule_settings(
     slot_step_minutes: int | None = None,
     booking_horizon_days: int | None = None,
     near_fit_tolerance_minutes: int | None = None,
+    cancellation_deadline_hours: int | None = None,
 ) -> PartnerScheduleSettings:
     """Update partner-owned schedule settings through explicit validation."""
 
@@ -103,6 +105,9 @@ def update_schedule_settings(
     if near_fit_tolerance_minutes is not None:
         _validate_near_fit_tolerance(near_fit_tolerance_minutes)
         schedule_settings.near_fit_tolerance_minutes = near_fit_tolerance_minutes
+    if cancellation_deadline_hours is not None:
+        _validate_cancellation_deadline(cancellation_deadline_hours)
+        schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
     schedule_settings.save()
     return schedule_settings
 
@@ -397,6 +402,13 @@ def _validate_near_fit_tolerance(value: int) -> None:
     if value < 0 or value > MAX_NEAR_FIT_TOLERANCE_MINUTES:
         raise ValidationError(
             {"near_fit_tolerance_minutes": "Near-fit tolerance is out of bounds."}
+        )
+
+
+def _validate_cancellation_deadline(value: int) -> None:
+    if value < 0 or value > MAX_CANCELLATION_DEADLINE_HOURS:
+        raise ValidationError(
+            {"cancellation_deadline_hours": "Cancellation deadline is out of bounds."}
         )
 
 

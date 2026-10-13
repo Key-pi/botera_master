@@ -13,8 +13,10 @@ ALLOWED_SLOT_STEPS = (5, 10, 15, 20, 30, 60)
 DEFAULT_SLOT_STEP_MINUTES = 15
 DEFAULT_BOOKING_HORIZON_DAYS = 30
 DEFAULT_NEAR_FIT_TOLERANCE_MINUTES = 10
+DEFAULT_CANCELLATION_DEADLINE_HOURS = 6
 MAX_BOOKING_HORIZON_DAYS = 365
 MAX_NEAR_FIT_TOLERANCE_MINUTES = 30
+MAX_CANCELLATION_DEADLINE_HOURS = 168
 MAX_AVAILABILITY_WINDOW_LENGTH = timedelta(hours=24)
 MAX_BLOCKED_TIME_LENGTH = timedelta(days=31)
 MAX_ADVISORY_LOCK_KEY = 2_147_483_647
@@ -94,6 +96,9 @@ class PartnerScheduleSettings(PartnerBoundModel):
     near_fit_tolerance_minutes = models.PositiveIntegerField(
         default=DEFAULT_NEAR_FIT_TOLERANCE_MINUTES,
     )
+    cancellation_deadline_hours = models.PositiveIntegerField(
+        default=DEFAULT_CANCELLATION_DEADLINE_HOURS,
+    )
 
     class Meta:
         indexes = [
@@ -113,6 +118,11 @@ class PartnerScheduleSettings(PartnerBoundModel):
                 condition=models.Q(near_fit_tolerance_minutes__gte=0)
                 & models.Q(near_fit_tolerance_minutes__lte=MAX_NEAR_FIT_TOLERANCE_MINUTES),
                 name="schedule_settings_near_fit_bounds",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cancellation_deadline_hours__gte=0)
+                & models.Q(cancellation_deadline_hours__lte=MAX_CANCELLATION_DEADLINE_HOURS),
+                name="schedule_settings_cancel_deadline_bounds",
             ),
         ]
 

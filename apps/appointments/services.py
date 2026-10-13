@@ -241,6 +241,7 @@ def transition_appointment_status(
                 "updated_at",
             ]
         )
+        _release_active_penalties_if_cancelled(appointment)
         _on_commit_stale_appointment_notifications(appointment.id)
     return appointment
 
@@ -277,6 +278,7 @@ def cancel_requested_appointment_by_client(
                 "updated_at",
             ]
         )
+        _release_active_penalties_if_cancelled(appointment)
         _on_commit_stale_appointment_notifications(appointment.id)
     return appointment
 
@@ -333,6 +335,7 @@ def correct_final_appointment_status(
         if new_status == Appointment.Status.CONFIRMED:
             _on_commit_refresh_confirmed_notifications(appointment.id)
         else:
+            _release_active_penalties_if_cancelled(appointment)
             _on_commit_stale_appointment_notifications(appointment.id)
     return appointment
 
@@ -611,6 +614,18 @@ def _apply_status_timestamp(
         appointment.completed_at = changed_at
     elif status == Appointment.Status.NO_SHOW:
         appointment.no_show_at = changed_at
+
+
+def _release_active_penalties_if_cancelled(appointment: Appointment) -> None:
+    if appointment.status not in {
+        Appointment.Status.CANCELLED_BY_CLIENT,
+        Appointment.Status.CANCELLED_BY_MASTER,
+    }:
+        return
+
+    from apps.finance.services import release_active_penalty_applications_for_appointment
+
+    release_active_penalty_applications_for_appointment(appointment=appointment)
 
 
 def _confirmation_mode_snapshot(partner: Partner) -> str:

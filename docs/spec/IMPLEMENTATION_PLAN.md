@@ -386,6 +386,8 @@ Exit criteria:
 
 ## Penalties And Finance Milestone
 
+Status: implemented on 2026-10-13.
+
 Goal:
 - Add penalties, no-show/late-arrival, basic reports, and expenses.
 
