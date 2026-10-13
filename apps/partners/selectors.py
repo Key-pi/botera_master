@@ -34,6 +34,12 @@ def setup_required_partners() -> QuerySet[Partner]:
     return Partner.objects.filter(status=Partner.Status.SETUP_REQUIRED)
 
 
+def active_partners() -> QuerySet[Partner]:
+    """Partners whose runtime-facing background jobs may be scheduled."""
+
+    return Partner.objects.filter(status=Partner.Status.ACTIVE)
+
+
 def partners_with_missing_setup() -> list[tuple[Partner, tuple[str, ...]]]:
     """Small superuser helper for setup/problem views."""
 

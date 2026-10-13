@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import time, timedelta
 
 import pytest
 from cryptography.fernet import Fernet
@@ -22,7 +22,14 @@ from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.messaging.models import ConversationMessage
+from apps.messaging.services import create_client_message_to_master, create_master_reply_to_client
+from apps.messaging.tasks import dispatch_queued_conversation_messages_task
+from apps.notifications.models import PartnerNotificationSettings, ScheduledNotification
+from apps.notifications.tasks import schedule_morning_digests_task
+from apps.partners.models import Partner
 from apps.partners.services import create_partner_with_owner
+from core.timezones import get_zone
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
 
@@ -242,3 +249,159 @@ def test_broadcast_task_dispatches_through_telegram_adapter(
     assert sent_payloads[0]["chat_id"] == 555005
     assert sent_payloads[0]["text"] == "Hello clients"
     assert sent_payloads[0]["reply_markup"].inline_keyboard[0][0].callback_data == "broadcast:book"
+
+
+@pytest.mark.django_db
+def test_morning_digest_task_schedules_one_digest_per_active_partner_local_day(
+    partner_with_bot_username,
+):
+    created = partner_with_bot_username
+    created.partner.status = Partner.Status.ACTIVE
+    created.partner.save(update_fields=["status", "updated_at"])
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        morning_digest_time_local=time(9, 30),
+    )
+    superuser = User.objects.create_superuser(username="digest-root", password="secret")
+    inactive = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Inactive Digest Partner",
+        owner_username="inactive-digest-owner",
+        owner_password="secret",
+    )
+
+    first_count = schedule_morning_digests_task()
+    second_count = schedule_morning_digests_task()
+
+    notification = ScheduledNotification.objects.get(
+        partner=created.partner,
+        type=ScheduledNotification.Type.MASTER_MORNING_DIGEST,
+    )
+    partner_zone = get_zone(created.partner.timezone)
+    assert first_count == 1
+    assert second_count == 1
+    assert notification.due_at.astimezone(partner_zone).time() == time(9, 30)
+    assert (
+        ScheduledNotification.objects.filter(
+            partner=inactive.partner,
+            type=ScheduledNotification.Type.MASTER_MORNING_DIGEST,
+        ).count()
+        == 0
+    )
+    assert (
+        ScheduledNotification.objects.filter(
+            partner=created.partner,
+            type=ScheduledNotification.Type.MASTER_MORNING_DIGEST,
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_conversation_task_delivers_client_message_to_primary_master_contact(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+):
+    created = partner_with_bot_username
+    bot_instance = set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    bot_instance.telegram_username = "PilotMasterBot"
+    bot_instance.save(update_fields=["telegram_username"])
+    master_identity = upsert_telegram_identity(
+        telegram_user_id=555101,
+        username="master",
+    )
+    contact = PartnerTelegramContact.objects.create(
+        partner=created.partner,
+        telegram_identity=master_identity,
+        user=created.owner,
+        is_primary=True,
+        last_delivery_failure_code="bot_blocked",
+        last_delivery_failure_at=timezone.now(),
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555102,
+        username="client",
+    )
+    client = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    create_client_message_to_master(
+        partner=created.partner,
+        client_profile=client,
+        text="Need help with my booking",
+    )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    processed = dispatch_queued_conversation_messages_task()
+
+    message = ConversationMessage.objects.get(partner=created.partner)
+    contact.refresh_from_db()
+    assert processed == 1
+    assert message.delivery_status == ConversationMessage.DeliveryStatus.SENT
+    assert contact.last_delivery_failure_code == ""
+    assert contact.last_delivery_failure_at is None
+    assert sent_payloads == [
+        {
+            "token": VALID_TOKEN,
+            "chat_id": 555101,
+            "text": "Повідомлення від client : Need help with my booking",
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_conversation_task_delivers_master_reply_to_linked_client(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+):
+    created = partner_with_bot_username
+    bot_instance = set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    bot_instance.telegram_username = "PilotMasterBot"
+    bot_instance.save(update_fields=["telegram_username"])
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555103,
+        username="client",
+    )
+    client = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    create_master_reply_to_client(
+        actor=created.owner,
+        client_profile=client,
+        text="Sure, I will check it.",
+    )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    processed = dispatch_queued_conversation_messages_task()
+
+    message = ConversationMessage.objects.get(partner=created.partner)
+    assert processed == 1
+    assert message.delivery_status == ConversationMessage.DeliveryStatus.SENT
+    assert sent_payloads == [
+        {
+            "token": VALID_TOKEN,
+            "chat_id": 555103,
+            "text": "Pilot Partner відповідає: Sure, I will check it.",
+        }
+    ]

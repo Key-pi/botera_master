@@ -101,7 +101,17 @@ def deliver_conversation_message(message: ConversationMessage) -> DeliveryResult
     payload = _payload_for_conversation_message(message)
     if payload is None:
         return DeliveryResult(success=False, skipped=True)
-    return _send_payload(payload)
+    result = _send_payload(payload)
+    if message.direction == ConversationMessage.Direction.CLIENT_TO_MASTER:
+        contact = primary_master_telegram_contact(message.partner)
+        if contact is not None and result.success:
+            mark_master_contact_reachable(contact=contact)
+        if contact is not None and result.terminal:
+            mark_master_contact_delivery_failure(
+                contact=contact,
+                failure_code=result.failure_code or "terminal_delivery_failure",
+            )
+    return result
 
 
 def _payload_for_notification(notification: ScheduledNotification) -> TelegramPayload | None:

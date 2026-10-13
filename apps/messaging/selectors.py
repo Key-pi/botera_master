@@ -28,4 +28,8 @@ def queued_conversation_messages() -> QuerySet[ConversationMessage]:
 
     return ConversationMessage.objects.filter(
         delivery_status=ConversationMessage.DeliveryStatus.QUEUED,
-    ).select_related("partner", "client_profile", "client_profile__telegram_identity")
+    ).select_related(
+        "partner",
+        "client_profile",
+        "client_profile__telegram_identity",
+    ).order_by("created_at")
