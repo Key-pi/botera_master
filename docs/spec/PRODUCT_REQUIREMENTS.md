@@ -473,7 +473,7 @@ The partner can require a minimal configurable set of fields for booking. If dat
 - Client can initiate a message to master from the client personal area.
 - MVP messages are scoped to `partner + client`.
 - MVP messages do not need to be tied to a specific appointment.
-- Master receives client messages through the partner bot/admin Telegram context.
+- Master receives client messages through a partner-scoped linked master Telegram contact.
 - Master replies through the bot, and the client receives the answer from the partner/master bot.
 - Partner/master can see conversations with own clients.
 - Superuser may access conversations for support and incident investigation.
@@ -482,6 +482,14 @@ The partner can require a minimal configurable set of fields for booking. If dat
 - Marketing unsubscribe is separate from service/manual messages.
 
 Exact moderation/abuse handling and detailed privacy/support policies remain design questions.
+
+### Master Telegram Contact
+
+- Bot token validation identifies the bot only; it does not identify the master's personal Telegram account.
+- Master-facing Telegram delivery requires an explicit partner-scoped master contact binding.
+- Binding is created through a signed admin/deep link opened in the partner's own bot.
+- A normal client `/start` must never grant master-contact privileges.
+- MVP can expose one primary master contact, with room to add extra notification recipients later.
 
 ### Multilingual Content
 

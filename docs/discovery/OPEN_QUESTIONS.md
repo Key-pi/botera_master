@@ -25,6 +25,7 @@ These are important for quality, but they should not block the high-level final 
 
 ## Resolved During Later Consistency Passes
 
+- Master-facing Telegram delivery uses an explicit partner-scoped owner/master Telegram contact binding created through a signed deep link in the partner's own bot. The bot token is not treated as proof of owner identity. MVP can start with one primary contact while keeping the model expandable.
 - Exact min/max values for slot step, booking horizon, reminders, quiet hours, cancellation deadline, near-fit tolerance, stale requested reminders, and morning digest are approved and belong in settings validation.
 - Multilingual content registry is approved at key group/editable-vs-system-only/placeholder-validation level. Exact localized default wording remains an implementation/copy task.
 - `ClientProfile` communication flags stay on the partner-scoped client profile in MVP; no separate communication-state model is required.

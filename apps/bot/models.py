@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 from core.database.models import PartnerBoundModel, TimeStampedModel
 
@@ -66,6 +68,83 @@ class BotInstance(TimeStampedModel):
     @property
     def has_token(self) -> bool:
         return bool(self.encrypted_token and self.token_fingerprint)
+
+
+class PartnerTelegramContact(PartnerBoundModel):
+    """Partner-scoped Telegram recipient for master-facing delivery."""
+
+    class Role(models.TextChoices):
+        OWNER_MASTER = "owner_master", "Owner/master"
+        ADMIN_RECIPIENT = "admin_recipient", "Admin recipient"
+
+    telegram_identity = models.ForeignKey(
+        "clients.TelegramIdentity",
+        on_delete=models.CASCADE,
+        related_name="partner_master_contacts",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="partner_telegram_contacts",
+        null=True,
+        blank=True,
+    )
+    role = models.CharField(max_length=32, choices=Role.choices, default=Role.OWNER_MASTER)
+    is_primary = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    linked_at = models.DateTimeField(default=timezone.now)
+    last_delivery_failure_code = models.CharField(max_length=128, blank=True)
+    last_delivery_failure_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["partner__name", "-is_primary", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["partner", "telegram_identity"],
+                name="bot_unique_partner_master_telegram_identity",
+            ),
+            models.UniqueConstraint(
+                fields=["partner"],
+                condition=models.Q(is_primary=True, is_active=True),
+                name="bot_unique_active_primary_master_contact",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["partner", "is_active", "is_primary"]),
+            models.Index(fields=["telegram_identity", "is_active"]),
+            models.Index(fields=["user", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        marker = "primary" if self.is_primary else "secondary"
+        return f"{self.partner} master contact {self.telegram_identity} ({marker})"
+
+
+class PartnerTelegramContactLink(PartnerBoundModel):
+    """Short-lived signed deep-link nonce for binding a master Telegram contact."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="partner_telegram_contact_links",
+    )
+    nonce_fingerprint = models.CharField(max_length=64, unique=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["partner", "user", "expires_at"]),
+            models.Index(fields=["partner", "consumed_at", "expires_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.partner} Telegram contact link for {self.user}"
+
+    @property
+    def is_consumed(self) -> bool:
+        return self.consumed_at is not None
 
 
 class BotTemplateContentType(models.TextChoices):

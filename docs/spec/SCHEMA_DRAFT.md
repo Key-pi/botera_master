@@ -133,6 +133,28 @@ Notes:
 - max 5 client reminder rules per partner.
 - invalid saved settings use safe defaults plus warnings when possible.
 
+### PartnerTelegramContact
+
+Partner-scoped Telegram recipient for master-facing delivery.
+
+Key fields:
+- `partner`
+- `telegram_identity`
+- `user`: optional linked admin account
+- `role`: owner/master/admin recipient, initially owner/master
+- `is_primary`
+- `is_active`
+- `linked_at`
+- `last_delivery_failure_code`
+- `last_delivery_failure_at`
+
+Rules:
+- bot token validation identifies the bot only, not the master's personal Telegram account.
+- contact binding is created through a signed deep link opened in the partner's own bot.
+- a normal client `/start` or arbitrary callback payload must not create or grant a master contact binding.
+- MVP UI may expose one primary owner/master contact, but the schema should not prevent extra recipients later.
+- master-facing notifications, stale requested reminders, morning digest, failed-delivery notices, and client-master messages target this contact.
+
 ### SystemTemplate
 
 Platform-defined localized bot/admin text template.

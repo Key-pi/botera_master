@@ -2,18 +2,16 @@ from __future__ import annotations
 
 from celery import shared_task
 
+from apps.bot.delivery import deliver_scheduled_notification
+from apps.notifications.services import dispatch_due_notifications
+
 
 @shared_task(name="notifications.dispatch_due_notifications")
 def dispatch_due_notifications_task() -> int:
-    """Celery dispatcher placeholder until the Telegram delivery adapter exists.
+    """Dispatch due notifications through the real Telegram delivery adapter."""
 
-    The durable dispatch state machine is implemented in
-    `apps.notifications.services.dispatch_due_notifications` and is tested with
-    injected delivery backends. This task intentionally avoids pretending to send
-    Telegram messages before the bot content/transport layer is wired.
-    """
-
-    return 0
+    summary = dispatch_due_notifications(deliver=deliver_scheduled_notification)
+    return summary.sent + summary.failed + summary.queued_for_retry + summary.skipped
 
 
 @shared_task(name="notifications.schedule_morning_digests")

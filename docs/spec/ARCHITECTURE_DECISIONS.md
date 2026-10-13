@@ -60,6 +60,10 @@ This document records approved architecture-preparation decisions and deferred t
 - Token/configuration that later fails at runtime should move bot to `error`, show the problem to partner, and make it visible to superuser.
 - Partner can trigger a check/revalidate action from admin after fixing token/configuration.
 - Critical settings require a normal confirmation modal before save; typed confirmation is not required in MVP.
+- A bot token identifies the bot, not the master's personal Telegram account.
+- Master-facing delivery requires an explicit partner-scoped Telegram contact binding created through a signed deep link opened in the partner's own bot.
+- A normal client `/start` or arbitrary callback payload must never grant master/contact delivery privileges.
+- MVP can expose one primary owner/master Telegram contact, while the data model should allow additional notification recipients later.
 
 ### AD-004 Bot Runtime
 

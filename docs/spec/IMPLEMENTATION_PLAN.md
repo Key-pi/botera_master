@@ -467,6 +467,71 @@ Exit criteria:
 - Partner can see business-friendly activity log.
 - Noisy records clean up without touching business history.
 
+## Pilot Wiring Milestone
+
+Status: implementation started on 2026-10-13 after explicit approval with
+`PILOT_WIRING_APPROVED`.
+
+Goal:
+- Turn the implemented domain foundations into a runnable first pilot path
+  without broadening product scope or adding Partnership/Discovery logic.
+
+Why this milestone exists:
+- The durable notification, broadcast, and messaging state machines already
+  exist, but their Celery entrypoints are intentionally inert until a real
+  Telegram transport adapter is wired.
+- Client-facing Telegram delivery can use `ClientProfile.telegram_identity`.
+- Master-facing Telegram delivery still needs an explicit partner-scoped owner
+  Telegram contact/binding; admin `User` accounts are not Telegram chats.
+- The owner/master binding should be created through a signed deep link opened
+  in the partner's own bot; a normal client `/start` never grants master
+  delivery privileges.
+- The polling runner exists, but business routers still need to be attached in
+  a controlled, thin-adapter layer.
+
+Deliverables:
+- Partner-scoped owner/master Telegram contact binding for master-facing bot
+  notifications, stale-request reminders, morning digests, and client-master
+  messages. MVP starts with one primary contact, with the model kept expandable
+  for extra recipients later.
+- Signed admin-link flow that binds a Telegram identity/chat to the partner
+  owner/master contact without trusting manually submitted chat ids.
+- Telegram delivery adapter that sends through the partner bot token and maps
+  Telegram errors into business-friendly failure codes without persisting raw
+  payloads.
+- Non-inert Celery tasks for due notifications and queued broadcasts, using the
+  already implemented durable service state machines.
+- A queued conversation-message dispatch path for master replies and
+  client-to-master messages once master Telegram binding exists.
+- Initial bot router wiring for `/start`, language/profile basics, and the
+  already implemented booking service primitives.
+- Smoke/test commands or tests for a real test bot token without saving raw
+  tokens in code, docs, or logs.
+- Runbook updates for starting runner/workers and checking end-to-end pilot
+  delivery.
+
+High-value tests:
+- Telegram adapter maps success, terminal blocked/deactivated errors, and
+  rate-limit retry hints into existing delivery result objects.
+- Notification task dispatches due records through the adapter and remains
+  idempotent.
+- Broadcast task resumes queued recipients without duplicate sends and respects
+  per-bot pacing.
+- Master-facing delivery skips or fails safely when a partner has no Telegram
+  owner contact bound.
+- Bot routers preserve partner context and never derive tenant scope from
+  untrusted callback payloads alone.
+
+Exit criteria:
+- A configured test partner can run through a minimal Telegram pilot: bot
+  starts, client identity/profile is resolved, services and slots can be
+  selected, an appointment can be requested/confirmed, and at least client
+  delivery records are sent or fail durably.
+- Master-facing notifications have a clear working path or an explicit
+  partner-visible setup warning when owner Telegram binding is missing.
+- Existing business services stay thin and no Telegram/network I/O runs inside
+  source transactions.
+
 ## First Pilot Cut
 
 If implementation gets too large, the smallest useful pilot should keep:

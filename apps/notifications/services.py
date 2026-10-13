@@ -49,6 +49,7 @@ class DeliveryResult:
     failure_message: str = ""
     terminal: bool = False
     skipped: bool = False
+    retry_after_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -162,6 +162,24 @@ Do not treat bot blocking as a global Telegram identity field. Blocking is scope
 
 The TableOS shared Telegram account plus partner-specific guest profile pattern is a relevant reference, but BoteraMaster should keep partner-bot reachability/blocking scoped to the specific partner bot.
 
+### Master Telegram Contact
+
+Partner-scoped Telegram contact used for master-facing delivery.
+
+Purpose:
+
+- Give the system a real Telegram chat to send master reminders, stale requested reminders, morning digests, client messages, and failed-delivery notices.
+- Keep the partner/admin web account separate from Telegram chat identity.
+- Avoid treating the bot token as proof of who owns the bot.
+
+MVP rules:
+
+- The master contact is linked through a signed deep link opened in the partner's own bot.
+- A normal client `/start` does not create a master contact binding.
+- A manually submitted Telegram user id or chat id is not trusted by itself.
+- MVP can start with one primary owner/master contact per partner.
+- The model should allow additional active recipients later for salons, assistants, or alternate Telegram accounts.
+
 ### Client Profile
 
 Partner-scoped representation of a person as a client of one specific partner/master.
@@ -886,7 +904,7 @@ MVP rules:
 - Conversation is scoped to `partner + client`.
 - Conversation is not tied to a specific appointment in MVP.
 - Client initiates contact from the client personal area.
-- Master receives the message through the partner bot/admin Telegram context.
+- Master receives the message through the partner's linked master Telegram contact.
 - Master replies through the bot.
 - Client receives the reply from the partner/master bot.
 - If delivery to the client fails because the client blocked the bot, show "message not delivered" to the master and mark the client unavailable for this partner bot.

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from celery import shared_task
 
+from apps.bot.delivery import deliver_broadcast_recipient
+from apps.broadcasts.services import dispatch_due_broadcast_recipients
+
 
 @shared_task(name="broadcasts.dispatch_due_recipients", queue="broadcasts")
 def dispatch_due_recipients_task() -> int:
-    """Broadcast worker placeholder until the Telegram send adapter is wired.
+    """Dispatch queued broadcast recipients through the real Telegram delivery adapter."""
 
-    The durable broadcast state machine is implemented and tested in
-    `apps.broadcasts.services`. This task stays intentionally inert until the
-    bot transport/content adapter can be connected without faking delivery.
-    """
-
-    return 0
+    summary = dispatch_due_broadcast_recipients(deliver=deliver_broadcast_recipient)
+    return summary.sent + summary.failed + summary.queued_for_retry + summary.skipped

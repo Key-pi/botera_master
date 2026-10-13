@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from string import Formatter
 
 from asgiref.sync import async_to_sync
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare, salted_hmac
 
 from apps.accounts.models import User
 from apps.accounts.services import ensure_partner_access
@@ -16,15 +19,22 @@ from apps.bot.models import (
     SUPPORTED_TEMPLATE_LANGUAGES,
     BotInstance,
     BotTemplateContentType,
+    PartnerTelegramContact,
+    PartnerTelegramContactLink,
     PartnerTemplateOverride,
     SystemTemplate,
 )
 from apps.bot.telegram import fetch_bot_identity
 from apps.bot.token_validation import validate_bot_token_format
+from apps.clients.models import TelegramIdentity
 from apps.partners.models import Partner
 from core.security.crypto import decrypt_text, encrypt_text
 from core.security.fingerprints import token_fingerprint
 from core.security.masking import mask_sensitive_text, mask_token
+
+MASTER_CONTACT_LINK_PREFIX = "admin"
+MASTER_CONTACT_LINK_TTL = timedelta(hours=24)
+MASTER_CONTACT_SIGNATURE_LENGTH = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +45,15 @@ class RenderedTemplate:
     language: str
     body: str
     source: str
+
+
+@dataclass(frozen=True, slots=True)
+class MasterContactLink:
+    """Signed Telegram deep link for binding the partner owner/master contact."""
+
+    url: str
+    start_payload: str
+    expires_at: datetime
 
 
 def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstance:
@@ -70,6 +89,152 @@ def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstan
         bot_instance.save()
 
     return bot_instance
+
+
+def create_master_contact_link(
+    *,
+    actor: User,
+    partner: Partner,
+    now=None,
+) -> MasterContactLink:
+    """Create a short-lived signed deep link for binding master Telegram delivery.
+
+    Telegram start payloads are intentionally short. We therefore keep only a
+    signed nonce in the bot link and store the nonce fingerprint server-side.
+    """
+
+    ensure_partner_access(actor, partner)
+    bot_instance = BotInstance.objects.filter(partner=partner).first()
+    if bot_instance is None or not bot_instance.telegram_username:
+        raise ValidationError(
+            {"bot": "Bot connection must be checked before creating a Telegram contact link."}
+        )
+
+    current_time = now or timezone.now()
+    nonce = secrets.token_urlsafe(16)
+    signature = _master_contact_nonce_signature(nonce)
+    start_payload = f"{MASTER_CONTACT_LINK_PREFIX}_{nonce}_{signature}"
+    expires_at = current_time + MASTER_CONTACT_LINK_TTL
+    PartnerTelegramContactLink.objects.create(
+        partner=partner,
+        user=actor,
+        nonce_fingerprint=_master_contact_nonce_fingerprint(nonce),
+        expires_at=expires_at,
+    )
+    username = bot_instance.telegram_username.lstrip("@")
+    return MasterContactLink(
+        url=f"https://t.me/{username}?start={start_payload}",
+        start_payload=start_payload,
+        expires_at=expires_at,
+    )
+
+
+def bind_master_contact_from_start_payload(
+    *,
+    partner: Partner,
+    start_payload: str,
+    telegram_identity: TelegramIdentity,
+    now=None,
+) -> PartnerTelegramContact:
+    """Bind a Telegram identity as a partner master contact from a signed payload."""
+
+    current_time = now or timezone.now()
+    nonce = _nonce_from_master_contact_payload(start_payload)
+    with transaction.atomic():
+        try:
+            link = (
+                PartnerTelegramContactLink.objects.select_for_update()
+                .select_related("partner", "user")
+                .get(
+                    partner=partner,
+                    nonce_fingerprint=_master_contact_nonce_fingerprint(nonce),
+                )
+            )
+        except PartnerTelegramContactLink.DoesNotExist as exc:
+            raise ValidationError(
+                {"start_payload": "Telegram contact link was not found."}
+            ) from exc
+        if link.consumed_at is not None:
+            raise ValidationError({"start_payload": "This Telegram contact link was already used."})
+        if link.expires_at <= current_time:
+            raise ValidationError({"start_payload": "This Telegram contact link has expired."})
+
+        has_active_primary = PartnerTelegramContact.objects.filter(
+            partner=partner,
+            is_active=True,
+            is_primary=True,
+        ).exists()
+        contact, created = PartnerTelegramContact.objects.select_for_update().get_or_create(
+            partner=partner,
+            telegram_identity=telegram_identity,
+            defaults={
+                "user": link.user,
+                "role": PartnerTelegramContact.Role.OWNER_MASTER,
+                "is_primary": not has_active_primary,
+                "is_active": True,
+                "linked_at": current_time,
+            },
+        )
+        update_fields: list[str] = []
+        if not created:
+            if contact.user_id != link.user_id:
+                contact.user = link.user
+                update_fields.append("user")
+            if not contact.is_active:
+                contact.is_active = True
+                update_fields.append("is_active")
+            if not has_active_primary:
+                contact.is_primary = True
+                update_fields.append("is_primary")
+            contact.linked_at = current_time
+            update_fields.append("linked_at")
+            if contact.last_delivery_failure_code or contact.last_delivery_failure_at:
+                contact.last_delivery_failure_code = ""
+                contact.last_delivery_failure_at = None
+                update_fields.extend(
+                    ["last_delivery_failure_code", "last_delivery_failure_at"]
+                )
+            if update_fields:
+                update_fields.append("updated_at")
+                contact.save(update_fields=update_fields)
+
+        link.consumed_at = current_time
+        link.save(update_fields=["consumed_at", "updated_at"])
+        return contact
+
+
+def mark_master_contact_delivery_failure(
+    *,
+    contact: PartnerTelegramContact,
+    failure_code: str,
+) -> PartnerTelegramContact:
+    """Persist the last terminal delivery problem for a master contact."""
+
+    contact.last_delivery_failure_code = failure_code[:128]
+    contact.last_delivery_failure_at = timezone.now()
+    contact.save(
+        update_fields=[
+            "last_delivery_failure_code",
+            "last_delivery_failure_at",
+            "updated_at",
+        ]
+    )
+    return contact
+
+
+def mark_master_contact_reachable(*, contact: PartnerTelegramContact) -> PartnerTelegramContact:
+    """Clear delivery failure markers after successful master-facing contact."""
+
+    contact.last_delivery_failure_code = ""
+    contact.last_delivery_failure_at = None
+    contact.save(
+        update_fields=[
+            "last_delivery_failure_code",
+            "last_delivery_failure_at",
+            "updated_at",
+        ]
+    )
+    return contact
 
 
 def decrypt_bot_token(bot_instance: BotInstance) -> str:
@@ -391,3 +556,33 @@ def _normalize_template_language(language: str, *, allow_default: bool = False) 
             return DEFAULT_TEMPLATE_LANGUAGE
         raise ValidationError({"language": "Unsupported template language."})
     return cleaned_language
+
+
+def _nonce_from_master_contact_payload(start_payload: str) -> str:
+    prefix = f"{MASTER_CONTACT_LINK_PREFIX}_"
+    if not start_payload.startswith(prefix):
+        raise ValidationError({"start_payload": "Unsupported Telegram start payload."})
+    try:
+        nonce, signature = start_payload[len(prefix) :].rsplit("_", 1)
+    except ValueError as exc:
+        raise ValidationError({"start_payload": "Malformed Telegram start payload."}) from exc
+    if not nonce or not signature:
+        raise ValidationError({"start_payload": "Malformed Telegram start payload."})
+    expected = _master_contact_nonce_signature(nonce)
+    if not constant_time_compare(signature, expected):
+        raise ValidationError({"start_payload": "Invalid Telegram contact link signature."})
+    return nonce
+
+
+def _master_contact_nonce_signature(nonce: str) -> str:
+    return salted_hmac(
+        "bot.master_contact_link.signature",
+        nonce,
+    ).hexdigest()[:MASTER_CONTACT_SIGNATURE_LENGTH]
+
+
+def _master_contact_nonce_fingerprint(nonce: str) -> str:
+    return salted_hmac(
+        "bot.master_contact_link.fingerprint",
+        nonce,
+    ).hexdigest()

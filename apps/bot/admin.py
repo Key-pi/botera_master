@@ -1,7 +1,13 @@
 from django.contrib import admin, messages
 
 from apps.accounts.selectors import partner_ids_for_user
-from apps.bot.models import BotInstance, PartnerTemplateOverride, SystemTemplate
+from apps.bot.models import (
+    BotInstance,
+    PartnerTelegramContact,
+    PartnerTelegramContactLink,
+    PartnerTemplateOverride,
+    SystemTemplate,
+)
 from apps.bot.services import check_bot_connection, seed_system_templates
 from core.admin import PartnerScopedAdminMixin
 
@@ -77,6 +83,49 @@ class BotInstanceAdmin(admin.ModelAdmin):
             return
 
         self.message_user(request, f"Checked {checked_count} bot(s).")
+
+
+@admin.register(PartnerTelegramContact)
+class PartnerTelegramContactAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    list_display = [
+        "partner",
+        "telegram_identity",
+        "user",
+        "role",
+        "is_primary",
+        "is_active",
+        "last_delivery_failure_code",
+    ]
+    list_filter = ["role", "is_primary", "is_active", "partner"]
+    search_fields = [
+        "partner__name",
+        "telegram_identity__username",
+        "telegram_identity__telegram_user_id",
+        "user__username",
+    ]
+    autocomplete_fields = ["partner", "telegram_identity", "user"]
+    readonly_fields = [
+        "linked_at",
+        "last_delivery_failure_code",
+        "last_delivery_failure_at",
+        "created_at",
+        "updated_at",
+    ]
+
+
+@admin.register(PartnerTelegramContactLink)
+class PartnerTelegramContactLinkAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    list_display = ["partner", "user", "expires_at", "consumed_at", "created_at"]
+    list_filter = ["partner", "expires_at", "consumed_at"]
+    search_fields = ["partner__name", "user__username"]
+    autocomplete_fields = ["partner", "user"]
+    readonly_fields = [
+        "nonce_fingerprint",
+        "expires_at",
+        "consumed_at",
+        "created_at",
+        "updated_at",
+    ]
 
 
 @admin.register(SystemTemplate)
