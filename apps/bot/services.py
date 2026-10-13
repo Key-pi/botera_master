@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from string import Formatter
+
 from asgiref.sync import async_to_sync
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db import transaction
@@ -7,13 +10,31 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.services import ensure_partner_access
-from apps.bot.models import BotInstance
+from apps.bot.content import SYSTEM_TEMPLATE_DEFINITION_BY_KEY, SYSTEM_TEMPLATE_DEFINITIONS
+from apps.bot.models import (
+    DEFAULT_TEMPLATE_LANGUAGE,
+    SUPPORTED_TEMPLATE_LANGUAGES,
+    BotInstance,
+    BotTemplateContentType,
+    PartnerTemplateOverride,
+    SystemTemplate,
+)
 from apps.bot.telegram import fetch_bot_identity
 from apps.bot.token_validation import validate_bot_token_format
 from apps.partners.models import Partner
 from core.security.crypto import decrypt_text, encrypt_text
 from core.security.fingerprints import token_fingerprint
 from core.security.masking import mask_sensitive_text, mask_token
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedTemplate:
+    """Resolved bot content and metadata useful for previews/debugging."""
+
+    key: str
+    language: str
+    body: str
+    source: str
 
 
 def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstance:
@@ -141,3 +162,232 @@ def check_bot_connection(bot_instance: BotInstance, *, actor: User | None = None
         update_fields.append("status")
     bot_instance.save(update_fields=update_fields)
     return bot_instance
+
+
+def seed_system_templates() -> int:
+    """Synchronize code-owned MVP content defaults into editable DB records."""
+
+    changed = 0
+    for definition in SYSTEM_TEMPLATE_DEFINITIONS:
+        for language, body in definition.translations.items():
+            template, created = SystemTemplate.objects.update_or_create(
+                key=definition.key,
+                language=language,
+                defaults={
+                    "body": body,
+                    "content_type": definition.content_type,
+                    "editable": definition.editable,
+                    "is_required": definition.is_required,
+                    "placeholder_allowlist": list(definition.placeholders),
+                    "sample_context": dict(definition.sample_context),
+                },
+            )
+            changed += int(created or bool(template.updated_at))
+    return changed
+
+
+def set_partner_template_override(
+    *,
+    actor: User,
+    partner: Partner,
+    key: str,
+    language: str,
+    body: str,
+    is_active: bool = True,
+) -> PartnerTemplateOverride:
+    """Create or update a partner localized override after strict validation."""
+
+    ensure_partner_access(actor, partner)
+    cleaned_key = key.strip()
+    cleaned_language = _normalize_template_language(language)
+    system_template = _system_template_for_key_language(
+        key=cleaned_key,
+        language=cleaned_language,
+    )
+    if not system_template.editable:
+        raise ValidationError({"key": "This template is system-only."})
+
+    cleaned_body = body.strip()
+    if cleaned_body:
+        validate_template_body(
+            body=cleaned_body,
+            allowed_placeholders=tuple(system_template.placeholder_allowlist),
+            sample_context=system_template.sample_context,
+            content_type=system_template.content_type,
+        )
+
+    override, _created = PartnerTemplateOverride.objects.update_or_create(
+        partner=partner,
+        key=cleaned_key,
+        language=cleaned_language,
+        defaults={
+            "body": cleaned_body,
+            "is_active": bool(is_active),
+            "last_validated_at": timezone.now(),
+        },
+    )
+    return override
+
+
+def reset_partner_template_override(
+    *,
+    actor: User,
+    partner: Partner,
+    key: str,
+    language: str,
+) -> int:
+    """Remove a partner override so runtime falls back to the system default."""
+
+    ensure_partner_access(actor, partner)
+    return PartnerTemplateOverride.objects.filter(
+        partner=partner,
+        key=key.strip(),
+        language=_normalize_template_language(language),
+    ).delete()[0]
+
+
+def render_content_template(
+    *,
+    partner: Partner | None,
+    key: str,
+    language: str,
+    context: dict | None = None,
+) -> RenderedTemplate:
+    """Render partner-aware localized content with per-language fallback rules."""
+
+    cleaned_key = key.strip()
+    normalized_language = _normalize_template_language(language, allow_default=True)
+    render_context = _SafeTemplateContext(context or {})
+
+    override = None
+    if partner is not None:
+        override = (
+            PartnerTemplateOverride.objects.filter(
+                partner=partner,
+                key=cleaned_key,
+                language=normalized_language,
+                is_active=True,
+            )
+            .exclude(body="")
+            .first()
+        )
+
+    if override is not None:
+        system_template = _system_template_for_key_language(
+            key=cleaned_key,
+            language=normalized_language,
+        )
+        try:
+            validate_template_body(
+                body=override.body,
+                allowed_placeholders=tuple(system_template.placeholder_allowlist),
+                sample_context=system_template.sample_context,
+                content_type=system_template.content_type,
+            )
+            return RenderedTemplate(
+                key=cleaned_key,
+                language=normalized_language,
+                body=_render_template_body(override.body, render_context),
+                source="partner_override",
+            )
+        except ValidationError:
+            # Runtime stays defensive even if invalid legacy data somehow exists.
+            pass
+
+    system_template = _system_template_for_key_language(
+        key=cleaned_key,
+        language=normalized_language,
+    )
+    return RenderedTemplate(
+        key=cleaned_key,
+        language=system_template.language,
+        body=_render_template_body(system_template.body, render_context),
+        source="system_default",
+    )
+
+
+def validate_template_body(
+    *,
+    body: str,
+    allowed_placeholders: tuple[str, ...],
+    sample_context: dict,
+    content_type: str = BotTemplateContentType.MESSAGE,
+) -> None:
+    """Validate placeholder use and basic Telegram-friendly label constraints."""
+
+    if not body.strip():
+        raise ValidationError({"body": "Template body cannot be empty."})
+
+    placeholders = extract_template_placeholders(body)
+    unknown = sorted(set(placeholders) - set(allowed_placeholders))
+    if unknown:
+        raise ValidationError({"body": f"Unknown placeholder(s): {', '.join(unknown)}."})
+
+    try:
+        _render_template_body(body, _SafeTemplateContext(sample_context))
+    except Exception as exc:
+        raise ValidationError({"body": "Template cannot be rendered."}) from exc
+
+    if content_type == BotTemplateContentType.BUTTON and len(body.strip()) > 64:
+        raise ValidationError({"body": "Button labels must be 64 characters or shorter."})
+
+
+def extract_template_placeholders(body: str) -> tuple[str, ...]:
+    """Return unique Python-format placeholders used by a content template."""
+
+    placeholders: list[str] = []
+    for _literal, field_name, _format_spec, _conversion in Formatter().parse(body):
+        if not field_name:
+            continue
+        root_name = field_name.split(".", 1)[0].split("[", 1)[0]
+        if root_name and root_name not in placeholders:
+            placeholders.append(root_name)
+    return tuple(placeholders)
+
+
+class _SafeTemplateContext(dict):
+    def __missing__(self, key):
+        return ""
+
+
+def _render_template_body(body: str, context: _SafeTemplateContext) -> str:
+    return body.format_map(context)
+
+
+def _system_template_for_key_language(*, key: str, language: str) -> SystemTemplate:
+    normalized_language = _normalize_template_language(language, allow_default=True)
+    template = SystemTemplate.objects.filter(key=key, language=normalized_language).first()
+    if template is not None:
+        return template
+
+    definition = SYSTEM_TEMPLATE_DEFINITION_BY_KEY.get(key)
+    if definition is None:
+        raise ValidationError({"key": "Unknown content template key."})
+
+    body = definition.translations.get(normalized_language)
+    resolved_language = normalized_language
+    if body is None:
+        body = definition.translations[DEFAULT_TEMPLATE_LANGUAGE]
+        resolved_language = DEFAULT_TEMPLATE_LANGUAGE
+
+    return SystemTemplate(
+        key=definition.key,
+        language=resolved_language,
+        body=body,
+        content_type=definition.content_type,
+        editable=definition.editable,
+        is_required=definition.is_required,
+        placeholder_allowlist=list(definition.placeholders),
+        sample_context=dict(definition.sample_context),
+    )
+
+
+def _normalize_template_language(language: str, *, allow_default: bool = False) -> str:
+    cleaned_language = (language or "").strip().lower()
+    if allow_default and not cleaned_language:
+        return DEFAULT_TEMPLATE_LANGUAGE
+    if cleaned_language not in SUPPORTED_TEMPLATE_LANGUAGES:
+        if allow_default:
+            return DEFAULT_TEMPLATE_LANGUAGE
+        raise ValidationError({"language": "Unsupported template language."})
+    return cleaned_language

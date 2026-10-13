@@ -172,6 +172,22 @@ class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):
         "notifications.ScheduledNotification",
         on_delete=models.CASCADE,
         related_name="delivery_attempts",
+        null=True,
+        blank=True,
+    )
+    broadcast_recipient = models.ForeignKey(
+        "broadcasts.BroadcastRecipient",
+        on_delete=models.CASCADE,
+        related_name="delivery_attempts",
+        null=True,
+        blank=True,
+    )
+    conversation_message = models.ForeignKey(
+        "messaging.ConversationMessage",
+        on_delete=models.CASCADE,
+        related_name="delivery_attempts",
+        null=True,
+        blank=True,
     )
     channel = models.CharField(
         max_length=32,
@@ -186,10 +202,35 @@ class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):
 
     class Meta:
         ordering = ["-attempted_at", "-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    (
+                        models.Q(notification__isnull=False)
+                        & models.Q(broadcast_recipient__isnull=True)
+                        & models.Q(conversation_message__isnull=True)
+                    )
+                    | (
+                        models.Q(notification__isnull=True)
+                        & models.Q(broadcast_recipient__isnull=False)
+                        & models.Q(conversation_message__isnull=True)
+                    )
+                    | (
+                        models.Q(notification__isnull=True)
+                        & models.Q(broadcast_recipient__isnull=True)
+                        & models.Q(conversation_message__isnull=False)
+                    )
+                ),
+                name="notifications_delivery_attempt_one_source",
+            ),
+        ]
         indexes = [
             models.Index(fields=["notification", "status"]),
+            models.Index(fields=["broadcast_recipient", "status"]),
+            models.Index(fields=["conversation_message", "status"]),
             models.Index(fields=["partner", "attempted_at"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.notification_id}:{self.status}:{self.attempted_at}"
+        source = self.notification_id or self.broadcast_recipient_id or self.conversation_message_id
+        return f"{source}:{self.status}:{self.attempted_at}"

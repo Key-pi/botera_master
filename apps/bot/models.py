@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
-from core.database.models import TimeStampedModel
+from core.database.models import PartnerBoundModel, TimeStampedModel
+
+SUPPORTED_TEMPLATE_LANGUAGES = ("uk", "ru", "en")
+DEFAULT_TEMPLATE_LANGUAGE = "uk"
+TEMPLATE_LANGUAGE_CHOICES = tuple(
+    (language, language.upper()) for language in SUPPORTED_TEMPLATE_LANGUAGES
+)
 
 
 class BotInstance(TimeStampedModel):
@@ -59,3 +66,102 @@ class BotInstance(TimeStampedModel):
     @property
     def has_token(self) -> bool:
         return bool(self.encrypted_token and self.token_fingerprint)
+
+
+class BotTemplateContentType(models.TextChoices):
+    MESSAGE = "message", "Message"
+    BUTTON = "button", "Button"
+
+
+class SystemTemplate(TimeStampedModel):
+    """Platform-owned localized bot content default for one key/language."""
+
+    key = models.CharField(max_length=128, db_index=True)
+    language = models.CharField(max_length=8, choices=TEMPLATE_LANGUAGE_CHOICES)
+    body = models.TextField()
+    content_type = models.CharField(
+        max_length=16,
+        choices=BotTemplateContentType.choices,
+        default=BotTemplateContentType.MESSAGE,
+    )
+    editable = models.BooleanField(default=True)
+    is_required = models.BooleanField(default=True)
+    placeholder_allowlist = models.JSONField(default=list, blank=True)
+    sample_context = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["key", "language"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["key", "language"],
+                name="bot_unique_system_template_language",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["key", "language"]),
+            models.Index(fields=["editable", "content_type"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.key} [{self.language}]"
+
+    def clean(self) -> None:
+        super().clean()
+        _validate_language(self.language)
+        from apps.bot.services import validate_template_body
+
+        validate_template_body(
+            body=self.body,
+            allowed_placeholders=tuple(self.placeholder_allowlist or ()),
+            sample_context=self.sample_context or {},
+            content_type=self.content_type,
+        )
+
+
+class PartnerTemplateOverride(PartnerBoundModel):
+    """Partner-authored localized override for an editable system template."""
+
+    key = models.CharField(max_length=128, db_index=True)
+    language = models.CharField(max_length=8, choices=TEMPLATE_LANGUAGE_CHOICES)
+    body = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    last_validated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["partner__name", "key", "language"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["partner", "key", "language"],
+                name="bot_unique_partner_template_override_language",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["partner", "key", "language", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.partner} {self.key} [{self.language}]"
+
+    def clean(self) -> None:
+        super().clean()
+        _validate_language(self.language)
+        from apps.bot.services import _system_template_for_key_language, validate_template_body
+
+        system_template = _system_template_for_key_language(
+            key=self.key,
+            language=self.language,
+        )
+        if not system_template.editable:
+            raise ValidationError({"key": "This template is system-only."})
+        if self.body.strip():
+            validate_template_body(
+                body=self.body,
+                allowed_placeholders=tuple(system_template.placeholder_allowlist),
+                sample_context=system_template.sample_context,
+                content_type=system_template.content_type,
+            )
+
+
+def _validate_language(language: str) -> None:
+    if language not in SUPPORTED_TEMPLATE_LANGUAGES:
+        raise ValidationError({"language": "Unsupported template language."})

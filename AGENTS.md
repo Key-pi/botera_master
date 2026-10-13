@@ -13,7 +13,9 @@ user approval. Client Booking Flow milestone implementation started on
 implementation started on 2026-10-12 after explicit user approval.
 Reschedule And Proposal milestone implementation started on 2026-10-13
 after explicit user approval. Penalties And Finance milestone implementation
-started on 2026-10-13 after explicit user approval.
+started on 2026-10-13 after explicit user approval. Content, Messaging, and
+Broadcasts milestone implementation started on 2026-10-13 after explicit user
+approval.
 Application code is allowed only within the currently approved milestone scope.
 
 ## System summary

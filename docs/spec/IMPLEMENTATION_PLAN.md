@@ -412,6 +412,8 @@ Exit criteria:
 
 ## Content, Messaging, Broadcasts Milestone
 
+Status: implemented on 2026-10-13.
+
 Goal:
 - Complete flexibility and engagement features after booking/notification core is safe.
 

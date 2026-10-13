@@ -60,10 +60,28 @@ class ScheduledNotificationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
 @admin.register(DeliveryAttempt)
 class DeliveryAttemptAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
-    list_display = ["partner", "notification", "channel", "status", "attempted_at"]
+    list_display = [
+        "partner",
+        "notification",
+        "broadcast_recipient",
+        "conversation_message",
+        "channel",
+        "status",
+        "attempted_at",
+    ]
     list_filter = ["channel", "status", "partner"]
-    search_fields = ["notification__idempotency_key", "failure_code"]
-    autocomplete_fields = ["partner", "notification"]
+    search_fields = [
+        "notification__idempotency_key",
+        "broadcast_recipient__campaign__text",
+        "conversation_message__text",
+        "failure_code",
+    ]
+    autocomplete_fields = [
+        "partner",
+        "notification",
+        "broadcast_recipient",
+        "conversation_message",
+    ]
     readonly_fields = [
         "failure_code",
         "failure_message_masked",

@@ -1,0 +1,525 @@
+from __future__ import annotations
+
+# ruff: noqa: E501
+from dataclasses import dataclass
+
+from apps.bot.models import BotTemplateContentType
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateDefinition:
+    """Code-owned default for one multilingual bot content key."""
+
+    key: str
+    content_type: str
+    editable: bool
+    placeholders: tuple[str, ...]
+    translations: dict[str, str]
+    sample_context: dict[str, str]
+    is_required: bool = True
+
+
+def _sample(placeholders: tuple[str, ...]) -> dict[str, str]:
+    return {placeholder: f"<{placeholder}>" for placeholder in placeholders}
+
+
+def _definition(
+    key: str,
+    *,
+    uk: str,
+    ru: str,
+    en: str,
+    placeholders: tuple[str, ...] = (),
+    content_type: str = BotTemplateContentType.MESSAGE,
+    editable: bool = True,
+) -> TemplateDefinition:
+    return TemplateDefinition(
+        key=key,
+        content_type=content_type,
+        editable=editable,
+        placeholders=placeholders,
+        translations={"uk": uk, "ru": ru, "en": en},
+        sample_context=_sample(placeholders),
+    )
+
+
+SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
+    _definition(
+        "start.welcome",
+        uk="Вітаємо у боті {partner_name}.",
+        ru="Добро пожаловать в бот {partner_name}.",
+        en="Welcome to {partner_name}.",
+        placeholders=("partner_name",),
+    ),
+    _definition(
+        "start.choose_language",
+        uk="Оберіть мову.",
+        ru="Выберите язык.",
+        en="Choose a language.",
+    ),
+    _definition(
+        "start.profile_incomplete",
+        uk="Потрібно заповнити: {missing_fields}.",
+        ru="Нужно заполнить: {missing_fields}.",
+        en="Please fill in: {missing_fields}.",
+        placeholders=("missing_fields",),
+    ),
+    _definition(
+        "booking.category_select",
+        uk="Оберіть категорію послуг.",
+        ru="Выберите категорию услуг.",
+        en="Choose a service category.",
+    ),
+    _definition(
+        "booking.service_select",
+        uk="Оберіть послуги в категорії {category_name}.",
+        ru="Выберите услуги в категории {category_name}.",
+        en="Choose services in {category_name}.",
+        placeholders=("category_name",),
+    ),
+    _definition(
+        "booking.summary",
+        uk="Ваш вибір:\n{services}\nТривалість: {duration}\nСума: {service_total} {currency}",
+        ru="Ваш выбор:\n{services}\nДлительность: {duration}\nСумма: {service_total} {currency}",
+        en="Your selection:\n{services}\nDuration: {duration}\nTotal: {service_total} {currency}",
+        placeholders=("services", "duration", "service_total", "currency"),
+    ),
+    _definition(
+        "booking.date_select",
+        uk="Оберіть дату. Доступний запис на {booking_horizon_days} днів вперед.",
+        ru="Выберите дату. Запись доступна на {booking_horizon_days} дней вперед.",
+        en="Choose a date. Booking is available {booking_horizon_days} days ahead.",
+        placeholders=("booking_horizon_days",),
+    ),
+    _definition(
+        "booking.time_select",
+        uk="Оберіть час на {date} для {services}. Тривалість: {duration}.",
+        ru="Выберите время на {date} для {services}. Длительность: {duration}.",
+        en="Choose a time on {date} for {services}. Duration: {duration}.",
+        placeholders=("date", "services", "duration"),
+    ),
+    _definition(
+        "booking.near_fit_notice",
+        uk="Цей час трохи виходить за доступне вікно до {tolerance_minutes} хв і потребує підтвердження майстра.",
+        ru="Это время немного выходит за доступное окно до {tolerance_minutes} мин и требует подтверждения мастера.",
+        en="This time exceeds the available window by up to {tolerance_minutes} min and needs master confirmation.",
+        placeholders=("tolerance_minutes",),
+    ),
+    _definition(
+        "booking.final_confirm",
+        uk="Підтвердіть запис:\n{services}\n{date} о {time}\nТривалість: {duration}\nСума: {service_total} {currency}",
+        ru="Подтвердите запись:\n{services}\n{date} в {time}\nДлительность: {duration}\nСумма: {service_total} {currency}",
+        en="Confirm booking:\n{services}\n{date} at {time}\nDuration: {duration}\nTotal: {service_total} {currency}",
+        placeholders=("services", "date", "time", "duration", "service_total", "currency"),
+    ),
+    _definition(
+        "booking.requested_created",
+        uk="Заявку на запис до {partner_name} відправлено: {date} о {time}, {services}.",
+        ru="Заявка на запись к {partner_name} отправлена: {date} в {time}, {services}.",
+        en="Booking request sent to {partner_name}: {date} at {time}, {services}.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
+        "booking.confirmed_created",
+        uk="Запис до {partner_name} підтверджено: {date} о {time}, {services}.",
+        ru="Запись к {partner_name} подтверждена: {date} в {time}, {services}.",
+        en="Booking with {partner_name} confirmed: {date} at {time}, {services}.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
+        "booking.request_cancelled_by_client",
+        uk="Заявку скасовано: {date} о {time}.",
+        ru="Заявка отменена: {date} в {time}.",
+        en="Request cancelled: {date} at {time}.",
+        placeholders=("date", "time"),
+    ),
+    _definition(
+        "booking.request_confirmed_by_master",
+        uk="{partner_name} підтвердив запис: {date} о {time}, {services}.",
+        ru="{partner_name} подтвердил запись: {date} в {time}, {services}.",
+        en="{partner_name} confirmed your booking: {date} at {time}, {services}.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
+        "booking.request_declined_by_master",
+        uk="{partner_name} відхилив заявку: {date} о {time}. {reason}",
+        ru="{partner_name} отклонил заявку: {date} в {time}. {reason}",
+        en="{partner_name} declined the request: {date} at {time}. {reason}",
+        placeholders=("partner_name", "date", "time", "reason"),
+    ),
+    _definition(
+        "booking.slot_taken",
+        uk="Цей час вже зайнятий. Оберіть інший.",
+        ru="Это время уже занято. Выберите другое.",
+        en="This time is already taken. Please choose another.",
+        editable=False,
+    ),
+    _definition(
+        "appointment.cancel_confirm_prompt",
+        uk="Скасувати запис {date} о {time}: {services}?",
+        ru="Отменить запись {date} в {time}: {services}?",
+        en="Cancel booking on {date} at {time}: {services}?",
+        placeholders=("date", "time", "services"),
+    ),
+    _definition(
+        "appointment.cancelled_by_client",
+        uk="Запис скасовано: {date} о {time}, {services}.",
+        ru="Запись отменена: {date} в {time}, {services}.",
+        en="Booking cancelled: {date} at {time}, {services}.",
+        placeholders=("date", "time", "services"),
+    ),
+    _definition(
+        "appointment.cancelled_by_master",
+        uk="{partner_name} скасував запис: {date} о {time}, {services}. {reason}",
+        ru="{partner_name} отменил запись: {date} в {time}, {services}. {reason}",
+        en="{partner_name} cancelled the booking: {date} at {time}, {services}. {reason}",
+        placeholders=("partner_name", "date", "time", "services", "reason"),
+    ),
+    _definition(
+        "appointment.late_cancel_penalty_warning",
+        uk="Скасування пізнє. Буде створено штраф {penalty_amount} {currency}. Дедлайн: {deadline_hours} год.",
+        ru="Отмена поздняя. Будет создан штраф {penalty_amount} {currency}. Дедлайн: {deadline_hours} ч.",
+        en="Late cancellation. A {penalty_amount} {currency} penalty will be created. Deadline: {deadline_hours} h.",
+        placeholders=("penalty_amount", "currency", "deadline_hours"),
+    ),
+    _definition(
+        "appointment.late_cancelled_with_penalty",
+        uk="Запис скасовано. Штраф: {penalty_amount} {currency}.",
+        ru="Запись отменена. Штраф: {penalty_amount} {currency}.",
+        en="Booking cancelled. Penalty: {penalty_amount} {currency}.",
+        placeholders=("penalty_amount", "currency"),
+    ),
+    _definition(
+        "appointment.reschedule_start",
+        uk="Перенесення запису {date} о {time}: {services}.",
+        ru="Перенос записи {date} в {time}: {services}.",
+        en="Rescheduling booking on {date} at {time}: {services}.",
+        placeholders=("date", "time", "services"),
+    ),
+    _definition(
+        "appointment.reschedule_requested",
+        uk="Запит на перенесення з {old_date} {old_time} на {new_date} {new_time}: {services}.",
+        ru="Запрос на перенос с {old_date} {old_time} на {new_date} {new_time}: {services}.",
+        en="Reschedule request from {old_date} {old_time} to {new_date} {new_time}: {services}.",
+        placeholders=("old_date", "old_time", "new_date", "new_time", "services"),
+    ),
+    _definition(
+        "appointment.reschedule_auto_confirmed",
+        uk="Запис перенесено з {old_date} {old_time} на {new_date} {new_time}: {services}.",
+        ru="Запись перенесена с {old_date} {old_time} на {new_date} {new_time}: {services}.",
+        en="Booking moved from {old_date} {old_time} to {new_date} {new_time}: {services}.",
+        placeholders=("old_date", "old_time", "new_date", "new_time", "services"),
+    ),
+    _definition(
+        "appointment.reschedule_proposed",
+        uk="{partner_name} запропонував інший час для {services}: {date} о {time}. Пропозиція діє до {proposal_expires_at}.",
+        ru="{partner_name} предложил другое время для {services}: {date} в {time}. Предложение действует до {proposal_expires_at}.",
+        en="{partner_name} proposed another time for {services}: {date} at {time}. Offer expires at {proposal_expires_at}.",
+        placeholders=("partner_name", "date", "time", "services", "proposal_expires_at"),
+    ),
+    _definition(
+        "appointment.reschedule_proposal_accepted",
+        uk="Новий час підтверджено: {new_date} о {new_time}, {services}.",
+        ru="Новое время подтверждено: {new_date} в {new_time}, {services}.",
+        en="New time confirmed: {new_date} at {new_time}, {services}.",
+        placeholders=("new_date", "new_time", "services"),
+    ),
+    _definition(
+        "appointment.reschedule_proposal_declined",
+        uk="Пропозицію перенесення відхилено: {date} о {time}, {services}.",
+        ru="Предложение переноса отклонено: {date} в {time}, {services}.",
+        en="Reschedule proposal declined: {date} at {time}, {services}.",
+        placeholders=("date", "time", "services"),
+    ),
+    _definition(
+        "appointment.reschedule_proposal_expired",
+        uk="Пропозиція перенесення застаріла: {date} о {time}, {services}.",
+        ru="Предложение переноса устарело: {date} в {time}, {services}.",
+        en="Reschedule proposal expired: {date} at {time}, {services}.",
+        placeholders=("date", "time", "services"),
+    ),
+    _definition(
+        "appointment.late_cancel_blocked",
+        uk="Скасувати вже не можна. Напишіть майстру.",
+        ru="Отменить уже нельзя. Напишите мастеру.",
+        en="Cancellation is no longer available. Message the master.",
+        editable=False,
+    ),
+    _definition(
+        "master.client_cancelled_appointment",
+        uk="Клієнт скасував запис: {client_name}, {date} о {time}, {services}.",
+        ru="Клиент отменил запись: {client_name}, {date} в {time}, {services}.",
+        en="Client cancelled booking: {client_name}, {date} at {time}, {services}.",
+        placeholders=("client_name", "date", "time", "services"),
+    ),
+    _definition(
+        "master.client_requested_reschedule",
+        uk="Клієнт просить перенести запис: {client_name}, {date} о {time}, {services}.",
+        ru="Клиент просит перенести запись: {client_name}, {date} в {time}, {services}.",
+        en="Client requested reschedule: {client_name}, {date} at {time}, {services}.",
+        placeholders=("client_name", "date", "time", "services"),
+    ),
+    _definition(
+        "master.client_accepted_reschedule",
+        uk="Клієнт прийняв перенесення: {client_name}, {date} о {time}, {services}.",
+        ru="Клиент принял перенос: {client_name}, {date} в {time}, {services}.",
+        en="Client accepted reschedule: {client_name}, {date} at {time}, {services}.",
+        placeholders=("client_name", "date", "time", "services"),
+    ),
+    _definition(
+        "master.client_declined_reschedule",
+        uk="Клієнт відхилив перенесення: {client_name}, {date} о {time}, {services}.",
+        ru="Клиент отклонил перенос: {client_name}, {date} в {time}, {services}.",
+        en="Client declined reschedule: {client_name}, {date} at {time}, {services}.",
+        placeholders=("client_name", "date", "time", "services"),
+    ),
+    _definition(
+        "reminder.client_before_appointment",
+        uk="Нагадування: {partner_name}, {date} о {time}, {services}.",
+        ru="Напоминание: {partner_name}, {date} в {time}, {services}.",
+        en="Reminder: {partner_name}, {date} at {time}, {services}.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
+        "reminder.master_before_appointment",
+        uk="Скоро запис: {client_name} {client_phone}, {date} о {time}, {services}.",
+        ru="Скоро запись: {client_name} {client_phone}, {date} в {time}, {services}.",
+        en="Upcoming booking: {client_name} {client_phone}, {date} at {time}, {services}.",
+        placeholders=("client_name", "client_phone", "date", "time", "services"),
+    ),
+    _definition(
+        "reminder.master_morning_digest_empty",
+        uk="На {date} записів немає.",
+        ru="На {date} записей нет.",
+        en="No bookings for {date}.",
+        placeholders=("date",),
+    ),
+    _definition(
+        "reminder.master_morning_digest",
+        uk="Записи на {date}:\n{appointments}",
+        ru="Записи на {date}:\n{appointments}",
+        en="Bookings for {date}:\n{appointments}",
+        placeholders=("date", "appointments"),
+    ),
+    _definition(
+        "reminder.stale_requested",
+        uk="Необроблена заявка: {client_name}, {date} о {time}, {services}. Очікує {request_age}.",
+        ru="Необработанная заявка: {client_name}, {date} в {time}, {services}. Ждет {request_age}.",
+        en="Pending request: {client_name}, {date} at {time}, {services}. Waiting {request_age}.",
+        placeholders=("client_name", "date", "time", "services", "request_age"),
+    ),
+    _definition(
+        "reminder.failed_delivery_to_master",
+        uk="Нагадування клієнту не доставлено: {client_name}, {date} о {time}, {services}. Причина: {failure_reason}.",
+        ru="Напоминание клиенту не доставлено: {client_name}, {date} в {time}, {services}. Причина: {failure_reason}.",
+        en="Client reminder was not delivered: {client_name}, {date} at {time}, {services}. Reason: {failure_reason}.",
+        placeholders=("client_name", "date", "time", "services", "failure_reason"),
+    ),
+    _definition(
+        "profile.main",
+        uk="Профіль: {client_name}\nТелефон: {phone}\nМова: {language}\nВізитів: {visit_count}\n{extra_text}",
+        ru="Профиль: {client_name}\nТелефон: {phone}\nЯзык: {language}\nВизитов: {visit_count}\n{extra_text}",
+        en="Profile: {client_name}\nPhone: {phone}\nLanguage: {language}\nVisits: {visit_count}\n{extra_text}",
+        placeholders=("client_name", "phone", "language", "visit_count", "extra_text"),
+    ),
+    _definition(
+        "profile.missing_fields_prompt",
+        uk="Заповніть дані: {missing_fields}.",
+        ru="Заполните данные: {missing_fields}.",
+        en="Fill in: {missing_fields}.",
+        placeholders=("missing_fields",),
+    ),
+    _definition(
+        "profile.future_appointments_empty",
+        uk="Майбутніх записів немає.",
+        ru="Будущих записей нет.",
+        en="No future bookings.",
+    ),
+    _definition(
+        "profile.future_appointments_list",
+        uk="Майбутні записи:\n{appointments}",
+        ru="Будущие записи:\n{appointments}",
+        en="Future bookings:\n{appointments}",
+        placeholders=("appointments",),
+    ),
+    _definition(
+        "profile.history_empty",
+        uk="Історія поки порожня.",
+        ru="История пока пустая.",
+        en="History is empty.",
+    ),
+    _definition(
+        "profile.history_list",
+        uk="Історія записів:\n{appointments}",
+        ru="История записей:\n{appointments}",
+        en="Booking history:\n{appointments}",
+        placeholders=("appointments",),
+    ),
+    _definition(
+        "profile.appointment_details",
+        uk="{date} о {time}\n{services}\nСтатус: {status}\nПослуги: {service_total}\nШтрафи: {penalties_total}\nРазом: {total} {currency}\n{comment}\n{reason}",
+        ru="{date} в {time}\n{services}\nСтатус: {status}\nУслуги: {service_total}\nШтрафы: {penalties_total}\nИтого: {total} {currency}\n{comment}\n{reason}",
+        en="{date} at {time}\n{services}\nStatus: {status}\nServices: {service_total}\nPenalties: {penalties_total}\nTotal: {total} {currency}\n{comment}\n{reason}",
+        placeholders=(
+            "date",
+            "time",
+            "services",
+            "status",
+            "service_total",
+            "penalties_total",
+            "total",
+            "currency",
+            "comment",
+            "reason",
+        ),
+    ),
+    _definition(
+        "profile.penalties_empty",
+        uk="Активних штрафів немає.",
+        ru="Активных штрафов нет.",
+        en="No active penalties.",
+    ),
+    _definition(
+        "profile.penalties_list",
+        uk="Активні штрафи:\n{penalties}\nРазом: {total_penalties} {currency}",
+        ru="Активные штрафы:\n{penalties}\nИтого: {total_penalties} {currency}",
+        en="Active penalties:\n{penalties}\nTotal: {total_penalties} {currency}",
+        placeholders=("penalties", "total_penalties", "currency"),
+    ),
+    _definition(
+        "profile.contact_master_prompt",
+        uk="Напишіть повідомлення для {partner_name}.",
+        ru="Напишите сообщение для {partner_name}.",
+        en="Write a message for {partner_name}.",
+        placeholders=("partner_name",),
+    ),
+    _definition(
+        "penalty.created_late_cancel",
+        uk="Створено штраф за пізнє скасування: {penalty_amount} {currency}, запис {appointment_date} о {appointment_time}.",
+        ru="Создан штраф за позднюю отмену: {penalty_amount} {currency}, запись {appointment_date} в {appointment_time}.",
+        en="Late-cancel penalty created: {penalty_amount} {currency}, booking {appointment_date} at {appointment_time}.",
+        placeholders=("penalty_amount", "currency", "appointment_date", "appointment_time"),
+    ),
+    _definition(
+        "penalty.created_no_show",
+        uk="Створено штраф за no-show: {penalty_amount} {currency}, запис {appointment_date} о {appointment_time}.",
+        ru="Создан штраф за no-show: {penalty_amount} {currency}, запись {appointment_date} в {appointment_time}.",
+        en="No-show penalty created: {penalty_amount} {currency}, booking {appointment_date} at {appointment_time}.",
+        placeholders=("penalty_amount", "currency", "appointment_date", "appointment_time"),
+    ),
+    _definition(
+        "penalty.created_late_arrival",
+        uk="Створено штраф за запізнення на {late_minutes} хв: {penalty_amount} {currency}, запис {appointment_date} о {appointment_time}.",
+        ru="Создан штраф за опоздание на {late_minutes} мин: {penalty_amount} {currency}, запись {appointment_date} в {appointment_time}.",
+        en="Late-arrival penalty created for {late_minutes} min: {penalty_amount} {currency}, booking {appointment_date} at {appointment_time}.",
+        placeholders=(
+            "penalty_amount",
+            "currency",
+            "late_minutes",
+            "appointment_date",
+            "appointment_time",
+        ),
+    ),
+    _definition(
+        "penalty.applied_to_appointment",
+        uk="Штраф {penalty_amount} {currency} додано до запису {appointment_date} о {appointment_time}. Разом: {appointment_total}.",
+        ru="Штраф {penalty_amount} {currency} добавлен к записи {appointment_date} в {appointment_time}. Итого: {appointment_total}.",
+        en="Penalty {penalty_amount} {currency} added to booking {appointment_date} at {appointment_time}. Total: {appointment_total}.",
+        placeholders=(
+            "penalty_amount",
+            "currency",
+            "appointment_date",
+            "appointment_time",
+            "appointment_total",
+        ),
+    ),
+    _definition(
+        "penalty.paid",
+        uk="Штраф оплачено: {penalty_amount} {currency}.",
+        ru="Штраф оплачен: {penalty_amount} {currency}.",
+        en="Penalty paid: {penalty_amount} {currency}.",
+        placeholders=("penalty_amount", "currency"),
+    ),
+    _definition(
+        "penalty.waived",
+        uk="Штраф списано: {penalty_amount} {currency}.",
+        ru="Штраф списан: {penalty_amount} {currency}.",
+        en="Penalty waived: {penalty_amount} {currency}.",
+        placeholders=("penalty_amount", "currency"),
+    ),
+    _definition(
+        "master.penalty_created",
+        uk="Штраф для {client_name}: {penalty_reason}, {penalty_amount} {currency}.",
+        ru="Штраф для {client_name}: {penalty_reason}, {penalty_amount} {currency}.",
+        en="Penalty for {client_name}: {penalty_reason}, {penalty_amount} {currency}.",
+        placeholders=("client_name", "penalty_reason", "penalty_amount", "currency"),
+    ),
+    _definition(
+        "master.penalty_paid",
+        uk="{client_name} оплатив штраф {penalty_amount} {currency}.",
+        ru="{client_name} оплатил штраф {penalty_amount} {currency}.",
+        en="{client_name} paid penalty {penalty_amount} {currency}.",
+        placeholders=("client_name", "penalty_amount", "currency"),
+    ),
+    _definition(
+        "master.penalty_waived",
+        uk="Штраф для {client_name} списано: {penalty_amount} {currency}.",
+        ru="Штраф для {client_name} списан: {penalty_amount} {currency}.",
+        en="Penalty waived for {client_name}: {penalty_amount} {currency}.",
+        placeholders=("client_name", "penalty_amount", "currency"),
+    ),
+    _definition(
+        "messaging.contact_master_prompt",
+        uk="Напишіть повідомлення для {partner_name}.",
+        ru="Напишите сообщение для {partner_name}.",
+        en="Write a message for {partner_name}.",
+        placeholders=("partner_name",),
+    ),
+    _definition(
+        "messaging.client_message_received_for_master",
+        uk="Повідомлення від {client_name} {client_phone}: {message_preview}",
+        ru="Сообщение от {client_name} {client_phone}: {message_preview}",
+        en="Message from {client_name} {client_phone}: {message_preview}",
+        placeholders=("client_name", "client_phone", "message_preview"),
+    ),
+    _definition(
+        "messaging.master_reply_received_for_client",
+        uk="{partner_name} відповідає: {message_text}",
+        ru="{partner_name} отвечает: {message_text}",
+        en="{partner_name} replies: {message_text}",
+        placeholders=("partner_name", "message_text"),
+    ),
+    _definition(
+        "broadcast.default_cta_book",
+        uk="Записатися",
+        ru="Записаться",
+        en="Book",
+        content_type=BotTemplateContentType.BUTTON,
+    ),
+    _definition(
+        "broadcast.default_cta_my_appointments",
+        uk="Мої записи",
+        ru="Мои записи",
+        en="My bookings",
+        content_type=BotTemplateContentType.BUTTON,
+    ),
+    _definition(
+        "broadcast.default_cta_external_link",
+        uk="Відкрити",
+        ru="Открыть",
+        en="Open",
+        content_type=BotTemplateContentType.BUTTON,
+    ),
+    _definition(
+        "broadcast.unsubscribe_confirmed",
+        uk="Ви відписалися від розсилок. Сервісні повідомлення залишаються увімкненими.",
+        ru="Вы отписались от рассылок. Сервисные сообщения остаются включенными.",
+        en="You unsubscribed from broadcasts. Service messages remain enabled.",
+        editable=False,
+    ),
+)
+
+
+SYSTEM_TEMPLATE_DEFINITION_BY_KEY = {
+    definition.key: definition for definition in SYSTEM_TEMPLATE_DEFINITIONS
+}

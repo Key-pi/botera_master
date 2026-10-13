@@ -1,8 +1,9 @@
 from django.contrib import admin, messages
 
 from apps.accounts.selectors import partner_ids_for_user
-from apps.bot.models import BotInstance
-from apps.bot.services import check_bot_connection
+from apps.bot.models import BotInstance, PartnerTemplateOverride, SystemTemplate
+from apps.bot.services import check_bot_connection, seed_system_templates
+from core.admin import PartnerScopedAdminMixin
 
 
 @admin.register(BotInstance)
@@ -76,3 +77,26 @@ class BotInstanceAdmin(admin.ModelAdmin):
             return
 
         self.message_user(request, f"Checked {checked_count} bot(s).")
+
+
+@admin.register(SystemTemplate)
+class SystemTemplateAdmin(admin.ModelAdmin):
+    list_display = ["key", "language", "content_type", "editable", "is_required"]
+    list_filter = ["language", "content_type", "editable", "is_required"]
+    search_fields = ["key", "body"]
+    readonly_fields = ["created_at", "updated_at"]
+    actions = ["sync_registry_defaults"]
+
+    @admin.action(description="Sync system templates from registry")
+    def sync_registry_defaults(self, request, queryset):
+        count = seed_system_templates()
+        self.message_user(request, f"Synchronized {count} system template rows.")
+
+
+@admin.register(PartnerTemplateOverride)
+class PartnerTemplateOverrideAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    list_display = ["partner", "key", "language", "is_active", "last_validated_at"]
+    list_filter = ["language", "is_active", "partner"]
+    search_fields = ["partner__name", "key", "body"]
+    autocomplete_fields = ["partner"]
+    readonly_fields = ["last_validated_at", "created_at", "updated_at"]
