@@ -27,6 +27,10 @@ from apps.bot.models import (
 from apps.bot.telegram import fetch_bot_identity
 from apps.bot.token_validation import validate_bot_token_format
 from apps.clients.models import TelegramIdentity
+from apps.clients.services import (
+    resolve_client_profile_for_telegram_identity,
+    upsert_telegram_identity,
+)
 from apps.partners.models import Partner
 from core.security.crypto import decrypt_text, encrypt_text
 from core.security.fingerprints import token_fingerprint
@@ -54,6 +58,17 @@ class MasterContactLink:
     url: str
     start_payload: str
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class StartCommandResult:
+    """Result of processing a Telegram /start command in partner context."""
+
+    text: str
+    telegram_identity: TelegramIdentity
+    client_profile_id: str = ""
+    master_contact_id: str = ""
+    master_contact_bound: bool = False
 
 
 def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstance:
@@ -89,6 +104,72 @@ def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstan
         bot_instance.save()
 
     return bot_instance
+
+
+def handle_start_command(
+    *,
+    partner: Partner,
+    telegram_user_id: int,
+    username: str = "",
+    first_name: str = "",
+    last_name: str = "",
+    is_premium: bool = False,
+    language_code: str = "",
+    start_payload: str = "",
+) -> StartCommandResult:
+    """Process Telegram `/start` while preserving trusted partner context."""
+
+    identity = upsert_telegram_identity(
+        telegram_user_id=telegram_user_id,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        is_premium=is_premium,
+        language_code=language_code,
+    )
+    if start_payload.startswith(f"{MASTER_CONTACT_LINK_PREFIX}_"):
+        contact = bind_master_contact_from_start_payload(
+            partner=partner,
+            start_payload=start_payload,
+            telegram_identity=identity,
+        )
+        text = render_content_template(
+            partner=partner,
+            key="admin.master_contact_linked",
+            language=partner.default_language,
+        ).body
+        return StartCommandResult(
+            text=text,
+            telegram_identity=identity,
+            master_contact_id=str(contact.id),
+            master_contact_bound=True,
+        )
+
+    profile = resolve_client_profile_for_telegram_identity(
+        partner=partner,
+        telegram_identity=identity,
+    )
+    text = render_content_template(
+        partner=partner,
+        key="start.welcome",
+        language=profile.language,
+        context={"partner_name": partner.name},
+    ).body
+    return StartCommandResult(
+        text=text,
+        telegram_identity=identity,
+        client_profile_id=str(profile.id),
+    )
+
+
+def render_invalid_master_contact_link_message(*, partner: Partner) -> str:
+    """Return localized text for an invalid/expired admin Telegram link."""
+
+    return render_content_template(
+        partner=partner,
+        key="admin.master_contact_link_invalid",
+        language=partner.default_language,
+    ).body
 
 
 def create_master_contact_link(

@@ -65,6 +65,20 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("missing_fields",),
     ),
     _definition(
+        "admin.master_contact_linked",
+        uk="Telegram майстра підключено. Сюди надходитимуть робочі сповіщення.",
+        ru="Telegram мастера подключен. Сюда будут приходить рабочие уведомления.",
+        en="Master Telegram is connected. Work notifications will arrive here.",
+        editable=False,
+    ),
+    _definition(
+        "admin.master_contact_link_invalid",
+        uk="Посилання для підключення недійсне або прострочене. Створіть нове в адмінці.",
+        ru="Ссылка для подключения недействительна или устарела. Создайте новую в админке.",
+        en="This connection link is invalid or expired. Create a new one in admin.",
+        editable=False,
+    ),
+    _definition(
         "booking.category_select",
         uk="Оберіть категорію послуг.",
         ru="Выберите категорию услуг.",

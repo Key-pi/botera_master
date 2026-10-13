@@ -11,6 +11,8 @@ from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     bind_master_contact_from_start_payload,
     create_master_contact_link,
+    handle_start_command,
+    render_invalid_master_contact_link_message,
     set_bot_token,
 )
 from apps.broadcasts.models import BroadcastRecipient
@@ -143,6 +145,51 @@ def test_expired_master_contact_link_is_rejected(partner_with_bot_username):
             telegram_identity=identity,
             now=now + timedelta(days=2),
         )
+
+
+@pytest.mark.django_db
+def test_start_command_without_admin_payload_resolves_partner_client_profile(
+    partner_with_bot_username,
+):
+    created = partner_with_bot_username
+
+    result = handle_start_command(
+        partner=created.partner,
+        telegram_user_id=555006,
+        username="client",
+        first_name="Client",
+        language_code="ru",
+    )
+
+    assert result.master_contact_bound is False
+    assert result.client_profile_id
+    assert result.text == f"Добро пожаловать в бот {created.partner.name}."
+
+
+@pytest.mark.django_db
+def test_start_command_with_admin_payload_binds_master_contact(partner_with_bot_username):
+    created = partner_with_bot_username
+    link = create_master_contact_link(actor=created.owner, partner=created.partner)
+
+    result = handle_start_command(
+        partner=created.partner,
+        telegram_user_id=555007,
+        username="master",
+        start_payload=link.start_payload,
+    )
+
+    assert result.master_contact_bound is True
+    assert result.master_contact_id
+    assert "підключено" in result.text
+
+
+@pytest.mark.django_db
+def test_invalid_master_contact_link_message_is_system_default(partner_with_bot_username):
+    created = partner_with_bot_username
+
+    text = render_invalid_master_contact_link_message(partner=created.partner)
+
+    assert "недійсне" in text
 
 
 @pytest.mark.django_db
