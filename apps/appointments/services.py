@@ -350,6 +350,39 @@ def acquire_booking_resource_advisory_lock_if_supported(
     )
 
 
+def build_service_item_snapshots(
+    *,
+    partner: Partner,
+    service_items: Sequence[AppointmentServiceItemInput],
+) -> tuple[dict, ...]:
+    """Build validated service item snapshots without creating an appointment."""
+
+    return _build_snapshot_items(partner=partner, inputs=service_items)
+
+
+def replace_appointment_service_items_from_snapshots(
+    *,
+    appointment: Appointment,
+    snapshot_items: Sequence[dict],
+) -> None:
+    """Replace appointment item snapshots after an accepted client-visible change."""
+
+    AppointmentServiceItem.objects.filter(appointment=appointment).delete()
+    _create_snapshot_items(appointment=appointment, snapshot_items=snapshot_items)
+
+
+def refresh_confirmed_notifications_after_commit(appointment_id) -> None:
+    """Refresh pending notifications once a confirmed appointment changed safely."""
+
+    _on_commit_refresh_confirmed_notifications(appointment_id)
+
+
+def stale_appointment_notifications_after_commit(appointment_id) -> None:
+    """Stale pending appointment notifications after cancellation/final changes."""
+
+    _on_commit_stale_appointment_notifications(appointment_id)
+
+
 def _on_commit_schedule_requested_notifications(appointment_id) -> None:
     transaction.on_commit(lambda: _schedule_requested_notifications(appointment_id))
 

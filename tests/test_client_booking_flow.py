@@ -74,7 +74,12 @@ def booking_context():
 
 @pytest.fixture
 def rounded_future_start():
-    return (timezone.now() + timedelta(days=4)).replace(minute=0, second=0, microsecond=0)
+    return (timezone.now() + timedelta(days=4)).replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
 
 
 def _open_window(context, start_at, *, hours=2):

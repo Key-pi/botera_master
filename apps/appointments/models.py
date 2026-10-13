@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.catalog.models import DEFAULT_CURRENCY
@@ -147,6 +148,198 @@ class AppointmentServiceItem(models.Model):
 
     def __str__(self) -> str:
         return self.service_name_snapshot
+
+
+class AppointmentProposal(PartnerBoundModel):
+    """Client-visible proposal for changing or confirming an appointment variant."""
+
+    class Type(models.TextChoices):
+        RESCHEDULE_CONFIRMED = "reschedule_confirmed", "Reschedule confirmed"
+        REQUESTED_ALTERNATIVES = "requested_alternatives", "Requested alternatives"
+        APPOINTMENT_CHANGE = "appointment_change", "Appointment change"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        DECLINED = "declined", "Declined"
+        EXPIRED = "expired", "Expired"
+        CANCELLED = "cancelled", "Cancelled"
+        SUPERSEDED = "superseded", "Superseded"
+
+    appointment = models.ForeignKey(
+        "appointments.Appointment",
+        on_delete=models.CASCADE,
+        related_name="proposals",
+    )
+    type = models.CharField(max_length=32, choices=Type.choices)
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="created_appointment_proposals",
+        null=True,
+        blank=True,
+    )
+    expires_at = models.DateTimeField(db_index=True)
+    message = models.TextField(blank=True)
+    reason = models.TextField(blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    selected_option = models.ForeignKey(
+        "appointments.AppointmentProposalOption",
+        on_delete=models.SET_NULL,
+        related_name="selected_for_proposals",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["partner", "status", "expires_at"]),
+            models.Index(fields=["appointment", "status"]),
+            models.Index(fields=["type", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.appointment_id} {self.type} ({self.status})"
+
+    def clean(self) -> None:
+        super().clean()
+        if (
+            self.appointment_id
+            and self.partner_id
+            and self.appointment.partner_id != self.partner_id
+        ):
+            raise ValidationError(
+                {"appointment": "Proposal appointment must belong to the same partner."}
+            )
+        if (
+            self.selected_option_id
+            and self.id
+            and self.selected_option.proposal_id != self.id
+        ):
+            raise ValidationError(
+                {"selected_option": "Selected option must belong to this proposal."}
+            )
+
+
+class AppointmentProposalOption(models.Model):
+    """One selectable proposed variant inside an appointment proposal."""
+
+    proposal = models.ForeignKey(
+        "appointments.AppointmentProposal",
+        on_delete=models.CASCADE,
+        related_name="options",
+    )
+    start_at = models.DateTimeField(null=True, blank=True)
+    end_at = models.DateTimeField(null=True, blank=True)
+    total_duration_minutes = models.PositiveIntegerField()
+    service_total_amount = models.PositiveIntegerField(default=0)
+    penalties_total_amount = models.PositiveIntegerField(default=0)
+    total_amount = models.PositiveIntegerField(default=0)
+    currency = models.CharField(max_length=3, default=DEFAULT_CURRENCY)
+    sort_order = models.PositiveIntegerField(default=0)
+    selected_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(start_at__isnull=True, end_at__isnull=True)
+                    | models.Q(
+                        start_at__isnull=False,
+                        end_at__isnull=False,
+                        start_at__lt=models.F("end_at"),
+                    )
+                ),
+                name="proposal_option_start_before_end_or_empty",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_duration_minutes__gt=0),
+                name="proposal_option_duration_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(service_total_amount__gte=0),
+                name="proposal_option_service_total_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(penalties_total_amount__gte=0),
+                name="proposal_option_penalties_total_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_amount__gte=0),
+                name="proposal_option_total_non_negative",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["proposal", "sort_order"]),
+            models.Index(fields=["start_at", "end_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.proposal_id} option {self.sort_order}"
+
+
+class AppointmentProposalOptionItem(models.Model):
+    """Snapshotted proposed service line for a proposal option."""
+
+    option = models.ForeignKey(
+        "appointments.AppointmentProposalOption",
+        on_delete=models.CASCADE,
+        related_name="service_items",
+    )
+    service = models.ForeignKey(
+        "catalog.Service",
+        on_delete=models.SET_NULL,
+        related_name="appointment_proposal_items",
+        null=True,
+        blank=True,
+    )
+    category_name_snapshot = models.CharField(max_length=255, blank=True)
+    service_name_snapshot = models.CharField(max_length=255)
+    description_snapshot = models.TextField(blank=True)
+    price_amount = models.PositiveIntegerField()
+    currency = models.CharField(max_length=3, default=DEFAULT_CURRENCY)
+    duration_minutes = models.PositiveIntegerField()
+    is_custom = models.BooleanField(default=False)
+    is_overridden = models.BooleanField(default=False)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(price_amount__gte=0),
+                name="proposal_item_price_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(duration_minutes__gt=0),
+                name="proposal_item_duration_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["option", "sort_order"]),
+            models.Index(fields=["service"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.service_name_snapshot
+
+    def clean(self) -> None:
+        super().clean()
+        if (
+            self.service_id
+            and self.option_id
+            and self.service.partner_id != self.option.proposal.partner_id
+        ):
+            raise ValidationError(
+                {"service": "Proposal item service must belong to the same partner."}
+            )
 
 
 FINAL_APPOINTMENT_STATUSES = (

@@ -4,7 +4,13 @@ from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 
 from apps.accounts.selectors import partner_ids_for_user
-from apps.appointments.models import Appointment, AppointmentServiceItem
+from apps.appointments.models import (
+    Appointment,
+    AppointmentProposal,
+    AppointmentProposalOption,
+    AppointmentProposalOptionItem,
+    AppointmentServiceItem,
+)
 from apps.appointments.services import transition_appointment_status
 from apps.clients.models import ClientProfile
 from apps.schedule.models import BookingResource
@@ -25,6 +31,41 @@ class AppointmentServiceItemInline(admin.TabularInline):
         "is_custom",
         "is_overridden",
         "sort_order",
+    ]
+    can_delete = False
+
+
+class AppointmentProposalOptionItemInline(admin.TabularInline):
+    model = AppointmentProposalOptionItem
+    extra = 0
+    readonly_fields = [
+        "service",
+        "category_name_snapshot",
+        "service_name_snapshot",
+        "description_snapshot",
+        "price_amount",
+        "currency",
+        "duration_minutes",
+        "is_custom",
+        "is_overridden",
+        "sort_order",
+    ]
+    can_delete = False
+
+
+class AppointmentProposalOptionInline(admin.TabularInline):
+    model = AppointmentProposalOption
+    extra = 0
+    readonly_fields = [
+        "start_at",
+        "end_at",
+        "total_duration_minutes",
+        "service_total_amount",
+        "penalties_total_amount",
+        "total_amount",
+        "currency",
+        "sort_order",
+        "selected_at",
     ]
     can_delete = False
 
@@ -94,3 +135,61 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             )
             return
         self.message_user(request, f"Updated {changed_count} appointment(s).")
+
+
+@admin.register(AppointmentProposal)
+class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    list_display = [
+        "appointment",
+        "partner",
+        "type",
+        "status",
+        "expires_at",
+        "responded_at",
+    ]
+    list_filter = ["partner", "type", "status"]
+    search_fields = ["appointment__client_profile__name", "message", "reason"]
+    autocomplete_fields = ["partner", "appointment", "created_by", "selected_option"]
+    readonly_fields = ["created_at", "updated_at"]
+    inlines = [AppointmentProposalOptionInline]
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if not request.user.is_superuser:
+            if db_field.name == "appointment":
+                kwargs["queryset"] = Appointment.objects.filter(
+                    partner_id__in=partner_ids_for_user(request.user)
+                )
+            elif db_field.name == "selected_option":
+                kwargs["queryset"] = AppointmentProposalOption.objects.filter(
+                    proposal__partner_id__in=partner_ids_for_user(request.user)
+                )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(AppointmentProposalOption)
+class AppointmentProposalOptionAdmin(admin.ModelAdmin):
+    list_display = [
+        "proposal",
+        "start_at",
+        "end_at",
+        "total_amount",
+        "currency",
+        "selected_at",
+    ]
+    list_filter = ["proposal__partner", "proposal__type", "proposal__status"]
+    search_fields = ["proposal__appointment__client_profile__name"]
+    autocomplete_fields = ["proposal"]
+    inlines = [AppointmentProposalOptionItemInline]
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if request.user.is_superuser:
+            return queryset
+        return queryset.filter(proposal__partner_id__in=partner_ids_for_user(request.user))
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if not request.user.is_superuser and db_field.name == "proposal":
+            kwargs["queryset"] = AppointmentProposal.objects.filter(
+                partner_id__in=partner_ids_for_user(request.user)
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)

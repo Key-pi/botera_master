@@ -1,7 +1,7 @@
 # BoteraMaster Implementation Plan
 
 Status: approved implementation-planning document after `IMPLEMENTATION_PLAN_APPROVED` on 2026-10-08; early milestone implementation is in progress after explicit approvals.
-Last updated: 2026-10-12.
+Last updated: 2026-10-13.
 
 This document translates the approved MVP specification into an implementation sequence. It does not create or approve future application code, migrations, dependencies, AGENTS.md changes, or project skills by itself.
 
@@ -360,6 +360,8 @@ Exit criteria:
 - Failed reminders become visible to partner after retry exhaustion.
 
 ## Reschedule And Proposal Milestone
+
+Status: implemented on 2026-10-13.
 
 Goal:
 - Add appointment change/reschedule flows using unified proposals.
