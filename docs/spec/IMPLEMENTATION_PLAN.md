@@ -439,6 +439,8 @@ Exit criteria:
 
 ## Audit, Diagnostics, Cleanup Milestone
 
+Status: implemented on 2026-10-13.
+
 Goal:
 - Finish operational visibility and data hygiene.
 

@@ -175,6 +175,9 @@ Checks:
 - Docker log growth.
 - PostgreSQL volume usage.
 - old diagnostic/delivery/broadcast recipient cleanup execution.
+- manual cleanup command: `python manage.py cleanup_retained_records`.
+- heartbeat command for runbook checks: `python manage.py record_worker_heartbeat <component> --queue <queue> --worker <worker>`.
+- maintenance tasks: `audit.cleanup_expired_retained_records`, `audit.refresh_worker_health`, and `audit.heartbeat`.
 
 Operational rule:
 - core business history is retained while partner data is retained.
