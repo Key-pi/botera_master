@@ -162,6 +162,33 @@ def handle_start_command(
     )
 
 
+def resolve_client_profile_from_telegram_user(
+    *,
+    partner: Partner,
+    telegram_user_id: int,
+    username: str = "",
+    first_name: str = "",
+    last_name: str = "",
+    is_premium: bool = False,
+    language_code: str = "",
+):
+    """Resolve global Telegram identity and partner-scoped client profile."""
+
+    identity = upsert_telegram_identity(
+        telegram_user_id=telegram_user_id,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        is_premium=is_premium,
+        language_code=language_code,
+    )
+    profile = resolve_client_profile_for_telegram_identity(
+        partner=partner,
+        telegram_identity=identity,
+    )
+    return identity, profile
+
+
 def render_invalid_master_contact_link_message(*, partner: Partner) -> str:
     """Return localized text for an invalid/expired admin Telegram link."""
 

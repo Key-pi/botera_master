@@ -31,7 +31,9 @@ async def _run_single_bot(config: RuntimeBotConfig) -> None:
         bot_instance=bot_instance,
     )
     dispatcher = Dispatcher()
-    dispatcher.message.middleware(PartnerContextMiddleware(context))
+    partner_context = PartnerContextMiddleware(context)
+    dispatcher.message.middleware(partner_context)
+    dispatcher.callback_query.middleware(partner_context)
     dispatcher.include_router(build_partner_router())
     bot = Bot(token=config.token)
     try:
