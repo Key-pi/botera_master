@@ -1,6 +1,7 @@
 import pytest
 from cryptography.fernet import Fernet
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.bot.models import BotInstance
@@ -18,6 +19,7 @@ from apps.partners.services import create_partner_with_owner
 from apps.partners.setup import SetupStep, get_partner_setup_status
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
+SECOND_VALID_TOKEN = "987654321:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghj"
 FUTURE_SETUP_STEPS = {
     SetupStep.CATALOG_SERVICE,
     SetupStep.AVAILABILITY_WINDOW,
@@ -70,6 +72,40 @@ def test_invalid_bot_token_format_is_rejected(partner_with_owner):
 
     with pytest.raises(ValidationError):
         set_bot_token(actor=created.owner, partner=created.partner, raw_token="not-a-token")
+
+
+@pytest.mark.django_db
+def test_replacing_bot_token_clears_stale_connection_identity(partner_with_owner):
+    created = partner_with_owner
+    bot_instance = set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    bot_instance.status = BotInstance.Status.ACTIVE
+    bot_instance.telegram_bot_id = 111
+    bot_instance.telegram_username = "old_bot"
+    bot_instance.last_checked_at = timezone.now()
+    bot_instance.save(
+        update_fields=[
+            "status",
+            "telegram_bot_id",
+            "telegram_username",
+            "last_checked_at",
+        ]
+    )
+
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=SECOND_VALID_TOKEN,
+    )
+    bot_instance.refresh_from_db()
+
+    assert bot_instance.status == BotInstance.Status.PAUSED
+    assert bot_instance.telegram_bot_id is None
+    assert bot_instance.telegram_username == ""
+    assert bot_instance.last_checked_at is None
 
 
 @pytest.mark.django_db
@@ -245,7 +281,7 @@ def test_check_bot_connection_updates_identity(monkeypatch, partner_with_owner):
     async def fake_fetch_bot_identity(raw_token: str) -> TelegramBotIdentity:
         assert raw_token == VALID_TOKEN
         return TelegramBotIdentity(
-            telegram_bot_id=8829120637,
+            telegram_bot_id=123456789,
             username="Nails_1test1_bot",
             first_name="NailsTest",
         )
@@ -256,7 +292,7 @@ def test_check_bot_connection_updates_identity(monkeypatch, partner_with_owner):
     bot_instance.refresh_from_db()
 
     assert bot_instance.status == BotInstance.Status.PAUSED
-    assert bot_instance.telegram_bot_id == 8829120637
+    assert bot_instance.telegram_bot_id == 123456789
     assert bot_instance.telegram_username == "Nails_1test1_bot"
     assert bot_instance.last_error_code == ""
 

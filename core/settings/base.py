@@ -1,6 +1,8 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
 from kombu import Queue
 
 from core.settings.env import database_config, env_bool, env_list, parse_key_ring
@@ -101,6 +103,68 @@ CELERY_TASK_QUEUES = (
     Queue("broadcasts"),
     Queue("maintenance"),
 )
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-due-notifications": {
+        "task": "notifications.dispatch_due_notifications",
+        "schedule": timedelta(seconds=15),
+        "options": {"queue": "notifications", "expires": 30},
+    },
+    "dispatch-queued-conversation-messages": {
+        "task": "messaging.dispatch_queued_conversation_messages",
+        "schedule": timedelta(seconds=15),
+        "options": {"queue": "notifications", "expires": 30},
+    },
+    "schedule-morning-digests": {
+        "task": "notifications.schedule_morning_digests",
+        "schedule": timedelta(minutes=1),
+        "options": {"queue": "notifications", "expires": 90},
+    },
+    "dispatch-broadcast-recipient": {
+        "task": "broadcasts.dispatch_due_recipients",
+        "schedule": timedelta(seconds=1),
+        "options": {"queue": "broadcasts", "expires": 5},
+    },
+    "deliver-pending-integration-events": {
+        "task": "integrations.deliver_pending_events",
+        "schedule": timedelta(minutes=1),
+        "options": {"queue": "default", "expires": 90},
+    },
+    "refresh-worker-health": {
+        "task": "audit.refresh_worker_health",
+        "schedule": timedelta(minutes=1),
+        "options": {"queue": "maintenance", "expires": 90},
+    },
+    "cleanup-expired-retained-records": {
+        "task": "audit.cleanup_expired_retained_records",
+        "schedule": crontab(hour=3, minute=30),
+        "options": {"queue": "maintenance"},
+    },
+    "heartbeat-celery-beat": {
+        "task": "audit.heartbeat",
+        "schedule": timedelta(minutes=1),
+        "kwargs": {"component": "celery_beat"},
+        "options": {"queue": "maintenance", "expires": 90},
+    },
+    "heartbeat-default-worker": {
+        "task": "audit.heartbeat",
+        "schedule": timedelta(minutes=1),
+        "kwargs": {"component": "default_worker"},
+        "options": {"queue": "default", "expires": 90},
+    },
+    "heartbeat-notifications-worker": {
+        "task": "audit.heartbeat",
+        "schedule": timedelta(minutes=1),
+        "kwargs": {"component": "notifications_worker"},
+        "options": {"queue": "notifications", "expires": 90},
+    },
+    "heartbeat-broadcast-worker": {
+        "task": "audit.heartbeat",
+        "schedule": timedelta(minutes=5),
+        "kwargs": {"component": "broadcast_worker"},
+        "options": {"queue": "broadcasts", "expires": 360},
+    },
+}
 
 BOT_TOKEN_ENCRYPTION_KEYS = parse_key_ring(os.getenv("BOT_TOKEN_ENCRYPTION_KEYS"))
 BOT_TOKEN_CURRENT_KEY_ID = os.getenv("BOT_TOKEN_CURRENT_KEY_ID", "")

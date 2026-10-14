@@ -86,20 +86,25 @@ def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstan
         raise ValidationError({"token": "This Telegram bot token is already used."})
 
     encrypted = encrypt_text(token)
-    now = timezone.now()
     with transaction.atomic():
         bot_instance, _created = BotInstance.objects.select_for_update().get_or_create(
             partner=partner,
             defaults={"status": BotInstance.Status.PAUSED},
         )
+        token_changed = bot_instance.token_fingerprint != fingerprint
         bot_instance.encrypted_token = encrypted.ciphertext
         bot_instance.token_key_id = encrypted.key_id
         bot_instance.token_fingerprint = fingerprint
         bot_instance.token_masked = mask_token(token)
         bot_instance.last_error_code = ""
         bot_instance.last_error_message_masked = ""
-        bot_instance.last_checked_at = now
+        if token_changed:
+            bot_instance.telegram_bot_id = None
+            bot_instance.telegram_username = ""
+            bot_instance.last_checked_at = None
         if bot_instance.status == BotInstance.Status.ERROR:
+            bot_instance.status = BotInstance.Status.PAUSED
+        elif token_changed and bot_instance.status != BotInstance.Status.SUSPENDED:
             bot_instance.status = BotInstance.Status.PAUSED
         bot_instance.save()
 

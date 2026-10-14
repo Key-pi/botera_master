@@ -1,9 +1,11 @@
-# BoteraMaster MVP Runbook Draft
+# BoteraMaster MVP Runbook
 
-Status: approved operational direction pending exact command names from implementation.
-Last updated: 2026-10-02.
+Status: implemented operational baseline for the approved Pilot Wiring milestone.
+Last updated: 2026-10-15.
 
-This runbook defines what MVP operations must cover. Exact command names may change when the real Docker Compose services, Django commands, and health views exist, but the operational flows should stay stable.
+This runbook covers the implemented single-host Docker Compose pilot. Durable
+business state remains in PostgreSQL; Redis and Celery transport work but do not
+replace database delivery records.
 
 ## Deployment Shape
 
@@ -22,7 +24,7 @@ Required production MVP services:
 Recommended worker roles:
 - `notifications-worker`: urgent reminders/service notifications, initial concurrency around 4.
 - `broadcast-worker`: broadcasts only, initial concurrency 1.
-- `default-worker`: default and maintenance jobs, initial concurrency 1.
+- `default-worker`: `default` and `maintenance` queues, initial concurrency 1.
 
 Rules:
 - `broadcasts` must not share the urgent notification worker in production MVP.
@@ -34,22 +36,63 @@ Rules:
 ## Standard Deploy / Restart Procedure
 
 Recommended flow:
-1. Pull or build the application image.
-2. Stop or restart services through Docker Compose according to the chosen deployment style.
+1. Pull the repository and prepare `.env` from `.env.example` with real secrets.
+2. Build the application image.
 3. Run database migrations before accepting normal traffic.
 4. Start or restart all services.
-5. Verify the superuser health dashboard.
-6. Check recent platform diagnostics for startup/runtime errors.
-7. Confirm at least one known active partner bot is polling successfully.
+5. Run Django's system check and inspect process state.
+6. Run the bot runtime dry-run and one configured partner readiness check.
+7. Inspect health records and recent masked platform diagnostics.
 
-Command placeholders:
-- `docker compose pull` or `docker compose build`
-- `docker compose run --rm web <migrate command>`
-- `docker compose up -d`
-- `docker compose ps`
-- `docker compose logs --tail=200 <service>`
+```bash
+docker compose build
+docker compose run --rm web python manage.py migrate
+docker compose up -d
+docker compose exec web python manage.py check
+docker compose ps
+docker compose exec web python manage.py run_partner_bots --dry-run
+docker compose exec web python manage.py check_pilot_readiness \
+  --partner-id <partner-uuid>
+docker compose logs --tail=200 bot-runner celery-beat \
+  notifications-worker broadcast-worker default-worker
+```
 
-Exact command names are finalized during implementation, after the project command layout exists.
+Use `docker compose restart bot-runner` after bot token/status/setup changes.
+The runner intentionally does not hot-reload configs. A fresh installation with
+no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
+loop; start it after the first partner is eligible.
+
+## End-To-End Pilot Check
+
+Before the check, the partner must be active and have an encrypted bot token,
+at least one active category/service, schedule confirmation mode, a future
+availability window, an active bot instance, and a primary master Telegram
+contact created through the signed admin-link flow.
+
+1. Verify the stored token against Telegram. The raw token is read from encrypted
+   storage and is never passed as a CLI argument.
+2. Run the aggregate readiness command.
+3. Restart the polling runner so it loads the current eligible bot set.
+4. Send `/start`, then `/book`, from a client Telegram account.
+5. Select a category, service, date, and time; confirm the booking.
+6. For manual confirmation, confirm the request in partner admin.
+7. Verify the client notification becomes `sent`, or has a durable masked
+   failure/retry state.
+8. Verify the master receives partner-facing notifications, or readiness clearly
+   reports the missing master contact.
+
+```bash
+docker compose exec web python manage.py check_bot_connection \
+  --partner-id <partner-uuid>
+docker compose exec web python manage.py check_pilot_readiness \
+  --partner-id <partner-uuid> --check-telegram
+docker compose restart bot-runner
+docker compose logs --tail=200 -f bot-runner notifications-worker
+```
+
+Do not paste a raw token into shell arguments. Partner token setup must use the
+application's token service/UI path so encryption and duplicate fingerprint
+checks are applied.
 
 ## Health Dashboard Checklist
 
@@ -116,6 +159,17 @@ Check when a bot does not respond or partner says the bot is unavailable:
 7. `bot-runner` is running.
 8. `bot-runner` has recent successful polling/activity timestamp.
 9. Recent diagnostics do not show Telegram startup/polling errors.
+
+Commands:
+
+```bash
+docker compose exec web python manage.py run_partner_bots --dry-run
+docker compose exec web python manage.py check_bot_connection \
+  --partner-id <partner-uuid>
+docker compose exec web python manage.py check_pilot_readiness \
+  --partner-id <partner-uuid>
+docker compose logs --tail=200 bot-runner
+```
 
 MVP runtime does not hot-reload bot token/status changes. After token/status changes, restart/redeploy `bot-runner` for live polling to pick up the new active bot set.
 
@@ -241,9 +295,8 @@ Forbidden:
 
 ## Still Implementation-Specific
 
-To finalize during coding:
-- exact Docker Compose file/service names if they differ from the recommended names
-- exact Django management commands
-- exact health dashboard URLs
-- exact migration/deploy command
-- exact log inspection commands for production host
+To finalize in later pilot/admin slices:
+- partner-facing token/setup forms and polished onboarding checklist
+- a dedicated composed health dashboard URL beyond current Django admin records
+- production TLS/reverse-proxy and backup/restore commands for the chosen VPS
+- per-bot broadcast parallelism beyond the conservative pilot dispatcher

@@ -70,9 +70,12 @@ def test_platform_diagnostics_are_superuser_only_and_redacted(audit_context):
         component=PlatformDiagnostic.Component.TELEGRAM,
         severity=PlatformDiagnostic.Severity.ERROR,
         code="telegram.invalid_token",
-        message="Token 8829120637:AAE9wnEkcAWA5B1-Mf_cdL3JEAgcWWVg8ds failed for +380501111111",
+        message=(
+            "Token 123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi "
+            "failed for +380501111111"
+        ),
         metadata={
-            "token": "8829120637:AAE9wnEkcAWA5B1-Mf_cdL3JEAgcWWVg8ds",
+            "token": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi",
             "phone": "+380501111111",
             "message_text": "raw client message",
             "details": "Retry for +380501111111",
@@ -81,7 +84,7 @@ def test_platform_diagnostics_are_superuser_only_and_redacted(audit_context):
 
     diagnostic.refresh_from_db()
 
-    assert "AAE9wnEkcAWA5B1" not in diagnostic.message
+    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in diagnostic.message
     assert "+380501111111" not in diagnostic.message
     assert diagnostic.metadata["token"] == "***"
     assert diagnostic.metadata["phone"] == "***"

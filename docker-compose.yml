@@ -1,3 +1,28 @@
+x-app-service: &app-service
+  build:
+    context: .
+    dockerfile: infrastructure/docker/Dockerfile
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB:-botera_master}
+    POSTGRES_USER: ${POSTGRES_USER:-botera_master}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+  volumes:
+    - .:/app
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,36 +34,58 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: infrastructure/docker/Dockerfile
+    <<: *app-service
     command: python manage.py runserver 0.0.0.0:8000
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-botera_master}
-      POSTGRES_USER: ${POSTGRES_USER:-botera_master}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-    volumes:
-      - .:/app
     ports:
       - "8000:8000"
-    depends_on:
-      - postgres
-      - redis
+
+  bot-runner:
+    <<: *app-service
+    command: python manage.py run_partner_bots
+    restart: on-failure
+
+  celery-beat:
+    <<: *app-service
+    command: celery -A core beat --loglevel=INFO
+
+  notifications-worker:
+    <<: *app-service
+    command: >-
+      celery -A core worker --loglevel=INFO
+      --queues=notifications --concurrency=4
+
+  broadcast-worker:
+    <<: *app-service
+    command: >-
+      celery -A core worker --loglevel=INFO
+      --queues=broadcasts --concurrency=1
+
+  default-worker:
+    <<: *app-service
+    command: >-
+      celery -A core worker --loglevel=INFO
+      --queues=default,maintenance --concurrency=1
 
 volumes:
   postgres_data:
