@@ -21,6 +21,22 @@ from apps.bot.booking import (
     parse_timestamp_token,
     parse_uuid_token,
 )
+from apps.bot.profile import (
+    PROFILE_CALLBACK_PREFIX,
+    BotProfileReply,
+    build_appointment_details_reply,
+    build_appointment_history_reply,
+    build_future_appointments_reply,
+    build_profile_language_reply,
+    build_profile_main_reply,
+    set_profile_language_reply,
+)
+from apps.bot.profile import (
+    parse_page_token as parse_profile_page_token,
+)
+from apps.bot.profile import (
+    parse_uuid_token as parse_profile_uuid_token,
+)
 from apps.bot.services import (
     handle_start_command,
     render_content_template,
@@ -73,6 +89,39 @@ def build_partner_router() -> Router:
         )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(Command("profile"))
+    async def profile_handler(message: Message, partner: Partner) -> None:
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        if profile is None:
+            return
+        reply = await sync_to_async(build_profile_main_reply)(
+            partner=partner,
+            client_profile=profile,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("history"))
+    async def history_handler(message: Message, partner: Partner) -> None:
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        if profile is None:
+            return
+        reply = await sync_to_async(build_appointment_history_reply)(
+            partner=partner,
+            client_profile=profile,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("language"))
+    async def language_handler(message: Message, partner: Partner) -> None:
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        if profile is None:
+            return
+        reply = await sync_to_async(build_profile_language_reply)(
+            partner=partner,
+            client_profile=profile,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.callback_query(F.data.startswith(f"{BOOKING_CALLBACK_PREFIX}:"))
     async def booking_callback_handler(callback: CallbackQuery, partner: Partner) -> None:
         if callback.data == f"{BOOKING_CALLBACK_PREFIX}:noop":
@@ -91,6 +140,31 @@ def build_partner_router() -> Router:
             )
         except ValidationError:
             reply = await sync_to_async(_invalid_booking_action_reply)(
+                partner=partner,
+                language=profile.language,
+            )
+
+        await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith(f"{PROFILE_CALLBACK_PREFIX}:"))
+    async def profile_callback_handler(callback: CallbackQuery, partner: Partner) -> None:
+        if callback.data == f"{PROFILE_CALLBACK_PREFIX}:noop":
+            await callback.answer()
+            return
+
+        profile = await _client_profile_for_callback(callback=callback, partner=partner)
+        if profile is None or callback.message is None or callback.data is None:
+            return
+
+        try:
+            reply = await sync_to_async(_profile_reply_from_callback_data)(
+                partner=partner,
+                client_profile=profile,
+                data=callback.data,
+            )
+        except ValidationError:
+            reply = await sync_to_async(_invalid_profile_action_reply)(
                 partner=partner,
                 language=profile.language,
             )
@@ -168,6 +242,58 @@ def _invalid_booking_action_reply(*, partner: Partner, language: str):
         language=language,
     )
     return BotBookingReply(text=rendered.body)
+
+
+def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data: str):
+    parts = data.split(":")
+    if len(parts) < 2 or parts[0] != PROFILE_CALLBACK_PREFIX:
+        raise ValidationError({"callback": "Unsupported callback."})
+
+    action = parts[1]
+    if action == "main" and len(parts) == 2:
+        return build_profile_main_reply(partner=partner, client_profile=client_profile)
+    if action == "future" and len(parts) == 3:
+        return build_future_appointments_reply(
+            partner=partner,
+            client_profile=client_profile,
+            page=parse_profile_page_token(parts[2]),
+        )
+    if action == "history" and len(parts) == 3:
+        return build_appointment_history_reply(
+            partner=partner,
+            client_profile=client_profile,
+            page=parse_profile_page_token(parts[2]),
+        )
+    if action == "details" and len(parts) == 5:
+        return_action = parts[3]
+        if return_action not in {"future", "history"}:
+            raise ValidationError({"callback": "Unsupported return target."})
+        return build_appointment_details_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            return_action=return_action,
+            return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "lang" and len(parts) == 2:
+        return build_profile_language_reply(partner=partner, client_profile=client_profile)
+    if action == "langset" and len(parts) == 3:
+        return set_profile_language_reply(
+            partner=partner,
+            client_profile=client_profile,
+            language=parts[2],
+        )
+
+    raise ValidationError({"callback": "Unsupported callback."})
+
+
+def _invalid_profile_action_reply(*, partner: Partner, language: str):
+    rendered = render_content_template(
+        partner=partner,
+        key="error.invalid_action",
+        language=language,
+    )
+    return BotProfileReply(text=rendered.body)
 
 
 async def _client_profile_for_message(*, message: Message, partner: Partner):

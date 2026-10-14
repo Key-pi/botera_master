@@ -65,6 +65,13 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("missing_fields",),
     ),
     _definition(
+        "error.invalid_action",
+        uk="Дія недоступна або застаріла. Відкрийте розділ ще раз.",
+        ru="Действие недоступно или устарело. Откройте раздел ещё раз.",
+        en="This action is unavailable or expired. Open the section again.",
+        editable=False,
+    ),
+    _definition(
         "admin.master_contact_linked",
         uk="Telegram майстра підключено. Сюди надходитимуть робочі сповіщення.",
         ru="Telegram мастера подключен. Сюда будут приходить рабочие уведомления.",
@@ -370,6 +377,14 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         ru="Заполните данные: {missing_fields}.",
         en="Fill in: {missing_fields}.",
         placeholders=("missing_fields",),
+    ),
+    _definition(
+        "profile.language_updated",
+        uk="Мову змінено на {language}.",
+        ru="Язык изменён на {language}.",
+        en="Language changed to {language}.",
+        placeholders=("language",),
+        editable=False,
     ),
     _definition(
         "profile.future_appointments_empty",
