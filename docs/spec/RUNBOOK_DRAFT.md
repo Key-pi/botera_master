@@ -62,12 +62,38 @@ The runner intentionally does not hot-reload configs. A fresh installation with
 no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
 loop; start it after the first partner is eligible.
 
+## Partner Bot Setup In Admin
+
+The Django admin adapter exposes token setup without rendering the stored raw
+token. The token is always persisted through the bot service, so encryption,
+fingerprinting, tenant access, and duplicate-token checks still apply.
+
+1. Open **Bot > Bot instances** and add the instance for the visible partner.
+2. Enter the BotFather token in **New bot token** and save. On later edits,
+   leave this field empty to keep the existing token.
+3. Select the bot and run **Check Telegram connection**. Confirm that bot id,
+   username, and `last_checked_at` are populated and no error remains.
+4. While logged in as the intended owner/master admin account, run **Create my
+   master Telegram link**, open the short-lived link in that person's Telegram,
+   and complete `/start`. The link binds the currently logged-in admin account.
+5. Create at least one active category/service, choose booking confirmation
+   mode, and add a future availability window.
+6. Run **Launch selected bots after setup checks**. This atomically activates
+   the setup-complete partner and bot; incomplete setup or an unchecked bot is
+   rejected with a business-friendly message.
+7. Restart `bot-runner`, because the MVP runner loads active bot configs only at
+   process startup.
+
+Use **Pause selected bots** for a voluntary stop. A platform-suspended bot
+cannot be resumed by a partner owner.
+
 ## End-To-End Pilot Check
 
-Before the check, the partner must be active and have an encrypted bot token,
-at least one active category/service, schedule confirmation mode, a future
-availability window, an active bot instance, and a primary master Telegram
-contact created through the signed admin-link flow.
+Before the check, complete the admin setup flow above. The partner and bot must
+be active and have an encrypted checked token, at least one active
+category/service, schedule confirmation mode, a future availability window,
+and a primary master Telegram contact created through the signed admin-link
+flow.
 
 1. Verify the stored token against Telegram. The raw token is read from encrypted
    storage and is never passed as a CLI argument.
@@ -91,8 +117,8 @@ docker compose logs --tail=200 -f bot-runner notifications-worker
 ```
 
 Do not paste a raw token into shell arguments. Partner token setup must use the
-application's token service/UI path so encryption and duplicate fingerprint
-checks are applied.
+admin **New bot token** field (or the underlying application service) so
+encryption and duplicate fingerprint checks are applied.
 
 ## Health Dashboard Checklist
 
@@ -296,7 +322,7 @@ Forbidden:
 ## Still Implementation-Specific
 
 To finalize in later pilot/admin slices:
-- partner-facing token/setup forms and polished onboarding checklist
+- polished onboarding checklist and dedicated partner creation form
 - a dedicated composed health dashboard URL beyond current Django admin records
 - production TLS/reverse-proxy and backup/restore commands for the chosen VPS
 - per-bot broadcast parallelism beyond the conservative pilot dispatcher

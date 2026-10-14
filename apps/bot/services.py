@@ -75,15 +75,8 @@ def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstan
     """Create or update a partner bot token with encryption and duplicate safety."""
 
     ensure_partner_access(actor, partner)
-    token = validate_bot_token_format(raw_token)
+    token = validate_bot_token_for_partner(partner=partner, raw_token=raw_token)
     fingerprint = token_fingerprint(token)
-    duplicate = (
-        BotInstance.objects.filter(token_fingerprint=fingerprint)
-        .exclude(partner=partner)
-        .exists()
-    )
-    if duplicate:
-        raise ValidationError({"token": "This Telegram bot token is already used."})
 
     encrypted = encrypt_text(token)
     with transaction.atomic():
@@ -109,6 +102,19 @@ def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstan
         bot_instance.save()
 
     return bot_instance
+
+
+def validate_bot_token_for_partner(*, partner: Partner, raw_token: str) -> str:
+    """Validate a token before persistence without exposing another tenant's data."""
+
+    token = validate_bot_token_format(raw_token)
+    fingerprint = token_fingerprint(token)
+    duplicate = (
+        BotInstance.objects.filter(token_fingerprint=fingerprint).exclude(partner=partner).exists()
+    )
+    if duplicate:
+        raise ValidationError({"token": "This Telegram bot token is already used."})
+    return token
 
 
 def handle_start_command(
@@ -304,9 +310,7 @@ def bind_master_contact_from_start_payload(
             if contact.last_delivery_failure_code or contact.last_delivery_failure_at:
                 contact.last_delivery_failure_code = ""
                 contact.last_delivery_failure_at = None
-                update_fields.extend(
-                    ["last_delivery_failure_code", "last_delivery_failure_at"]
-                )
+                update_fields.extend(["last_delivery_failure_code", "last_delivery_failure_at"])
             if update_fields:
                 update_fields.append("updated_at")
                 contact.save(update_fields=update_fields)
@@ -374,6 +378,44 @@ def set_bot_status(*, actor: User, bot_instance: BotInstance, status: str) -> Bo
     bot_instance.status = status
     bot_instance.save(update_fields=["status", "updated_at"])
     return bot_instance
+
+
+def activate_partner_bot(*, actor: User, bot_instance: BotInstance) -> BotInstance:
+    """Launch a checked bot and its setup-complete partner in one transaction.
+
+    Telegram verification intentionally happens before this service. The
+    transaction only locks local rows, rechecks durable setup state, and
+    changes statuses, so no network I/O is performed while database locks are
+    held.
+    """
+
+    ensure_partner_access(actor, bot_instance.partner)
+    with transaction.atomic():
+        locked_bot = (
+            BotInstance.objects.select_for_update()
+            .select_related("partner")
+            .get(pk=bot_instance.pk)
+        )
+        ensure_partner_access(actor, locked_bot.partner)
+        if (
+            locked_bot.last_checked_at is None
+            or locked_bot.telegram_bot_id is None
+            or not locked_bot.telegram_username
+            or locked_bot.last_error_code
+        ):
+            raise ValidationError(
+                {"bot": "Check the Telegram connection successfully before launch."}
+            )
+
+        # Local import avoids coupling partner setup registration to bot module import order.
+        from apps.partners.services import activate_partner_after_setup
+
+        activate_partner_after_setup(actor=actor, partner=locked_bot.partner)
+        return set_bot_status(
+            actor=actor,
+            bot_instance=locked_bot,
+            status=BotInstance.Status.ACTIVE,
+        )
 
 
 def mark_bot_error(
