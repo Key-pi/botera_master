@@ -10,6 +10,7 @@ from apps.appointments.models import Appointment
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     confirm_requested_appointment,
+    correct_final_appointment_status,
     create_confirmed_appointment,
     create_manual_appointment,
     create_requested_appointment,
@@ -158,15 +159,19 @@ def test_confirming_requested_appointment_rechecks_overlap(
 @pytest.mark.django_db
 def test_final_appointments_do_not_block_new_confirmed_slots(
     appointment_context,
-    rounded_future_start,
 ):
     context = appointment_context
+    past_start = (timezone.now() - timedelta(days=3)).replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
     appointment = create_confirmed_appointment(
         actor=context["owner"],
         partner=context["partner"],
         booking_resource=context["resource"],
         client_profile=context["client"],
-        start_at=rounded_future_start,
+        start_at=past_start,
         service_items=[_service_input(context["service"])],
     )
     transition_appointment_status(
@@ -180,11 +185,39 @@ def test_final_appointments_do_not_block_new_confirmed_slots(
         partner=context["partner"],
         booking_resource=context["resource"],
         client_profile=context["client"],
-        start_at=rounded_future_start,
+        start_at=past_start,
         service_items=[_service_input(context["service"])],
     )
 
     assert replacement.status == Appointment.Status.CONFIRMED
+
+
+@pytest.mark.django_db
+def test_past_final_appointment_cannot_be_restored_to_confirmed(
+    appointment_context,
+) -> None:
+    context = appointment_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=timezone.now() - timedelta(days=2),
+        service_items=[_service_input(context["service"])],
+    )
+    transition_appointment_status(
+        actor=context["owner"],
+        appointment=appointment,
+        new_status=Appointment.Status.COMPLETED,
+    )
+
+    with pytest.raises(ValidationError, match="future appointment"):
+        correct_final_appointment_status(
+            actor=context["owner"],
+            appointment=appointment,
+            new_status=Appointment.Status.CONFIRMED,
+            reason="Wrong outcome.",
+        )
 
 
 @pytest.mark.django_db

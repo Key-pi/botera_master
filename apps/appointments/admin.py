@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
+from django.urls import path, reverse
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.forms import (
+    AppointmentStatusAdminForm,
     ManualAppointmentAdminForm,
     ManualAppointmentServiceItemFormSet,
     add_domain_errors_to_manual_appointment_form,
@@ -19,6 +22,7 @@ from apps.appointments.models import (
     AppointmentServiceItem,
 )
 from apps.appointments.services import (
+    correct_final_appointment_status,
     create_manual_appointment_with_client,
     transition_appointment_status,
 )
@@ -82,6 +86,7 @@ class AppointmentProposalOptionInline(admin.TabularInline):
 
 @admin.register(Appointment)
 class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    change_form_template = "admin/appointments/appointment/change_form.html"
     list_display = [
         "client_profile",
         "partner",
@@ -127,6 +132,16 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     ]
     inlines = [AppointmentServiceItemInline]
     actions = ["confirm_requested", "mark_completed", "mark_no_show", "cancel_by_master"]
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "<path:object_id>/status/",
+                self.admin_site.admin_view(self.status_view),
+                name="appointments_appointment_status",
+            ),
+        ]
+        return custom_urls + super().get_urls()
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if not request.user.is_superuser:
@@ -225,6 +240,88 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             context,
         )
 
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = {
+            **(extra_context or {}),
+            "status_action_url": reverse(
+                "admin:appointments_appointment_status",
+                args=[object_id],
+            ),
+        }
+        return super().change_view(
+            request,
+            object_id,
+            form_url=form_url,
+            extra_context=extra_context,
+        )
+
+    def status_view(self, request, object_id):
+        """Run one tenant-scoped appointment status transition or correction."""
+
+        appointment = self.get_object(request, object_id)
+        if appointment is None:
+            raise Http404("Appointment not found.")
+        if not self.has_change_permission(request, appointment):
+            raise PermissionDenied
+
+        form = AppointmentStatusAdminForm(
+            request.POST or None,
+            appointment=appointment,
+        )
+        if request.method == "POST" and form.is_valid():
+            try:
+                if appointment.is_final:
+                    stored = correct_final_appointment_status(
+                        actor=request.user,
+                        appointment=appointment,
+                        new_status=form.cleaned_data["new_status"],
+                        reason=form.cleaned_data["reason"],
+                    )
+                else:
+                    stored = transition_appointment_status(
+                        actor=request.user,
+                        appointment=appointment,
+                        new_status=form.cleaned_data["new_status"],
+                        reason=form.cleaned_data["reason"],
+                    )
+            except ValidationError as exc:
+                _add_validation_error(form, exc)
+            else:
+                self.log_change(
+                    request,
+                    stored,
+                    f"Changed status to {stored.get_status_display()}.",
+                )
+                self.message_user(
+                    request,
+                    f"Appointment status changed to {stored.get_status_display()}.",
+                )
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:appointments_appointment_change",
+                        args=[stored.id],
+                    )
+                )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Change appointment status",
+            "subtitle": str(appointment),
+            "opts": self.model._meta,
+            "appointment": appointment,
+            "form": form,
+            "media": self.media + form.media,
+            "change_url": reverse(
+                "admin:appointments_appointment_change",
+                args=[appointment.id],
+            ),
+        }
+        return TemplateResponse(
+            request,
+            "admin/appointments/appointment/status_form.html",
+            context,
+        )
+
     def _run_status_action(self, request, queryset, status: str) -> None:
         changed_count = 0
         failed_count = 0
@@ -305,3 +402,19 @@ class AppointmentProposalOptionAdmin(admin.ModelAdmin):
                 partner_id__in=partner_ids_for_user(request.user)
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+def _add_validation_error(form, exc: ValidationError) -> None:
+    """Map owner-service validation failures onto the status form."""
+
+    aliases = {"status": "new_status"}
+    if hasattr(exc, "message_dict"):
+        for field_name, error_messages in exc.message_dict.items():
+            target = aliases.get(field_name, field_name)
+            if target not in form.fields:
+                target = None
+            for error_message in error_messages:
+                form.add_error(target, error_message)
+        return
+    for error_message in exc.messages:
+        form.add_error(None, error_message)

@@ -1,12 +1,20 @@
 from datetime import timedelta
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.appointments.models import Appointment, AppointmentServiceItem
-from apps.appointments.services import AppointmentServiceItemInput, create_manual_appointment
+from apps.appointments.services import (
+    AppointmentServiceItemInput,
+    create_confirmed_appointment,
+    create_manual_appointment,
+    create_requested_appointment,
+    transition_appointment_status,
+)
+from apps.audit.models import AuditEvent
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.models import ClientProfile
 from apps.clients.services import create_manual_client_profile
@@ -251,9 +259,191 @@ def test_owner_cannot_forge_other_partner_manual_appointment_scope(
     assert Appointment.objects.filter(partner=first.partner).exists() is False
 
 
+@pytest.mark.django_db
+def test_owner_confirms_requested_appointment_from_detail_flow(
+    appointment_admin_context,
+) -> None:
+    client, _superuser, created, resource, service = appointment_admin_context
+    client_profile = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Requested client",
+    )
+    appointment = create_requested_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=_future_hour(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    status_url = reverse(
+        "admin:appointments_appointment_status",
+        args=[appointment.id],
+    )
+
+    page = client.get(status_url)
+    response = client.post(
+        status_url,
+        {
+            "new_status": Appointment.Status.CONFIRMED,
+            "reason": "",
+        },
+    )
+
+    assert page.status_code == 200
+    assert b'option value="confirmed"' in page.content
+    assert b'option value="cancelled_by_master"' in page.content
+    assert b'option value="completed"' not in page.content
+    assert response.status_code == 302
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.CONFIRMED
+    assert AuditEvent.objects.filter(
+        partner=created.partner,
+        target_id=str(appointment.id),
+        event_type="appointment.status_changed",
+        payload_masked__new_status=Appointment.Status.CONFIRMED,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_owner_completes_and_corrects_past_appointment_from_detail_flow(
+    appointment_admin_context,
+) -> None:
+    client, _superuser, created, resource, service = appointment_admin_context
+    client_profile = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Completed client",
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=_past_hour(hours=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    status_url = reverse(
+        "admin:appointments_appointment_status",
+        args=[appointment.id],
+    )
+
+    completed_response = client.post(
+        status_url,
+        {"new_status": Appointment.Status.COMPLETED, "reason": ""},
+    )
+    missing_reason_response = client.post(
+        status_url,
+        {"new_status": Appointment.Status.NO_SHOW, "reason": ""},
+    )
+    corrected_response = client.post(
+        status_url,
+        {
+            "new_status": Appointment.Status.NO_SHOW,
+            "reason": "Marked completed by mistake.",
+        },
+    )
+
+    assert completed_response.status_code == 302
+    assert missing_reason_response.status_code == 200
+    assert "reason" in missing_reason_response.context["form"].errors
+    assert corrected_response.status_code == 302
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.NO_SHOW
+    assert appointment.completed_at is None
+    assert appointment.no_show_at is not None
+    assert appointment.last_correction_reason == "Marked completed by mistake."
+    assert AuditEvent.objects.filter(
+        partner=created.partner,
+        target_id=str(appointment.id),
+        event_type="appointment.status_corrected",
+        reason="Marked completed by mistake.",
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_future_appointment_cannot_be_completed_or_marked_no_show(
+    appointment_admin_context,
+) -> None:
+    client, _superuser, created, resource, service = appointment_admin_context
+    client_profile = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Future client",
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=_future_hour(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    status_url = reverse(
+        "admin:appointments_appointment_status",
+        args=[appointment.id],
+    )
+
+    page = client.get(status_url)
+
+    assert page.status_code == 200
+    assert b'option value="cancelled_by_master"' in page.content
+    assert b'option value="completed"' not in page.content
+    assert b'option value="no_show"' not in page.content
+    with pytest.raises(ValidationError, match="only after it starts"):
+        transition_appointment_status(
+            actor=created.owner,
+            appointment=appointment,
+            new_status=Appointment.Status.COMPLETED,
+        )
+
+
+@pytest.mark.django_db
+def test_status_flow_does_not_expose_other_partner_appointment(
+    appointment_admin_context,
+) -> None:
+    client, superuser, created, resource, service = appointment_admin_context
+    client_profile = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Private client",
+    )
+    appointment = create_requested_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=_future_hour(days=3),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    other = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Unrelated Partner",
+        owner_username="unrelated-status-owner",
+        owner_password="secret",
+    )
+    client.force_login(other.owner)
+
+    response = client.get(reverse("admin:appointments_appointment_status", args=[appointment.id]))
+
+    assert response.status_code == 404
+
+
 def _future_hour(*, days: int):
     return timezone.localtime(
         timezone.now() + timedelta(days=days),
+        get_zone("Europe/Kiev"),
+    ).replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+
+def _past_hour(*, hours: int):
+    return timezone.localtime(
+        timezone.now() - timedelta(hours=hours),
         get_zone("Europe/Kiev"),
     ).replace(
         minute=0,

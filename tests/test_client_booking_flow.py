@@ -299,12 +299,16 @@ def test_client_history_and_profile_overview_are_paginated_newest_first(
     context = booking_context
     appointments = []
     for index in range(6):
+        if index < 2:
+            start_at = timezone.now() - timedelta(days=2 - index)
+        else:
+            start_at = rounded_future_start + timedelta(days=index - 2)
         appointment = create_confirmed_appointment(
             actor=context["owner"],
             partner=context["partner"],
             booking_resource=context["resource"],
             client_profile=context["client"],
-            start_at=rounded_future_start + timedelta(days=index),
+            start_at=start_at,
             service_items=[AppointmentServiceItemInput(service=context["service"])],
         )
         if index < 2:

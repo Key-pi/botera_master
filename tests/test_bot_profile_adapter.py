@@ -106,7 +106,7 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     profile_start,
 ):
     context = bot_profile_context
-    appointment = _create_confirmed(context, profile_start)
+    appointment = _create_confirmed(context, profile_start - timedelta(days=6))
     transition_appointment_status(
         actor=context["owner"],
         appointment=appointment,
@@ -156,7 +156,7 @@ def test_profile_future_history_and_details_are_paginated(
 ):
     context = bot_profile_context
     future = _create_confirmed(context, profile_start)
-    completed = _create_confirmed(context, profile_start + timedelta(days=1))
+    completed = _create_confirmed(context, profile_start - timedelta(days=6))
     transition_appointment_status(
         actor=context["owner"],
         appointment=completed,

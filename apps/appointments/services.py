@@ -16,6 +16,7 @@ from apps.appointments.models import (
     AppointmentServiceItem,
 )
 from apps.appointments.selectors import confirmed_appointments_overlapping
+from apps.audit.services import record_audit_event
 from apps.catalog.models import DEFAULT_CURRENCY, Service
 from apps.schedule.models import BookingResource, PartnerScheduleSettings
 from core.database.locks import (
@@ -55,6 +56,35 @@ ALLOWED_STATUS_TRANSITIONS = {
         Appointment.Status.CANCELLED_BY_MASTER,
     },
 }
+
+
+def available_appointment_status_targets(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> tuple[str, ...]:
+    """Return status actions that make sense for the current appointment state."""
+
+    current_time = now or timezone.now()
+    if appointment.status == Appointment.Status.REQUESTED:
+        return (
+            Appointment.Status.CONFIRMED,
+            Appointment.Status.CANCELLED_BY_MASTER,
+        )
+    if appointment.status == Appointment.Status.CONFIRMED:
+        targets: list[str] = [Appointment.Status.CANCELLED_BY_MASTER]
+        if appointment.start_at <= current_time:
+            targets[0:0] = [
+                Appointment.Status.COMPLETED,
+                Appointment.Status.NO_SHOW,
+            ]
+        return tuple(targets)
+    if appointment.status in FINAL_APPOINTMENT_STATUSES:
+        targets = [status for status in FINAL_APPOINTMENT_STATUSES if status != appointment.status]
+        if appointment.start_at > current_time:
+            targets.append(Appointment.Status.CONFIRMED)
+        return tuple(targets)
+    return ()
 
 
 def create_requested_appointment(
@@ -248,6 +278,7 @@ def confirm_requested_appointment(*, actor: User, appointment: Appointment) -> A
     now = timezone.now()
     with transaction.atomic():
         appointment = Appointment.objects.select_for_update().get(id=appointment.id)
+        old_status = appointment.status
         _validate_status_transition(
             current_status=appointment.status,
             new_status=Appointment.Status.CONFIRMED,
@@ -264,6 +295,12 @@ def confirm_requested_appointment(*, actor: User, appointment: Appointment) -> A
         appointment.status_changed_at = now
         appointment.save(
             update_fields=["status", "confirmed_at", "status_changed_at", "updated_at"]
+        )
+        _record_status_audit(
+            actor=actor,
+            appointment=appointment,
+            old_status=old_status,
+            new_status=Appointment.Status.CONFIRMED,
         )
         _on_commit_refresh_confirmed_notifications(appointment.id)
     return appointment
@@ -282,12 +319,19 @@ def transition_appointment_status(
     if new_status == Appointment.Status.CONFIRMED:
         return confirm_requested_appointment(actor=actor, appointment=appointment)
 
+    cleaned_reason = reason.strip()
     now = timezone.now()
     with transaction.atomic():
         appointment = Appointment.objects.select_for_update().get(id=appointment.id)
+        old_status = appointment.status
         _validate_status_transition(current_status=appointment.status, new_status=new_status)
+        _validate_status_timing(
+            appointment=appointment,
+            new_status=new_status,
+            changed_at=now,
+        )
         appointment.status = new_status
-        appointment.client_visible_reason = reason
+        appointment.client_visible_reason = cleaned_reason
         _apply_status_timestamp(appointment=appointment, status=new_status, changed_at=now)
         appointment.status_changed_at = now
         appointment.save(
@@ -300,6 +344,13 @@ def transition_appointment_status(
                 "status_changed_at",
                 "updated_at",
             ]
+        )
+        _record_status_audit(
+            actor=actor,
+            appointment=appointment,
+            old_status=old_status,
+            new_status=new_status,
+            reason=cleaned_reason,
         )
         _release_active_penalties_if_cancelled(appointment)
         _on_commit_stale_appointment_notifications(appointment.id)
@@ -325,6 +376,7 @@ def cancel_requested_appointment_by_client(
         if appointment.status != Appointment.Status.REQUESTED:
             raise ValidationError({"status": "Only requested appointments can be cancelled here."})
 
+        old_status = appointment.status
         appointment.status = Appointment.Status.CANCELLED_BY_CLIENT
         appointment.client_visible_reason = reason
         appointment.cancelled_at = now
@@ -337,6 +389,13 @@ def cancel_requested_appointment_by_client(
                 "status_changed_at",
                 "updated_at",
             ]
+        )
+        _record_status_audit(
+            actor=None,
+            appointment=appointment,
+            old_status=old_status,
+            new_status=Appointment.Status.CANCELLED_BY_CLIENT,
+            reason=reason,
         )
         _release_active_penalties_if_cancelled(appointment)
         _on_commit_stale_appointment_notifications(appointment.id)
@@ -364,7 +423,13 @@ def correct_final_appointment_status(
         appointment = Appointment.objects.select_for_update().get(id=appointment.id)
         if appointment.status not in FINAL_APPOINTMENT_STATUSES:
             raise ValidationError({"status": "Only final appointments can be corrected here."})
+        if new_status == appointment.status:
+            raise ValidationError({"status": "Choose a different status for the correction."})
         if new_status == Appointment.Status.CONFIRMED:
+            if appointment.start_at <= now:
+                raise ValidationError(
+                    {"status": "Only a future appointment can be restored to confirmed."}
+                )
             acquire_booking_resource_advisory_lock_if_supported(appointment.booking_resource)
             _raise_if_confirmed_overlap(
                 booking_resource=appointment.booking_resource,
@@ -372,15 +437,19 @@ def correct_final_appointment_status(
                 end_at=appointment.end_at,
                 exclude_appointment=appointment,
             )
+        old_status = appointment.status
         appointment.status = new_status
+        appointment.client_visible_reason = ""
         appointment.last_correction_reason = cleaned_reason
         appointment.last_correction_at = now
         appointment.last_correction_by = actor
+        _clear_final_status_timestamps(appointment)
         _apply_status_timestamp(appointment=appointment, status=new_status, changed_at=now)
         appointment.status_changed_at = now
         appointment.save(
             update_fields=[
                 "status",
+                "client_visible_reason",
                 "cancelled_at",
                 "completed_at",
                 "no_show_at",
@@ -391,6 +460,14 @@ def correct_final_appointment_status(
                 "last_correction_by",
                 "updated_at",
             ]
+        )
+        _record_status_audit(
+            actor=actor,
+            appointment=appointment,
+            old_status=old_status,
+            new_status=new_status,
+            reason=cleaned_reason,
+            correction=True,
         )
         if new_status == Appointment.Status.CONFIRMED:
             _on_commit_refresh_confirmed_notifications(appointment.id)
@@ -658,6 +735,50 @@ def _validate_status_transition(*, current_status: str, new_status: str) -> None
         raise ValidationError({"status": "Unknown appointment status."})
     if new_status not in ALLOWED_STATUS_TRANSITIONS.get(current_status, set()):
         raise ValidationError({"status": f"Cannot change {current_status} to {new_status}."})
+
+
+def _validate_status_timing(
+    *,
+    appointment: Appointment,
+    new_status: str,
+    changed_at: datetime,
+) -> None:
+    if (
+        new_status in {Appointment.Status.COMPLETED, Appointment.Status.NO_SHOW}
+        and appointment.start_at > changed_at
+    ):
+        raise ValidationError(
+            {"status": "An appointment can be completed or marked no-show only after it starts."}
+        )
+
+
+def _clear_final_status_timestamps(appointment: Appointment) -> None:
+    """Clear mutually exclusive outcome timestamps before applying a correction."""
+
+    appointment.cancelled_at = None
+    appointment.completed_at = None
+    appointment.no_show_at = None
+
+
+def _record_status_audit(
+    *,
+    actor: User | None,
+    appointment: Appointment,
+    old_status: str,
+    new_status: str,
+    reason: str = "",
+    correction: bool = False,
+) -> None:
+    event_type = "appointment.status_corrected" if correction else "appointment.status_changed"
+    record_audit_event(
+        partner=appointment.partner,
+        actor=actor,
+        event_type=event_type,
+        target=appointment,
+        message=f"Appointment status changed from {old_status} to {new_status}.",
+        payload={"old_status": old_status, "new_status": new_status},
+        reason=reason,
+    )
 
 
 def _apply_status_timestamp(

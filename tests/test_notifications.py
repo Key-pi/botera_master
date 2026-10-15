@@ -128,12 +128,14 @@ def test_confirmed_appointment_schedules_client_and_master_reminders_after_commi
     notifications = ScheduledNotification.objects.filter(appointment=appointment)
 
     assert notifications.count() == 3
-    assert notifications.filter(
-        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER
-    ).count() == 2
-    assert notifications.filter(
-        type=ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER
-    ).count() == 1
+    assert (
+        notifications.filter(type=ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER).count()
+        == 2
+    )
+    assert (
+        notifications.filter(type=ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db
@@ -217,7 +219,6 @@ def test_requested_appointment_schedules_only_stale_requested_reminder(
 @pytest.mark.django_db
 def test_final_status_stales_pending_reminders(
     notification_context,
-    future_start,
     django_capture_on_commit_callbacks,
 ):
     context = notification_context
@@ -227,7 +228,7 @@ def test_final_status_stales_pending_reminders(
             partner=context["partner"],
             booking_resource=context["resource"],
             client_profile=context["telegram_client"],
-            start_at=future_start,
+            start_at=timezone.now() - timedelta(hours=2),
             service_items=[_service_input(context["service"])],
         )
 
@@ -242,10 +243,13 @@ def test_final_status_stales_pending_reminders(
         appointment=appointment,
         status=ScheduledNotification.Status.QUEUED,
     ).exists()
-    assert ScheduledNotification.objects.filter(
-        appointment=appointment,
-        status=ScheduledNotification.Status.STALE,
-    ).count() == 3
+    assert (
+        ScheduledNotification.objects.filter(
+            appointment=appointment,
+            status=ScheduledNotification.Status.STALE,
+        ).count()
+        == 3
+    )
 
 
 @pytest.mark.django_db
@@ -256,9 +260,7 @@ def test_quiet_hours_move_due_time_to_quiet_hours_end(notification_context):
     settings.quiet_hours_end_local = time(8, 0)
     settings.save(update_fields=["quiet_hours_start_local", "quiet_hours_end_local", "updated_at"])
     partner_zone = get_zone(partner.timezone)
-    due_at = datetime(2026, 10, 13, 7, 0, tzinfo=partner_zone).astimezone(
-        datetime_timezone.utc
-    )
+    due_at = datetime(2026, 10, 13, 7, 0, tzinfo=partner_zone).astimezone(datetime_timezone.utc)
 
     adjusted = apply_quiet_hours(due_at=due_at, partner=partner, settings=settings)
 

@@ -1,0 +1,11 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  {% if status_action_url and change %}
+    <li>
+      <a href="{{ status_action_url }}">{% translate "Change status" %}</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

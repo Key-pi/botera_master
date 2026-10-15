@@ -11,7 +11,11 @@ from django.forms import BaseFormSet, formset_factory
 from django.utils import timezone
 
 from apps.accounts.selectors import partner_ids_for_user
-from apps.appointments.services import AppointmentServiceItemInput
+from apps.appointments.models import Appointment
+from apps.appointments.services import (
+    AppointmentServiceItemInput,
+    available_appointment_status_targets,
+)
 from apps.catalog.models import DEFAULT_CURRENCY, Service
 from apps.clients.models import ClientProfile
 from apps.partners.models import Partner
@@ -160,6 +164,36 @@ class ManualAppointmentAdminForm(forms.Form):
             self.initial.setdefault("partner", partner_id)
             return partner_id
         return None
+
+
+class AppointmentStatusAdminForm(forms.Form):
+    """Collect one allowed status transition or final-status correction."""
+
+    new_status = forms.ChoiceField(label="New status")
+    reason = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Shown to the client for cancellations. Required for final-status corrections.",
+    )
+
+    def __init__(self, *args, appointment: Appointment, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.appointment = appointment
+        targets = available_appointment_status_targets(appointment=appointment)
+        self.fields["new_status"].choices = [("", "Select status")] + [
+            (status, Appointment.Status(status).label) for status in targets
+        ]
+        if appointment.is_final:
+            self.fields["reason"].required = True
+            self.fields[
+                "reason"
+            ].help_text = "Required audit reason for correcting a final appointment status."
+
+    def clean_reason(self) -> str:
+        reason = self.cleaned_data.get("reason", "").strip()
+        if self.appointment.is_final and not reason:
+            raise forms.ValidationError("Correction reason is required.")
+        return reason
 
 
 class ManualAppointmentServiceItemForm(forms.Form):

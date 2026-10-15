@@ -222,7 +222,7 @@ def test_configured_late_cancel_no_show_and_late_arrival_penalties(finance_conte
         appointment=late_cancel_appointment,
     )
 
-    no_show_appointment = _confirmed(context, timezone.now() + timedelta(days=3))
+    no_show_appointment = _confirmed(context, timezone.now() - timedelta(days=3))
     transition_appointment_status(
         actor=context["owner"],
         appointment=no_show_appointment,
