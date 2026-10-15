@@ -1,0 +1,216 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}{{ block.super }}
+  <script src="{% url 'admin:jsi18n' %}"></script>
+  {{ media }}
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/css/forms.css' %}">
+  <style>
+    .manual-appointment-form .form-row {
+      overflow: visible;
+    }
+    .manual-appointment-form .service-lines {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .manual-appointment-form .service-line {
+      margin: 0;
+      padding: 12px;
+    }
+    .manual-appointment-form .service-line-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 16px;
+    }
+    .manual-appointment-form .service-line-grid > div {
+      min-width: 0;
+    }
+    .manual-appointment-form .service-line-grid select,
+    .manual-appointment-form .service-line-grid input,
+    .manual-appointment-form .service-line-grid textarea {
+      box-sizing: border-box;
+      max-width: 100%;
+      width: 100%;
+    }
+    .manual-appointment-form .service-line-delete {
+      align-items: center;
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .manual-appointment-form .service-line-delete input {
+      width: auto;
+    }
+    .manual-appointment-form .service-line-errors {
+      margin-bottom: 8px;
+    }
+    @media (max-width: 767px) {
+      .manual-appointment-form .service-line-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-form{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; {% translate "Create manual appointment" %}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main" class="manual-appointment-form">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <p class="errornote">{% translate "Please correct the errors below." %}</p>
+        {{ form.non_field_errors }}
+      {% endif %}
+
+      <fieldset class="module aligned">
+        <h2>{% translate "Time and calendar" %}</h2>
+        {% for field in form %}
+          {% if field.name == "partner" or field.name == "booking_resource" or field.name == "start_at" %}
+            <div class="form-row{% if field.errors %} errors{% endif %}">
+              {{ field.errors }}
+              <div class="flex-container">{{ field.label_tag }} {{ field }}</div>
+              {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <div class="help">
+          {% translate "The appointment is confirmed immediately. It may be outside availability, but cannot overlap another confirmed appointment for this resource." %}
+        </div>
+      </fieldset>
+
+      <fieldset class="module aligned">
+        <h2>{% translate "Client" %}</h2>
+        {% for field in form %}
+          {% if field.name == "client_profile" or field.name == "new_client_name" or field.name == "new_client_phone" %}
+            <div class="form-row{% if field.errors %} errors{% endif %}">
+              {{ field.errors }}
+              <div class="flex-container">{{ field.label_tag }} {{ field }}</div>
+              {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </fieldset>
+
+      <fieldset class="module">
+        <h2>{% translate "Services" %}</h2>
+        {% if service_formset.non_form_errors %}
+          <div class="errornote">{{ service_formset.non_form_errors }}</div>
+        {% endif %}
+        {{ service_formset.management_form }}
+        <div id="service-lines" class="service-lines">
+          {% for service_form in service_formset %}
+            <fieldset class="module aligned service-line">
+              <h3>{% blocktranslate with number=forloop.counter %}Service line {{ number }}{% endblocktranslate %}</h3>
+              {% if service_form.non_field_errors %}
+                <div class="service-line-errors">{{ service_form.non_field_errors }}</div>
+              {% endif %}
+              <div class="service-line-grid">
+                {% for field in service_form.visible_fields %}
+                  {% if field.name != "DELETE" %}
+                    <div class="form-row{% if field.errors %} errors{% endif %}">
+                      {{ field.errors }}
+                      {{ field.label_tag }}
+                      {{ field }}
+                      {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+                    </div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              <div class="service-line-delete">
+                {{ service_form.DELETE }}
+                {{ service_form.DELETE.label_tag }}
+              </div>
+              {% for hidden in service_form.hidden_fields %}{{ hidden }}{% endfor %}
+            </fieldset>
+          {% endfor %}
+        </div>
+        <button type="button" class="button" id="add-service-line">
+          {% translate "Add service line" %}
+        </button>
+      </fieldset>
+
+      <fieldset class="module aligned">
+        <h2>{% translate "Notes" %}</h2>
+        {% for field in form %}
+          {% if field.name == "client_comment" or field.name == "private_master_note" %}
+            <div class="form-row{% if field.errors %} errors{% endif %}">
+              {{ field.errors }}
+              <div class="flex-container">{{ field.label_tag }} {{ field }}</div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </fieldset>
+
+      <div class="submit-row">
+        <input type="submit" value="{% translate 'Save' %}" class="default" name="_save">
+        <input type="submit" value="{% translate 'Save and add another' %}" name="_addanother">
+        <input type="submit" value="{% translate 'Save and continue editing' %}" name="_continue">
+      </div>
+    </form>
+  </div>
+
+  <template id="empty-service-line">
+    <fieldset class="module aligned service-line">
+      <h3>{% translate "Service line" %}</h3>
+      <div class="service-line-grid">
+        {% for field in service_formset.empty_form.visible_fields %}
+          {% if field.name != "DELETE" %}
+            <div class="form-row">
+              {{ field.label_tag }}
+              {{ field }}
+              {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      <div class="service-line-delete">
+        {{ service_formset.empty_form.DELETE }}
+        {{ service_formset.empty_form.DELETE.label_tag }}
+      </div>
+      {% for hidden in service_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+    </fieldset>
+  </template>
+
+  <script>
+    (() => {
+      const addButton = document.getElementById("add-service-line");
+      const lines = document.getElementById("service-lines");
+      const template = document.getElementById("empty-service-line");
+      const totalForms = document.getElementById("id_service_items-TOTAL_FORMS");
+
+      addButton.addEventListener("click", () => {
+        const index = Number(totalForms.value);
+        const fragment = template.content.cloneNode(true);
+        fragment.querySelectorAll("*").forEach((element) => {
+          for (const attribute of ["for", "id", "name"]) {
+            if (element.hasAttribute(attribute)) {
+              element.setAttribute(
+                attribute,
+                element.getAttribute(attribute).replaceAll("__prefix__", String(index)),
+              );
+            }
+          }
+        });
+        lines.appendChild(fragment);
+        totalForms.value = String(index + 1);
+      });
+    })();
+  </script>
+{% endblock %}

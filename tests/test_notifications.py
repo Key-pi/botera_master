@@ -9,6 +9,7 @@ from apps.appointments.models import Appointment
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
+    create_manual_appointment,
     create_requested_appointment,
     transition_appointment_status,
 )
@@ -157,6 +158,36 @@ def test_manual_client_confirmed_appointment_skips_client_reminders(
 
     assert notifications.count() == 1
     assert notifications.get().type == ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER
+
+
+@pytest.mark.django_db
+def test_manual_appointment_queues_immediate_notice_for_linked_client(
+    notification_context,
+    future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_manual_appointment(
+            actor=context["owner"],
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["telegram_client"],
+            start_at=future_start,
+            service_items=[_service_input(context["service"])],
+        )
+
+    notifications = ScheduledNotification.objects.filter(appointment=appointment)
+
+    assert notifications.count() == 4
+    assert (
+        notifications.filter(
+            type=ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
+            client_profile=context["telegram_client"],
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db

@@ -167,18 +167,78 @@ def create_manual_appointment(
 ) -> Appointment:
     """Create a partner-admin manual appointment, confirmed by default."""
 
-    return create_confirmed_appointment(
-        actor=actor,
-        partner=partner,
-        booking_resource=booking_resource,
-        client_profile=client_profile,
-        start_at=start_at,
-        service_items=service_items,
-        client_comment=client_comment,
-        private_master_note=private_master_note,
-        source=Appointment.Source.PARTNER_ADMIN,
-        confirmation_mode_snapshot=PartnerScheduleSettings.ConfirmationMode.MANUAL,
-    )
+    from apps.notifications.services import schedule_manual_appointment_created_notification
+
+    with transaction.atomic():
+        appointment = create_confirmed_appointment(
+            actor=actor,
+            partner=partner,
+            booking_resource=booking_resource,
+            client_profile=client_profile,
+            start_at=start_at,
+            service_items=service_items,
+            client_comment=client_comment,
+            private_master_note=private_master_note,
+            source=Appointment.Source.PARTNER_ADMIN,
+            confirmation_mode_snapshot=PartnerScheduleSettings.ConfirmationMode.MANUAL,
+        )
+        schedule_manual_appointment_created_notification(appointment=appointment)
+        return appointment
+
+
+def create_manual_appointment_with_client(
+    *,
+    actor: User,
+    partner: Partner,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    service_items: Sequence[AppointmentServiceItemInput],
+    client_profile: ClientProfile | None = None,
+    new_client_name: str = "",
+    new_client_phone: str = "",
+    client_comment: str = "",
+    private_master_note: str = "",
+) -> Appointment:
+    """Create a manual client when needed and its confirmed appointment atomically.
+
+    Keeping both writes in one use case avoids leaving an orphan manual client
+    when the confirmed-overlap check rejects the appointment.
+    """
+
+    ensure_partner_access(actor, partner)
+    cleaned_name = new_client_name.strip()
+    cleaned_phone = new_client_phone.strip()
+    has_new_client_data = bool(cleaned_name or cleaned_phone)
+    if client_profile is not None and has_new_client_data:
+        raise ValidationError(
+            {"client_profile": "Choose an existing client or create a new one, not both."}
+        )
+    if client_profile is None and not has_new_client_data:
+        raise ValidationError(
+            {"client": "Choose an existing client or enter a new client name or phone."}
+        )
+
+    with transaction.atomic():
+        resolved_client = client_profile
+        if resolved_client is None:
+            from apps.clients.services import create_manual_client_profile
+
+            resolved_client = create_manual_client_profile(
+                actor=actor,
+                partner=partner,
+                name=cleaned_name,
+                phone=cleaned_phone,
+            )
+        return create_manual_appointment(
+            actor=actor,
+            partner=partner,
+            booking_resource=booking_resource,
+            client_profile=resolved_client,
+            start_at=start_at,
+            service_items=service_items,
+            client_comment=client_comment,
+            private_master_note=private_master_note,
+        )
 
 
 def confirm_requested_appointment(*, actor: User, appointment: Appointment) -> Appointment:

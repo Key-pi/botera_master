@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.appointments.services import AppointmentServiceItemInput, create_manual_appointment
 from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTelegramContactLink
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
@@ -18,6 +19,7 @@ from apps.bot.services import (
 from apps.broadcasts.models import BroadcastRecipient
 from apps.broadcasts.services import create_broadcast_campaign, queue_broadcast_campaign
 from apps.broadcasts.tasks import dispatch_due_recipients_task
+from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
@@ -26,9 +28,13 @@ from apps.messaging.models import ConversationMessage
 from apps.messaging.services import create_client_message_to_master, create_master_reply_to_client
 from apps.messaging.tasks import dispatch_queued_conversation_messages_task
 from apps.notifications.models import PartnerNotificationSettings, ScheduledNotification
-from apps.notifications.tasks import schedule_morning_digests_task
+from apps.notifications.tasks import (
+    dispatch_due_notifications_task,
+    schedule_morning_digests_task,
+)
 from apps.partners.models import Partner
 from apps.partners.services import create_partner_with_owner
+from apps.schedule.selectors import default_booking_resource_for_partner
 from core.timezones import get_zone
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
@@ -249,6 +255,70 @@ def test_broadcast_task_dispatches_through_telegram_adapter(
     assert sent_payloads[0]["chat_id"] == 555005
     assert sent_payloads[0]["text"] == "Hello clients"
     assert sent_payloads[0]["reply_markup"].inline_keyboard[0][0].callback_data == "broadcast:book"
+
+
+@pytest.mark.django_db
+def test_manual_appointment_notice_dispatches_to_linked_client(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555050,
+        username="manual-booking-client",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    appointment = create_manual_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    processed = dispatch_due_notifications_task()
+
+    notice = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
+    )
+    assert processed == 1
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads[0]["token"] == VALID_TOKEN
+    assert sent_payloads[0]["chat_id"] == 555050
+    assert "Запис до Pilot Partner підтверджено" in sent_payloads[0]["text"]
 
 
 @pytest.mark.django_db

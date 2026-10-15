@@ -116,6 +116,25 @@ def deliver_conversation_message(message: ConversationMessage) -> DeliveryResult
 
 def _payload_for_notification(notification: ScheduledNotification) -> TelegramPayload | None:
     token = _token_for_partner(notification.partner)
+    if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED:
+        if (
+            notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+            or notification.appointment is None
+        ):
+            return None
+        template = render_content_template(
+            partner=notification.partner,
+            key="booking.confirmed_created",
+            language=notification.client_profile.language,
+            context=_appointment_template_context(notification.appointment),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+        )
+
     if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER:
         if (
             notification.client_profile is None

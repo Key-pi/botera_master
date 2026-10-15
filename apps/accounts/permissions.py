@@ -27,7 +27,7 @@ PARTNER_OWNER_PERMISSION_RULES = (
     ),
     ("schedule", "availabilitywindow", ("view", "add")),
     ("schedule", "blockedtime", ("view", "add", "change", "delete")),
-    ("appointments", "appointment", ("view", "change")),
+    ("appointments", "appointment", ("view", "add", "change")),
     ("appointments", "appointmentserviceitem", ("view",)),
     ("appointments", "appointmentproposal", ("view",)),
     ("appointments", "appointmentproposaloption", ("view",)),

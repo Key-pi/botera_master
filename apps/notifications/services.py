@@ -178,6 +178,37 @@ def schedule_reminders_for_confirmed_appointment(
     return tuple(scheduled)
 
 
+def schedule_manual_appointment_created_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the immediate client notice for a partner-created appointment."""
+
+    if (
+        appointment.status != Appointment.Status.CONFIRMED
+        or appointment.source != Appointment.Source.PARTNER_ADMIN
+        or not appointment.client_profile.telegram_identity_id
+    ):
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=appointment.partner,
+    )
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
+        due_at=due_at,
+        idempotency_key=f"appointment:{appointment.id}:client_created",
+        now=current_time,
+    )
+
+
 def schedule_stale_requested_notification(
     *,
     appointment: Appointment,

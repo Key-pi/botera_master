@@ -90,6 +90,10 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
     """Durable scheduled reminder/notification job state."""
 
     class Type(models.TextChoices):
+        CLIENT_APPOINTMENT_CREATED = (
+            "client_appointment_created",
+            "Client appointment created",
+        )
         CLIENT_APPOINTMENT_REMINDER = (
             "client_appointment_reminder",
             "Client appointment reminder",

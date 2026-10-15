@@ -130,6 +130,28 @@ does not expose client slots. Reapplying the same template to the same resource
 and range does not duplicate identical generated windows. Deleting a template
 keeps already generated concrete windows and only clears their template link.
 
+## Manual Appointments In Admin
+
+Use **Appointments > Appointments > Add appointment** for a partner-created
+visit. Select the calendar resource and start time first, then either choose an
+existing client or enter a new manual client's name and/or phone.
+The start time is entered in the selected partner's timezone and stored as an
+aware UTC timestamp.
+
+Add one or more service lines. A catalog service uses its current price and
+duration when the override fields are empty. Filled price or duration fields
+apply only to this appointment snapshot. A line without a catalog service must
+provide a custom service name, price, and duration; it is not added to the
+partner catalog.
+
+Manual appointments are created as `confirmed`. They may sit outside an
+availability window, but the same resource-level advisory lock and fresh
+overlap check used by normal confirmation still reject overlapping confirmed
+appointments. If inline manual-client creation and appointment confirmation
+fail together, both writes roll back. A Telegram-linked client receives a
+durable immediate confirmation notification; a manual client without Telegram
+still appears in master reminders and digests but has no client delivery target.
+
 ## End-To-End Pilot Check
 
 Before the check, complete the admin setup flow above. The partner and bot must

@@ -45,6 +45,7 @@ def test_superuser_creates_setup_required_partner_with_owner_account() -> None:
     assert created.owner.has_perm("bot.add_botinstance") is True
     assert created.owner.has_perm("catalog.add_service") is True
     assert created.owner.has_perm("schedule.add_availabilitywindow") is True
+    assert created.owner.has_perm("appointments.add_appointment") is True
     assert created.owner.has_perm("appointments.change_appointment") is True
     assert created.owner.has_perm("accounts.view_user") is False
     assert created.owner.has_perm("clients.view_telegramidentity") is False
@@ -100,6 +101,7 @@ def test_partner_owner_admin_access_is_useful_but_excludes_platform_data(client)
     assert client.get(reverse("admin:bot_botinstance_add")).status_code == 200
     assert client.get(reverse("admin:catalog_servicecategory_add")).status_code == 200
     assert client.get(reverse("admin:schedule_availabilitywindow_add")).status_code == 200
+    assert client.get(reverse("admin:appointments_appointment_add")).status_code == 200
     assert client.get(reverse("admin:accounts_user_changelist")).status_code == 403
     assert client.get(reverse("admin:audit_platformdiagnostic_changelist")).status_code == 403
     assert client.get(reverse("admin:partners_partner_add")).status_code == 403

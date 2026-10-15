@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from django.contrib import admin, messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.template.response import TemplateResponse
 
 from apps.accounts.selectors import partner_ids_for_user
+from apps.appointments.forms import (
+    ManualAppointmentAdminForm,
+    ManualAppointmentServiceItemFormSet,
+    add_domain_errors_to_manual_appointment_form,
+    service_queryset_for_actor,
+)
 from apps.appointments.models import (
     Appointment,
     AppointmentProposal,
@@ -11,7 +18,10 @@ from apps.appointments.models import (
     AppointmentProposalOptionItem,
     AppointmentServiceItem,
 )
-from apps.appointments.services import transition_appointment_status
+from apps.appointments.services import (
+    create_manual_appointment_with_client,
+    transition_appointment_status,
+)
 from apps.clients.models import ClientProfile
 from apps.schedule.models import BookingResource
 from core.admin import PartnerScopedAdminMixin
@@ -147,10 +157,73 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         self._run_status_action(request, queryset, Appointment.Status.CONFIRMED)
 
     def has_add_permission(self, request):
-        return False
+        return super().has_add_permission(request)
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def add_view(self, request, form_url="", extra_context=None):
+        """Render the service-backed manual appointment workflow."""
+
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        form = ManualAppointmentAdminForm(
+            request.POST or None,
+            actor=request.user,
+        )
+        service_formset = ManualAppointmentServiceItemFormSet(
+            request.POST or None,
+            prefix="service_items",
+            form_kwargs={
+                "service_queryset": service_queryset_for_actor(request.user),
+            },
+        )
+        if request.method == "POST" and form.is_valid() and service_formset.is_valid():
+            try:
+                service_items = service_formset.build_service_items(
+                    partner=form.cleaned_data["partner"],
+                )
+                appointment = create_manual_appointment_with_client(
+                    actor=request.user,
+                    partner=form.cleaned_data["partner"],
+                    booking_resource=form.cleaned_data["booking_resource"],
+                    client_profile=form.cleaned_data.get("client_profile"),
+                    new_client_name=form.cleaned_data["new_client_name"],
+                    new_client_phone=form.cleaned_data["new_client_phone"],
+                    start_at=form.cleaned_data["start_at"],
+                    service_items=service_items,
+                    client_comment=form.cleaned_data["client_comment"],
+                    private_master_note=form.cleaned_data["private_master_note"],
+                )
+            except ValidationError as exc:
+                add_domain_errors_to_manual_appointment_form(form, exc)
+            else:
+                self.log_addition(request, appointment, "Created manual appointment.")
+                return self.response_add(request, appointment)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Create manual appointment",
+            "subtitle": None,
+            "opts": self.model._meta,
+            "app_label": self.model._meta.app_label,
+            "form": form,
+            "service_formset": service_formset,
+            "media": self.media + form.media + service_formset.media,
+            "has_view_permission": self.has_view_permission(request),
+            "has_add_permission": self.has_add_permission(request),
+            "has_change_permission": self.has_change_permission(request),
+            "has_delete_permission": False,
+            "save_as": False,
+            "save_on_top": False,
+            **(extra_context or {}),
+        }
+        return TemplateResponse(
+            request,
+            "admin/appointments/manual_appointment_add.html",
+            context,
+        )
 
     def _run_status_action(self, request, queryset, status: str) -> None:
         changed_count = 0
