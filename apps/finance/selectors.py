@@ -50,6 +50,14 @@ def active_unpaid_penalties_for_client(client_profile: ClientProfile) -> QuerySe
     return penalties_for_client(client_profile).filter(status=Penalty.Status.UNPAID)
 
 
+def outstanding_penalties_for_client(client_profile: ClientProfile) -> QuerySet[Penalty]:
+    """Return unpaid debt, including penalties already attached to an appointment."""
+
+    return penalties_for_client(client_profile).filter(
+        status__in=[Penalty.Status.UNPAID, Penalty.Status.APPLIED_TO_APPOINTMENT]
+    )
+
+
 def expenses_for_partner(
     *,
     partner: Partner,

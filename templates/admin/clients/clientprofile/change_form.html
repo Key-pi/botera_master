@@ -1,0 +1,249 @@
+{% extends "admin/change_form.html" %}
+{% load client_admin i18n tz %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .client-operations {
+      margin-top: 24px;
+    }
+    .client-operations--summary {
+      margin-top: 0;
+    }
+    .client-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0;
+    }
+    .client-summary > div {
+      border-bottom: 1px solid var(--hairline-color);
+      min-width: 0;
+      padding: 14px 16px;
+    }
+    .client-summary dt {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+    .client-summary dd {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .client-connection {
+      margin: 12px 16px;
+    }
+    .client-connection strong {
+      margin-right: 6px;
+    }
+    .client-operation-table {
+      overflow-x: auto;
+    }
+    .client-operation-table table {
+      width: 100%;
+    }
+    .client-operation-table th,
+    .client-operation-table td {
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    .client-operation-table .client-services {
+      white-space: normal;
+    }
+    .client-page-controls {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      padding: 10px 12px;
+    }
+    .client-empty-state {
+      color: var(--body-quiet-color);
+      margin: 0;
+      padding: 14px 16px;
+    }
+    @media (max-width: 767px) {
+      .client-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block field_sets %}
+  {% if client_summary %}
+    <div class="client-operations client-operations--summary">
+      <fieldset class="module">
+        <h2>{% translate "Client overview" %}</h2>
+        <dl class="client-summary">
+          <div>
+            <dt>{% translate "Completed visits" %}</dt>
+            <dd>{{ client_summary.completed_visit_count }}</dd>
+          </div>
+          <div>
+            <dt>{% translate "Future appointments" %}</dt>
+            <dd>{{ client_summary.future_appointment_count }}</dd>
+          </div>
+          <div>
+            <dt>{% translate "Total spent" %}</dt>
+            <dd>
+              {% for money in client_summary.total_spent %}
+                {{ money.amount|money_amount }} {{ money.currency }}{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                0.00
+              {% endfor %}
+            </dd>
+          </div>
+          <div>
+            <dt>{% translate "Outstanding penalties" %}</dt>
+            <dd>
+              {{ client_summary.outstanding_penalty_count }}
+              {% for money in client_summary.outstanding_penalty_totals %}
+                · {{ money.amount|money_amount }} {{ money.currency }}
+              {% endfor %}
+            </dd>
+          </div>
+        </dl>
+        <p class="client-connection">
+          <strong>{% translate "Telegram" %}:</strong>
+          {% if original.telegram_identity %}
+            {{ original.telegram_identity }}
+            {% if original.bot_unreachable %}
+              · {% translate "delivery unavailable" %}
+            {% else %}
+              · {% translate "connected" %}
+            {% endif %}
+          {% else %}
+            {% translate "No Telegram connection" %}
+          {% endif %}
+        </p>
+      </fieldset>
+    </div>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+  {% if client_summary %}
+    <div class="client-operations">
+
+      {% timezone original.partner.timezone %}
+        <fieldset class="module" id="future-appointments">
+          <h2>{% translate "Future appointments" %}</h2>
+          {% if future_appointments_page.object_list %}
+            <div class="client-operation-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{% translate "Date and time" %}</th>
+                    <th>{% translate "Services" %}</th>
+                    <th>{% translate "Status" %}</th>
+                    <th>{% translate "Total" %}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for appointment in future_appointments_page %}
+                    <tr>
+                      <td>
+                        <a href="{% url 'admin:appointments_appointment_change' appointment.pk %}">
+                          {{ appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}
+                        </a>
+                      </td>
+                      <td class="client-services">
+                        {% for item in appointment.service_items.all %}
+                          {{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}
+                        {% empty %}
+                          {% translate "No service lines" %}
+                        {% endfor %}
+                      </td>
+                      <td>{{ appointment.get_status_display }}</td>
+                      <td>{{ appointment.total_amount|money_amount }} {{ appointment.currency }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% include "admin/clients/clientprofile/includes/pagination.html" with page=future_appointments_page page_param="future_page" anchor="future-appointments" other_param="history_page" other_page=appointment_history_page.number third_param="penalty_page" third_page=outstanding_penalties_page.number only %}
+          {% else %}
+            <p class="client-empty-state">{% translate "No future appointments." %}</p>
+          {% endif %}
+        </fieldset>
+
+        <fieldset class="module" id="appointment-history">
+          <h2>{% translate "Appointment history" %}</h2>
+          {% if appointment_history_page.object_list %}
+            <div class="client-operation-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{% translate "Date and time" %}</th>
+                    <th>{% translate "Services" %}</th>
+                    <th>{% translate "Status" %}</th>
+                    <th>{% translate "Total" %}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for appointment in appointment_history_page %}
+                    <tr>
+                      <td>
+                        <a href="{% url 'admin:appointments_appointment_change' appointment.pk %}">
+                          {{ appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}
+                        </a>
+                      </td>
+                      <td class="client-services">
+                        {% for item in appointment.service_items.all %}
+                          {{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}
+                        {% empty %}
+                          {% translate "No service lines" %}
+                        {% endfor %}
+                      </td>
+                      <td>{{ appointment.get_status_display }}</td>
+                      <td>{{ appointment.total_amount|money_amount }} {{ appointment.currency }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% include "admin/clients/clientprofile/includes/pagination.html" with page=appointment_history_page page_param="history_page" anchor="appointment-history" other_param="future_page" other_page=future_appointments_page.number third_param="penalty_page" third_page=outstanding_penalties_page.number only %}
+          {% else %}
+            <p class="client-empty-state">{% translate "No appointment history." %}</p>
+          {% endif %}
+        </fieldset>
+
+        <fieldset class="module" id="outstanding-penalties">
+          <h2>{% translate "Outstanding penalties" %}</h2>
+          {% if outstanding_penalties_page.object_list %}
+            <div class="client-operation-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{% translate "Created" %}</th>
+                    <th>{% translate "Reason" %}</th>
+                    <th>{% translate "Status" %}</th>
+                    <th>{% translate "Amount" %}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for penalty in outstanding_penalties_page %}
+                    <tr>
+                      <td>{{ penalty.created_at|date:"SHORT_DATETIME_FORMAT" }}</td>
+                      <td>{{ penalty.get_reason_display }}</td>
+                      <td>{{ penalty.get_status_display }}</td>
+                      <td>{{ penalty.amount|money_amount }} {{ penalty.currency }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% include "admin/clients/clientprofile/includes/pagination.html" with page=outstanding_penalties_page page_param="penalty_page" anchor="outstanding-penalties" other_param="future_page" other_page=future_appointments_page.number third_param="history_page" third_page=appointment_history_page.number only %}
+          {% else %}
+            <p class="client-empty-state">{% translate "No outstanding penalties." %}</p>
+          {% endif %}
+        </fieldset>
+      {% endtimezone %}
+    </div>
+  {% endif %}
+{% endblock %}

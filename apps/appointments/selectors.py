@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.models import BLOCKING_APPOINTMENT_STATUSES, Appointment
@@ -43,6 +44,47 @@ def appointments_for_client(client_profile: ClientProfile) -> QuerySet[Appointme
     return Appointment.objects.filter(client_profile=client_profile).select_related(
         "partner",
         "booking_resource",
+    )
+
+
+def future_appointments_for_client(
+    *,
+    client_profile: ClientProfile,
+    now: datetime | None = None,
+) -> QuerySet[Appointment]:
+    """Return future active requests/appointments for a partner client card."""
+
+    current_time = now or timezone.now()
+    return (
+        appointments_for_client(client_profile)
+        .filter(
+            partner=client_profile.partner,
+            status__in=[Appointment.Status.REQUESTED, Appointment.Status.CONFIRMED],
+            start_at__gte=current_time,
+        )
+        .prefetch_related("service_items")
+        .order_by("start_at", "created_at")
+    )
+
+
+def appointment_history_for_client(
+    *,
+    client_profile: ClientProfile,
+    now: datetime | None = None,
+) -> QuerySet[Appointment]:
+    """Return non-future-active records so the card lists each appointment once."""
+
+    current_time = now or timezone.now()
+    future_active = Q(
+        status__in=[Appointment.Status.REQUESTED, Appointment.Status.CONFIRMED],
+        start_at__gte=current_time,
+    )
+    return (
+        appointments_for_client(client_profile)
+        .filter(partner=client_profile.partner)
+        .exclude(future_active)
+        .prefetch_related("service_items")
+        .order_by("-start_at", "-created_at")
     )
 
 
