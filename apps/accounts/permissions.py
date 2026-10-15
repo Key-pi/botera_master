@@ -32,7 +32,7 @@ PARTNER_OWNER_PERMISSION_RULES = (
     ("appointments", "appointmentproposal", ("view",)),
     ("appointments", "appointmentproposaloption", ("view",)),
     ("appointments", "appointmentproposaloptionitem", ("view",)),
-    ("clients", "clientprofile", ("view",)),
+    ("clients", "clientprofile", ("view", "change")),
     ("notifications", "partnernotificationsettings", ("view", "change")),
     ("notifications", "reminderrule", ("view",)),
     ("notifications", "schedulednotification", ("view",)),

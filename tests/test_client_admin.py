@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from django.core.exceptions import PermissionDenied
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,7 +18,13 @@ from apps.appointments.services import (
 )
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.selectors import client_operational_summary
-from apps.clients.services import create_manual_client_profile
+from apps.clients.services import (
+    create_manual_client_profile,
+    mark_client_unreachable,
+    set_marketing_opt_out,
+    update_client_profile,
+    upsert_telegram_identity,
+)
 from apps.finance.models import Penalty
 from apps.finance.services import (
     apply_penalties_to_appointment,
@@ -172,6 +179,104 @@ def test_partner_client_card_and_list_stay_tenant_scoped(client_admin_context) -
     assert "+380501112233" not in list_page
     assert "Other Tenant Client" not in list_page
     assert foreign_response.status_code == 302
+
+
+@pytest.mark.django_db
+def test_owner_updates_only_partner_editable_client_fields(client_admin_context) -> None:
+    context = client_admin_context
+    profile = context["client_profile"]
+    original_partner = profile.partner
+    set_marketing_opt_out(client_profile=profile, opt_out=True)
+    mark_client_unreachable(client_profile=profile, failure_code="bot_blocked")
+    other = create_partner_with_owner(
+        actor=context["superuser"],
+        partner_name="Forged Partner",
+        owner_username="forged-client-owner",
+        owner_password="secret",
+    )
+    identity = upsert_telegram_identity(
+        telegram_user_id=9_999_001,
+        username="must_not_link",
+    )
+
+    response = context["http_client"].post(
+        reverse("admin:clients_clientprofile_change", args=[profile.id]),
+        {
+            "name": "  Updated Client  ",
+            "phone": "+38 (093) 444-55-66",
+            "language": "en",
+            "private_master_note": "  Handle with care.  ",
+            "extra_client_text": "  Prefers evenings.  ",
+            "partner": str(other.partner.id),
+            "telegram_identity": str(identity.id),
+            "marketing_opt_out": "",
+            "bot_unreachable": "",
+            "last_delivery_failure_code": "forged",
+            "_save": "Save",
+        },
+    )
+
+    assert response.status_code == 302
+    profile.refresh_from_db()
+    assert profile.partner == original_partner
+    assert profile.telegram_identity is None
+    assert profile.name == "Updated Client"
+    assert profile.phone == "+380934445566"
+    assert profile.language == "en"
+    assert profile.private_master_note == "Handle with care."
+    assert profile.extra_client_text == "Prefers evenings."
+    assert profile.marketing_opt_out is True
+    assert profile.bot_unreachable is True
+    assert profile.last_delivery_failure_code == "bot_blocked"
+
+
+@pytest.mark.django_db
+def test_manual_client_admin_rejects_clearing_both_name_and_phone(
+    client_admin_context,
+) -> None:
+    context = client_admin_context
+    profile = context["client_profile"]
+
+    response = context["http_client"].post(
+        reverse("admin:clients_clientprofile_change", args=[profile.id]),
+        {
+            "name": "",
+            "phone": "",
+            "language": "uk",
+            "private_master_note": "",
+            "extra_client_text": "",
+            "_save": "Save",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Manual client needs at least a name or phone." in response.content.decode()
+    profile.refresh_from_db()
+    assert profile.name == "Ira Client"
+    assert profile.phone == "+380501112233"
+
+
+@pytest.mark.django_db
+def test_client_update_service_rejects_other_partner_owner(client_admin_context) -> None:
+    context = client_admin_context
+    other = create_partner_with_owner(
+        actor=context["superuser"],
+        partner_name="Unauthorized Partner",
+        owner_username="unauthorized-client-owner",
+        owner_password="secret",
+    )
+
+    with pytest.raises(PermissionDenied):
+        update_client_profile(
+            actor=other.owner,
+            client_profile=context["client_profile"],
+            name="Forbidden",
+            phone="",
+            language="uk",
+        )
+
+    context["client_profile"].refresh_from_db()
+    assert context["client_profile"].name == "Ira Client"
 
 
 @pytest.mark.django_db

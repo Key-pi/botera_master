@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from django.core.exceptions import ValidationError
@@ -16,6 +17,17 @@ if TYPE_CHECKING:
 
 
 SUPPORTED_CLIENT_LANGUAGES = {"uk", "ru", "en"}
+
+
+@dataclass(frozen=True, slots=True)
+class ClientProfileDetails:
+    """Normalized partner-editable client profile values."""
+
+    name: str
+    phone: str
+    language: str
+    private_master_note: str
+    extra_client_text: str
 
 
 def upsert_telegram_identity(
@@ -106,19 +118,97 @@ def create_manual_client_profile(
     """Create a partner-scoped manual client without Telegram linkage."""
 
     ensure_partner_access(actor, partner)
-    normalized_phone = normalize_phone(phone)
-    cleaned_name = name.strip()
-    if not cleaned_name and not normalized_phone:
-        raise ValidationError({"client": "Manual client needs at least a name or phone."})
-
-    profile_language = _language_or_default(partner, language)
-    return ClientProfile.objects.create(
+    details = validate_client_profile_details(
         partner=partner,
-        name=cleaned_name,
-        phone=normalized_phone,
-        language=profile_language,
+        has_telegram_identity=False,
+        name=name,
+        phone=phone,
+        language=language,
         private_master_note=private_master_note,
         extra_client_text=extra_client_text,
+    )
+    return ClientProfile.objects.create(
+        partner=partner,
+        name=details.name,
+        phone=details.phone,
+        language=details.language,
+        private_master_note=details.private_master_note,
+        extra_client_text=details.extra_client_text,
+    )
+
+
+def update_client_profile(
+    *,
+    actor: User,
+    client_profile: ClientProfile,
+    name: str,
+    phone: str,
+    language: str,
+    private_master_note: str = "",
+    extra_client_text: str = "",
+) -> ClientProfile:
+    """Update only partner-editable client data under a row lock."""
+
+    with transaction.atomic():
+        profile = (
+            ClientProfile.objects.select_for_update()
+            .select_related("partner", "telegram_identity")
+            .get(id=client_profile.id)
+        )
+        ensure_partner_access(actor, profile.partner)
+        details = validate_client_profile_details(
+            partner=profile.partner,
+            has_telegram_identity=profile.has_telegram_identity,
+            name=name,
+            phone=phone,
+            language=language,
+            private_master_note=private_master_note,
+            extra_client_text=extra_client_text,
+        )
+        profile.name = details.name
+        profile.phone = details.phone
+        profile.language = details.language
+        profile.private_master_note = details.private_master_note
+        profile.extra_client_text = details.extra_client_text
+        profile.save(
+            update_fields=[
+                "name",
+                "phone",
+                "language",
+                "private_master_note",
+                "extra_client_text",
+                "updated_at",
+            ]
+        )
+        return profile
+
+
+def validate_client_profile_details(
+    *,
+    partner: Partner,
+    has_telegram_identity: bool,
+    name: str,
+    phone: str,
+    language: str | None,
+    private_master_note: str = "",
+    extra_client_text: str = "",
+) -> ClientProfileDetails:
+    """Normalize and validate values shared by admin forms and write services."""
+
+    cleaned_name = name.strip()
+    raw_phone = (phone or "").strip()
+    normalized_phone = normalize_phone(raw_phone)
+    if raw_phone and not normalized_phone:
+        raise ValidationError({"phone": "Phone must contain at least one digit."})
+    if not has_telegram_identity and not cleaned_name and not normalized_phone:
+        raise ValidationError({"name": "Manual client needs at least a name or phone."})
+
+    return ClientProfileDetails(
+        name=cleaned_name,
+        phone=normalized_phone,
+        language=_language_or_default(partner, language),
+        private_master_note=private_master_note.strip(),
+        extra_client_text=extra_client_text.strip(),
     )
 
 
