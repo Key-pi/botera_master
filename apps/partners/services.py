@@ -7,6 +7,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
 from apps.accounts.models import PartnerMembership, User
+from apps.accounts.permissions import grant_partner_owner_admin_access
 from apps.accounts.services import ensure_partner_access
 from apps.partners.models import Partner
 from apps.partners.setup import get_partner_setup_status
@@ -60,6 +61,7 @@ def create_partner_with_owner(
             partner=partner,
             role=PartnerMembership.Role.OWNER,
         )
+        grant_partner_owner_admin_access(owner)
         from apps.schedule.services import initialize_partner_schedule
 
         initialize_partner_schedule(partner=partner)
@@ -70,6 +72,9 @@ def create_partner_with_owner(
 
         get_or_create_notification_settings(partner=partner)
         ensure_default_reminder_rules(partner=partner)
+        from apps.finance.services import get_or_create_penalty_settings
+
+        get_or_create_penalty_settings(partner=partner)
 
     return CreatedPartnerOwner(partner=partner, owner=owner, membership=membership)
 

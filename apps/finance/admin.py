@@ -10,7 +10,7 @@ from core.admin import PartnerScopedAdminMixin
 
 
 @admin.register(PartnerPenaltySettings)
-class PartnerPenaltySettingsAdmin(admin.ModelAdmin):
+class PartnerPenaltySettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     list_display = [
         "partner",
         "penalties_enabled",
@@ -23,12 +23,6 @@ class PartnerPenaltySettingsAdmin(admin.ModelAdmin):
     list_filter = ["penalties_enabled", "currency"]
     search_fields = ["partner__name"]
     autocomplete_fields = ["partner"]
-
-    def get_queryset(self, request):
-        queryset = super().get_queryset(request).select_related("partner")
-        if request.user.is_superuser:
-            return queryset
-        return queryset.filter(partner_id__in=partner_ids_for_user(request.user))
 
 
 @admin.register(Penalty)

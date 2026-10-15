@@ -49,6 +49,7 @@ docker compose build
 docker compose run --rm web python manage.py migrate
 docker compose up -d
 docker compose exec web python manage.py check
+docker compose exec web python manage.py sync_partner_owner_access
 docker compose ps
 docker compose exec web python manage.py run_partner_bots --dry-run
 docker compose exec web python manage.py check_pilot_readiness \
@@ -61,6 +62,28 @@ Use `docker compose restart bot-runner` after bot token/status/setup changes.
 The runner intentionally does not hot-reload configs. A fresh installation with
 no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
 loop; start it after the first partner is eligible.
+
+## Partner And Owner Onboarding
+
+Partner creation is controlled by a superuser in the Django admin.
+
+1. Open **Partners > Partners > Add partner**.
+2. Enter the partner name, timezone, default language, and initial owner
+   credentials.
+3. Save once. The onboarding service atomically creates the setup-required
+   partner, staff owner account, active owner membership, default booking
+   resource, schedule settings, notification defaults, and penalty defaults.
+4. Give the credentials to the intended owner through an appropriate private
+   channel. Do not include credentials in logs or diagnostics.
+5. The owner signs in to the same admin and completes the onboarding checklist
+   shown on their partner record before launching the bot.
+
+Partner-owner access is maintained by one reviewed Django permission group.
+Run `python manage.py sync_partner_owner_access` after deployment when owner
+permissions change, and once for installations that already contain partner
+owners. The command is idempotent; `--dry-run` only reports the affected count.
+Do not manually add broad model permissions to owner accounts: every permitted
+admin surface must first be tenant-scoped and safe for its available writes.
 
 ## Partner Bot Setup In Admin
 

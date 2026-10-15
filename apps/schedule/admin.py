@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.contrib import admin
 
 from apps.accounts.selectors import partner_ids_for_user
+from apps.schedule.forms import AvailabilityWindowAdminForm
 from apps.schedule.models import (
     AvailabilityTemplate,
     AvailabilityTemplateWindow,
@@ -11,6 +12,7 @@ from apps.schedule.models import (
     BookingResource,
     PartnerScheduleSettings,
 )
+from apps.schedule.services import create_availability_window
 from core.admin import PartnerScopedAdminMixin
 
 
@@ -39,10 +41,11 @@ class PartnerScheduleSettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
 @admin.register(AvailabilityWindow)
 class AvailabilityWindowAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    form = AvailabilityWindowAdminForm
     list_display = ["partner", "booking_resource", "start_at", "end_at", "source_template"]
     list_filter = ["partner", "booking_resource", "source_template"]
-    autocomplete_fields = ["partner", "booking_resource", "source_template", "created_by"]
-    readonly_fields = ["created_at", "updated_at"]
+    autocomplete_fields = ["partner", "booking_resource", "source_template"]
+    readonly_fields = ["created_by", "created_at", "updated_at"]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         is_partner_fk = db_field.name in {"booking_resource", "source_template"}
@@ -51,6 +54,21 @@ class AvailabilityWindowAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 partner_id__in=partner_ids_for_user(request.user)
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            super().save_model(request, obj, form, change)
+            return
+
+        stored = create_availability_window(
+            actor=request.user,
+            partner=form.cleaned_data["partner"],
+            booking_resource=form.cleaned_data["booking_resource"],
+            start_at=form.cleaned_data["start_at"],
+            end_at=form.cleaned_data["end_at"],
+            source_template=form.cleaned_data.get("source_template"),
+        )
+        _copy_availability_window_state(target=obj, source=stored)
 
 
 @admin.register(BlockedTime)
@@ -100,3 +118,16 @@ class AvailabilityTemplateWindowAdmin(admin.ModelAdmin):
                 partner_id__in=partner_ids_for_user(request.user)
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+def _copy_availability_window_state(
+    *,
+    target: AvailabilityWindow,
+    source: AvailabilityWindow,
+) -> None:
+    """Keep Django admin's add-form instance aligned with the service-created row."""
+
+    for field in source._meta.concrete_fields:
+        setattr(target, field.attname, getattr(source, field.attname))
+    target._state.adding = False
+    target._state.db = source._state.db

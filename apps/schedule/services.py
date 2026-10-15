@@ -124,14 +124,12 @@ def create_availability_window(
     """Create a concrete bookable interval in trusted partner scope."""
 
     ensure_partner_access(actor, partner)
-    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
-    if source_template is not None and source_template.partner_id != partner.id:
-        raise ValidationError({"source_template": "Template must belong to this partner."})
-    _validate_time_range(
+    validate_availability_window_input(
+        partner=partner,
+        booking_resource=booking_resource,
         start_at=start_at,
         end_at=end_at,
-        max_length=MAX_AVAILABILITY_WINDOW_LENGTH,
-        forbid_past=True,
+        source_template=source_template,
     )
     return AvailabilityWindow.objects.create(
         partner=partner,
@@ -140,6 +138,27 @@ def create_availability_window(
         end_at=end_at,
         source_template=source_template,
         created_by=actor,
+    )
+
+
+def validate_availability_window_input(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    end_at: datetime,
+    source_template: AvailabilityTemplate | None = None,
+) -> None:
+    """Validate one concrete window without writing it."""
+
+    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
+    if source_template is not None and source_template.partner_id != partner.id:
+        raise ValidationError({"source_template": "Template must belong to this partner."})
+    _validate_time_range(
+        start_at=start_at,
+        end_at=end_at,
+        max_length=MAX_AVAILABILITY_WINDOW_LENGTH,
+        forbid_past=True,
     )
 
 
@@ -297,9 +316,9 @@ def generate_available_slots(
     if range_start >= range_end:
         raise ValidationError({"range_end": "Range end must be after range start."})
 
-    schedule_settings = schedule_settings or PartnerScheduleSettings.objects.get_or_create(
-        partner=partner
-    )[0]
+    schedule_settings = (
+        schedule_settings or PartnerScheduleSettings.objects.get_or_create(partner=partner)[0]
+    )
     current_time = now or timezone.now()
     _validate_aware_datetime(current_time, "now")
     horizon_end = current_time + timedelta(days=schedule_settings.booking_horizon_days)

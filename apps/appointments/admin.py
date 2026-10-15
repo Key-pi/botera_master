@@ -85,9 +85,38 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     list_filter = ["partner", "booking_resource", "status", "source", "is_near_fit"]
     search_fields = ["client_profile__name", "client_profile__phone"]
     autocomplete_fields = ["partner", "booking_resource", "client_profile", "created_by"]
-    readonly_fields = ["created_at", "updated_at", "status_changed_at"]
+    readonly_fields = [
+        "partner",
+        "booking_resource",
+        "client_profile",
+        "start_at",
+        "end_at",
+        "status",
+        "source",
+        "confirmation_mode_snapshot",
+        "is_near_fit",
+        "client_comment",
+        "private_master_note",
+        "client_visible_reason",
+        "service_total_amount",
+        "penalties_total_amount",
+        "total_amount",
+        "currency",
+        "created_by",
+        "requested_at",
+        "confirmed_at",
+        "cancelled_at",
+        "completed_at",
+        "no_show_at",
+        "status_changed_at",
+        "last_correction_reason",
+        "last_correction_at",
+        "last_correction_by",
+        "created_at",
+        "updated_at",
+    ]
     inlines = [AppointmentServiceItemInline]
-    actions = ["mark_completed", "mark_no_show", "cancel_by_master"]
+    actions = ["confirm_requested", "mark_completed", "mark_no_show", "cancel_by_master"]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if not request.user.is_superuser:
@@ -112,6 +141,16 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     @admin.action(description="Cancel by master")
     def cancel_by_master(self, request, queryset):
         self._run_status_action(request, queryset, Appointment.Status.CANCELLED_BY_MASTER)
+
+    @admin.action(description="Confirm requested appointments")
+    def confirm_requested(self, request, queryset):
+        self._run_status_action(request, queryset, Appointment.Status.CONFIRMED)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     def _run_status_action(self, request, queryset, status: str) -> None:
         changed_count = 0
