@@ -110,6 +110,26 @@ fingerprinting, tenant access, and duplicate-token checks still apply.
 Use **Pause selected bots** for a voluntary stop. A platform-suspended bot
 cannot be resumed by a partner owner.
 
+## Partner Schedule Setup In Admin
+
+The pilot admin exposes schedule writes only through schedule-domain services.
+
+1. Open **Schedule > Partner schedule settings** and choose confirmation mode,
+   slot step, booking horizon, near-fit tolerance, and cancellation deadline.
+2. Use **Availability windows** for one-off concrete working intervals.
+3. Use **Blocked times** for breaks, days off, vacations, or other unavailable
+   intervals. Blocks can be created, edited, and deleted by the partner owner.
+4. For reusable schedules, create an **Availability template**, then add its
+   weekday/time rows under **Availability template windows**.
+5. Select exactly one active template and run **Apply selected template to a
+   date range**. Choose the booking resource and future period in the
+   confirmation form.
+
+Applying a template creates concrete availability windows; the template alone
+does not expose client slots. Reapplying the same template to the same resource
+and range does not duplicate identical generated windows. Deleting a template
+keeps already generated concrete windows and only clears their template link.
+
 ## End-To-End Pilot Check
 
 Before the check, complete the admin setup flow above. The partner and bot must

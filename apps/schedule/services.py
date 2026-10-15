@@ -93,8 +93,7 @@ def update_schedule_settings(
     ensure_partner_access(actor, partner)
     schedule_settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
     if confirmation_mode is not None:
-        if confirmation_mode not in PartnerScheduleSettings.ConfirmationMode.values:
-            raise ValidationError({"confirmation_mode": "Unknown confirmation mode."})
+        validate_confirmation_mode(confirmation_mode)
         schedule_settings.confirmation_mode = confirmation_mode
     if slot_step_minutes is not None:
         _validate_slot_step(slot_step_minutes)
@@ -110,6 +109,28 @@ def update_schedule_settings(
         schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
     schedule_settings.save()
     return schedule_settings
+
+
+def validate_schedule_settings_input(
+    *,
+    confirmation_mode: str,
+    slot_step_minutes: int,
+    booking_horizon_days: int,
+    near_fit_tolerance_minutes: int,
+    cancellation_deadline_hours: int,
+) -> None:
+    """Validate a complete partner schedule settings form without writing it."""
+
+    validate_confirmation_mode(confirmation_mode)
+    _validate_slot_step(slot_step_minutes)
+    _validate_booking_horizon(booking_horizon_days)
+    _validate_near_fit_tolerance(near_fit_tolerance_minutes)
+    _validate_cancellation_deadline(cancellation_deadline_hours)
+
+
+def validate_confirmation_mode(value: str) -> None:
+    if value not in PartnerScheduleSettings.ConfirmationMode.values:
+        raise ValidationError({"confirmation_mode": "Unknown confirmation mode."})
 
 
 def create_availability_window(
@@ -174,12 +195,11 @@ def create_blocked_time(
     """Create an unavailable interval that removes generated slots."""
 
     ensure_partner_access(actor, partner)
-    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
-    _validate_time_range(
+    validate_blocked_time_input(
+        partner=partner,
+        booking_resource=booking_resource,
         start_at=start_at,
         end_at=end_at,
-        max_length=MAX_BLOCKED_TIME_LENGTH,
-        forbid_past=True,
     )
     return BlockedTime.objects.create(
         partner=partner,
@@ -188,6 +208,65 @@ def create_blocked_time(
         end_at=end_at,
         reason=reason,
         created_by=actor,
+    )
+
+
+def update_blocked_time(
+    *,
+    actor: User,
+    blocked_time: BlockedTime,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    end_at: datetime,
+    reason: str = "",
+) -> BlockedTime:
+    """Update one blocked interval without bypassing partner/range checks."""
+
+    ensure_partner_access(actor, blocked_time.partner)
+    validate_blocked_time_input(
+        partner=blocked_time.partner,
+        booking_resource=booking_resource,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    blocked_time.booking_resource = booking_resource
+    blocked_time.start_at = start_at
+    blocked_time.end_at = end_at
+    blocked_time.reason = reason
+    blocked_time.save(
+        update_fields=[
+            "booking_resource",
+            "start_at",
+            "end_at",
+            "reason",
+            "updated_at",
+        ]
+    )
+    return blocked_time
+
+
+def delete_blocked_time(*, actor: User, blocked_time: BlockedTime) -> None:
+    """Delete one partner-owned blocked interval."""
+
+    ensure_partner_access(actor, blocked_time.partner)
+    blocked_time.delete()
+
+
+def validate_blocked_time_input(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    end_at: datetime,
+) -> None:
+    """Validate one blocked interval without writing it."""
+
+    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
+    _validate_time_range(
+        start_at=start_at,
+        end_at=end_at,
+        max_length=MAX_BLOCKED_TIME_LENGTH,
+        forbid_past=True,
     )
 
 
@@ -202,17 +281,49 @@ def create_availability_template(
     """Create a reusable weekly availability template."""
 
     ensure_partner_access(actor, partner)
-    cleaned_name = name.strip()
-    if not cleaned_name:
-        raise ValidationError({"name": "Template name is required."})
-    if sort_order < 0:
-        raise ValidationError({"sort_order": "Sort order cannot be negative."})
+    cleaned_name = validate_availability_template_input(name=name, sort_order=sort_order)
     return AvailabilityTemplate.objects.create(
         partner=partner,
         name=cleaned_name,
         is_active=is_active,
         sort_order=sort_order,
     )
+
+
+def update_availability_template(
+    *,
+    actor: User,
+    template: AvailabilityTemplate,
+    name: str,
+    is_active: bool,
+    sort_order: int,
+) -> AvailabilityTemplate:
+    """Update reusable template metadata without changing generated windows."""
+
+    ensure_partner_access(actor, template.partner)
+    template.name = validate_availability_template_input(name=name, sort_order=sort_order)
+    template.is_active = is_active
+    template.sort_order = sort_order
+    template.save(update_fields=["name", "is_active", "sort_order", "updated_at"])
+    return template
+
+
+def delete_availability_template(*, actor: User, template: AvailabilityTemplate) -> None:
+    """Delete a template while preserving concrete windows through SET_NULL."""
+
+    ensure_partner_access(actor, template.partner)
+    template.delete()
+
+
+def validate_availability_template_input(*, name: str, sort_order: int) -> str:
+    """Validate reusable template metadata and return the normalized name."""
+
+    cleaned_name = name.strip()
+    if not cleaned_name:
+        raise ValidationError({"name": "Template name is required."})
+    if sort_order < 0:
+        raise ValidationError({"sort_order": "Sort order cannot be negative."})
+    return cleaned_name
 
 
 def create_availability_template_window(
@@ -226,16 +337,76 @@ def create_availability_template_window(
     """Create one weekly local-time window inside a template."""
 
     ensure_partner_access(actor, template.partner)
-    if weekday < 0 or weekday > 6:
-        raise ValidationError({"weekday": "Weekday must be between 0 and 6."})
-    if start_time >= end_time:
-        raise ValidationError({"end_time": "Template windows cannot be overnight in MVP."})
+    validate_availability_template_window_input(
+        weekday=weekday,
+        start_time=start_time,
+        end_time=end_time,
+    )
     return AvailabilityTemplateWindow.objects.create(
         template=template,
         weekday=weekday,
         start_time=start_time,
         end_time=end_time,
     )
+
+
+def update_availability_template_window(
+    *,
+    actor: User,
+    template_window: AvailabilityTemplateWindow,
+    template: AvailabilityTemplate,
+    weekday: int,
+    start_time: time,
+    end_time: time,
+) -> AvailabilityTemplateWindow:
+    """Update one template rule within trusted partner scope."""
+
+    with transaction.atomic():
+        stored_window = (
+            AvailabilityTemplateWindow.objects.select_for_update()
+            .select_related("template__partner")
+            .get(id=template_window.id)
+        )
+        ensure_partner_access(actor, stored_window.template.partner)
+        ensure_partner_access(actor, template.partner)
+        if template.partner_id != stored_window.template.partner_id:
+            raise ValidationError({"template": "Template must belong to the same partner."})
+        validate_availability_template_window_input(
+            weekday=weekday,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        stored_window.template = template
+        stored_window.weekday = weekday
+        stored_window.start_time = start_time
+        stored_window.end_time = end_time
+        stored_window.save(update_fields=["template", "weekday", "start_time", "end_time"])
+    return stored_window
+
+
+def delete_availability_template_window(
+    *,
+    actor: User,
+    template_window: AvailabilityTemplateWindow,
+) -> None:
+    """Delete one partner-owned weekly template rule."""
+
+    ensure_partner_access(actor, template_window.template.partner)
+    template_window.delete()
+
+
+def validate_availability_template_window_input(
+    *,
+    weekday: int,
+    start_time: time,
+    end_time: time,
+) -> None:
+    """Validate one weekly local-time rule without writing it."""
+
+    if weekday < 0 or weekday > 6:
+        raise ValidationError({"weekday": "Weekday must be between 0 and 6."})
+    if start_time >= end_time:
+        raise ValidationError({"end_time": "Template windows cannot be overnight in MVP."})
 
 
 def apply_availability_template(
@@ -250,16 +421,18 @@ def apply_availability_template(
     """Apply weekly template rules into concrete UTC availability windows."""
 
     ensure_partner_access(actor, partner)
-    if template.partner_id != partner.id:
-        raise ValidationError({"template": "Template must belong to this partner."})
-    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
-    if start_date > end_date:
-        raise ValidationError({"end_date": "End date must be after start date."})
-
-    partner_zone = ZoneInfo(partner.timezone)
     created: list[AvailabilityWindow] = []
-    current_date = start_date
     with transaction.atomic():
+        template = AvailabilityTemplate.objects.select_for_update().get(id=template.id)
+        validate_availability_template_application(
+            partner=partner,
+            template=template,
+            booking_resource=booking_resource,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        partner_zone = ZoneInfo(partner.timezone)
+        current_date = start_date
         while current_date <= end_date:
             for template_window in template.windows.filter(weekday=current_date.weekday()):
                 local_start = datetime.combine(
@@ -272,18 +445,54 @@ def apply_availability_template(
                     template_window.end_time,
                     tzinfo=partner_zone,
                 )
+                start_at = local_start.astimezone(datetime_timezone.utc)
+                end_at = local_end.astimezone(datetime_timezone.utc)
+                if AvailabilityWindow.objects.filter(
+                    partner=partner,
+                    booking_resource=booking_resource,
+                    source_template=template,
+                    start_at=start_at,
+                    end_at=end_at,
+                ).exists():
+                    continue
                 created.append(
                     create_availability_window(
                         actor=actor,
                         partner=partner,
                         booking_resource=booking_resource,
-                        start_at=local_start.astimezone(datetime_timezone.utc),
-                        end_at=local_end.astimezone(datetime_timezone.utc),
+                        start_at=start_at,
+                        end_at=end_at,
                         source_template=template,
                     )
                 )
             current_date += timedelta(days=1)
     return tuple(created)
+
+
+def validate_availability_template_application(
+    *,
+    partner: Partner,
+    template: AvailabilityTemplate,
+    booking_resource: BookingResource,
+    start_date: date,
+    end_date: date,
+) -> None:
+    """Validate a future template application without creating windows."""
+
+    if template.partner_id != partner.id:
+        raise ValidationError({"template": "Template must belong to this partner."})
+    if not template.is_active:
+        raise ValidationError({"template": "Only active templates can be applied."})
+    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
+    if start_date > end_date:
+        raise ValidationError({"end_date": "End date must be after start date."})
+    partner_zone = ZoneInfo(partner.timezone)
+    if start_date < timezone.localdate(timezone=partner_zone):
+        raise ValidationError({"start_date": "Templates cannot be applied to past dates."})
+    if (end_date - start_date).days + 1 > MAX_BOOKING_HORIZON_DAYS:
+        raise ValidationError(
+            {"end_date": f"Template range cannot exceed {MAX_BOOKING_HORIZON_DAYS} days."}
+        )
 
 
 def duration_minutes_for_services(services: Iterable[Service]) -> int:

@@ -4,7 +4,7 @@ import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.utils import timezone
 
-from apps.accounts.models import User
+from apps.accounts.models import PartnerMembership, User
 from apps.catalog.services import create_service, create_service_category
 from apps.partners.services import create_partner_with_owner
 from apps.partners.setup import SetupStep, get_partner_setup_status
@@ -18,6 +18,7 @@ from apps.schedule.services import (
     create_blocked_time,
     duration_minutes_for_services,
     generate_available_slots,
+    update_availability_template_window,
     update_schedule_settings,
 )
 
@@ -395,3 +396,55 @@ def test_partner_owner_cannot_use_other_partner_booking_resource(rounded_future_
             start_at=rounded_future_start,
             end_at=rounded_future_start + timedelta(hours=1),
         )
+
+
+@pytest.mark.django_db
+def test_template_window_cannot_move_between_partner_scopes() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    first = create_partner_with_owner(
+        actor=superuser,
+        partner_name="First",
+        owner_username="first-owner",
+        owner_password="secret",
+    )
+    second = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Second",
+        owner_username="second-owner",
+        owner_password="secret",
+    )
+    first_template = create_availability_template(
+        actor=first.owner,
+        partner=first.partner,
+        name="First template",
+    )
+    second_template = create_availability_template(
+        actor=second.owner,
+        partner=second.partner,
+        name="Second template",
+    )
+    PartnerMembership.objects.create(
+        user=first.owner,
+        partner=second.partner,
+        role=PartnerMembership.Role.OWNER,
+    )
+    template_window = create_availability_template_window(
+        actor=first.owner,
+        template=first_template,
+        weekday=0,
+        start_time=time(9, 0),
+        end_time=time(12, 0),
+    )
+
+    with pytest.raises(ValidationError):
+        update_availability_template_window(
+            actor=first.owner,
+            template_window=template_window,
+            template=second_template,
+            weekday=0,
+            start_time=time(10, 0),
+            end_time=time(13, 0),
+        )
+
+    template_window.refresh_from_db()
+    assert template_window.template == first_template
