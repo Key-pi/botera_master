@@ -14,6 +14,10 @@ from apps.appointments.client_booking import (
     client_profile_overview,
 )
 from apps.appointments.models import Appointment
+from apps.appointments.services import (
+    cancel_appointment_by_client,
+    client_cancellation_policy,
+)
 from apps.clients.models import ClientProfile
 from apps.clients.services import SUPPORTED_CLIENT_LANGUAGES, update_client_profile_language
 from apps.partners.models import Partner
@@ -196,21 +200,15 @@ def build_appointment_details_reply(
     appointment_id: UUID,
     return_action: str = "history",
     return_page: int = 1,
+    now: datetime | None = None,
 ) -> BotProfileReply:
     """Render full details for one client-owned appointment."""
 
-    try:
-        appointment = (
-            Appointment.objects.filter(
-                partner=partner,
-                client_profile=client_profile,
-                id=appointment_id,
-            )
-            .prefetch_related("service_items")
-            .get()
-        )
-    except Appointment.DoesNotExist as exc:
-        raise ValidationError({"appointment": "Appointment is not available."}) from exc
+    appointment = _appointment_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        appointment_id=appointment_id,
+    )
 
     language = client_profile.language
     text = _render(
@@ -223,8 +221,171 @@ def build_appointment_details_reply(
             language=language,
         ),
     )
-    rows = [[_back_button(_callback(return_action, return_page), language)]]
+    rows = []
+    if appointment.status in {
+        Appointment.Status.REQUESTED,
+        Appointment.Status.CONFIRMED,
+    } and appointment.start_at > (now or timezone.now()):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("cancel_appointment", language),
+                    callback_data=_callback(
+                        "cancel",
+                        appointment.id.hex,
+                        return_action,
+                        return_page,
+                    ),
+                )
+            ]
+        )
+    rows.append([_back_button(_callback(return_action, return_page), language)])
     return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def build_cancel_appointment_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment_id: UUID,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Render a fresh cancellation confirmation or policy block."""
+
+    appointment = _appointment_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        appointment_id=appointment_id,
+    )
+    current_time = now or timezone.now()
+    policy = client_cancellation_policy(
+        client_profile=client_profile,
+        appointment=appointment,
+        now=current_time,
+    )
+    language = client_profile.language
+    back_callback = _callback("details", appointment.id.hex, return_action, return_page)
+    if not policy.allowed:
+        if policy.reason_code == "late_cancellation_blocked":
+            return BotProfileReply(
+                text=_render(
+                    partner=partner,
+                    key="appointment.late_cancel_blocked",
+                    language=language,
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[[_back_button(back_callback, language)]],
+                ),
+            )
+        raise ValidationError({"appointment": "This appointment cannot be cancelled."})
+
+    text = _render(
+        partner=partner,
+        key="appointment.cancel_confirm_prompt",
+        language=language,
+        context=_appointment_action_context(partner=partner, appointment=appointment),
+    )
+    penalty_acknowledged = "0"
+    if policy.requires_penalty_confirmation:
+        warning = _render(
+            partner=partner,
+            key="appointment.late_cancel_penalty_warning",
+            language=language,
+            context={
+                "penalty_amount": _money_label(policy.penalty_amount),
+                "currency": policy.currency,
+                "deadline_hours": str(policy.deadline_hours),
+            },
+        )
+        text = f"{text}\n\n{warning}"
+        penalty_acknowledged = "1"
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_label("confirm_cancel", language),
+                callback_data=_callback(
+                    "cancelgo",
+                    appointment.id.hex,
+                    return_action,
+                    return_page,
+                    penalty_acknowledged,
+                ),
+            )
+        ],
+        [_back_button(back_callback, language)],
+    ]
+    return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def confirm_cancel_appointment_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment_id: UUID,
+    accept_late_penalty: bool,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Persist a cancellation after rechecking policy at confirmation time."""
+
+    appointment = _appointment_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        appointment_id=appointment_id,
+    )
+    current_time = now or timezone.now()
+    policy = client_cancellation_policy(
+        client_profile=client_profile,
+        appointment=appointment,
+        now=current_time,
+    )
+    if not policy.allowed or (policy.requires_penalty_confirmation and not accept_late_penalty):
+        return build_cancel_appointment_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=appointment.id,
+            return_action=return_action,
+            return_page=return_page,
+            now=current_time,
+        )
+
+    result = cancel_appointment_by_client(
+        client_profile=client_profile,
+        appointment=appointment,
+        accept_late_penalty=accept_late_penalty,
+        now=current_time,
+    )
+    language = client_profile.language
+    if result.penalty is not None:
+        key = "appointment.late_cancelled_with_penalty"
+        context = {
+            "penalty_amount": _money_label(result.penalty.amount),
+            "currency": result.penalty.currency,
+        }
+    elif appointment.status == Appointment.Status.REQUESTED:
+        key = "booking.request_cancelled_by_client"
+        context = _appointment_action_context(partner=partner, appointment=appointment)
+    else:
+        key = "appointment.cancelled_by_client"
+        context = _appointment_action_context(partner=partner, appointment=appointment)
+
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key=key,
+            language=language,
+            context=context,
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [_back_button(_callback(return_action, return_page), language)],
+            ],
+        ),
+    )
 
 
 def parse_uuid_token(value: str) -> UUID:
@@ -282,6 +443,27 @@ def _appointment_list_reply(
         ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
     )
+
+
+def _appointment_for_client(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment_id: UUID,
+) -> Appointment:
+    try:
+        return (
+            Appointment.objects.filter(
+                partner=partner,
+                client_profile=client_profile,
+                id=appointment_id,
+            )
+            .select_related("partner", "client_profile")
+            .prefetch_related("service_items")
+            .get()
+        )
+    except Appointment.DoesNotExist as exc:
+        raise ValidationError({"appointment": "Appointment is not available."}) from exc
 
 
 def _reply_with_back(*, partner: Partner, key: str, language: str) -> BotProfileReply:
@@ -379,6 +561,19 @@ def _appointment_details_context(
     }
 
 
+def _appointment_action_context(
+    *,
+    partner: Partner,
+    appointment: Appointment,
+) -> dict[str, str]:
+    partner_time = to_partner_time(appointment.start_at, partner.timezone)
+    return {
+        "date": partner_time.date().isoformat(),
+        "time": partner_time.strftime("%H:%M"),
+        "services": _appointment_services_label(appointment),
+    }
+
+
 def _appointment_services_label(appointment: Appointment) -> str:
     return ", ".join(item.service_name_snapshot for item in appointment.service_items.all())
 
@@ -444,7 +639,17 @@ def _label(key: str, language: str) -> str:
     labels = {
         "back": {"uk": "Назад", "ru": "Назад", "en": "Back"},
         "book": {"uk": "Записатися", "ru": "Записаться", "en": "Book"},
+        "cancel_appointment": {
+            "uk": "Скасувати запис",
+            "ru": "Отменить запись",
+            "en": "Cancel booking",
+        },
         "comment": {"uk": "Коментар", "ru": "Комментарий", "en": "Comment"},
+        "confirm_cancel": {
+            "uk": "Так, скасувати",
+            "ru": "Да, отменить",
+            "en": "Yes, cancel",
+        },
         "details": {"uk": "Деталі", "ru": "Детали", "en": "Details"},
         "future": {"uk": "Мої записи", "ru": "Мои записи", "en": "My bookings"},
         "history": {"uk": "Історія", "ru": "История", "en": "History"},

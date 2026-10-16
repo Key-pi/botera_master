@@ -27,6 +27,7 @@ from core.database.locks import (
 if TYPE_CHECKING:
     from apps.accounts.models import User
     from apps.clients.models import ClientProfile
+    from apps.finance.models import Penalty
     from apps.partners.models import Partner
 
 
@@ -41,6 +42,26 @@ class AppointmentServiceItemInput:
     currency: str = ""
     duration_minutes: int | None = None
     sort_order: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ClientCancellationPolicy:
+    """Current client cancellation rules for one appointment."""
+
+    allowed: bool
+    reason_code: str = ""
+    requires_penalty_confirmation: bool = False
+    penalty_amount: int = 0
+    currency: str = DEFAULT_CURRENCY
+    deadline_hours: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ClientCancellationResult:
+    """Persisted outcome of one client cancellation."""
+
+    appointment: Appointment
+    penalty: Penalty | None = None
 
 
 ALLOWED_STATUS_TRANSITIONS = {
@@ -365,22 +386,101 @@ def cancel_requested_appointment_by_client(
 ) -> Appointment:
     """Cancel a pending request from the client bot context."""
 
+    result = _cancel_appointment_by_client(
+        client_profile=client_profile,
+        appointment=appointment,
+        reason=reason,
+        expected_status=Appointment.Status.REQUESTED,
+    )
+    return result.appointment
+
+
+def client_cancellation_policy(
+    *,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ClientCancellationPolicy:
+    """Return the current partner rules for a client-owned appointment."""
+
     if appointment.client_profile_id != client_profile.id:
         raise ValidationError({"appointment": "Appointment does not belong to this client."})
 
-    now = timezone.now()
+    return _client_cancellation_policy(
+        appointment=appointment,
+        cancelled_at=now or timezone.now(),
+    )
+
+
+def cancel_appointment_by_client(
+    *,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    accept_late_penalty: bool = False,
+    reason: str = "",
+    now: datetime | None = None,
+) -> ClientCancellationResult:
+    """Cancel a requested/confirmed booking after a fresh policy check.
+
+    The appointment row is locked before policy evaluation so a stale Telegram
+    confirmation cannot bypass a newly reached deadline or create two penalties.
+    """
+
+    return _cancel_appointment_by_client(
+        client_profile=client_profile,
+        appointment=appointment,
+        accept_late_penalty=accept_late_penalty,
+        reason=reason,
+        now=now,
+    )
+
+
+def _cancel_appointment_by_client(
+    *,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    accept_late_penalty: bool = False,
+    reason: str = "",
+    now: datetime | None = None,
+    expected_status: str | None = None,
+) -> ClientCancellationResult:
+    """Persist a client cancellation while preserving wrapper-specific rules."""
+
+    if appointment.client_profile_id != client_profile.id:
+        raise ValidationError({"appointment": "Appointment does not belong to this client."})
+
+    cancelled_at = now or timezone.now()
     with transaction.atomic():
-        appointment = Appointment.objects.select_for_update().get(id=appointment.id)
+        appointment = (
+            Appointment.objects.select_for_update()
+            .select_related("partner", "client_profile")
+            .get(id=appointment.id)
+        )
         if appointment.client_profile_id != client_profile.id:
             raise ValidationError({"appointment": "Appointment does not belong to this client."})
-        if appointment.status != Appointment.Status.REQUESTED:
-            raise ValidationError({"status": "Only requested appointments can be cancelled here."})
+        if expected_status is not None and appointment.status != expected_status:
+            raise ValidationError(
+                {"status": f"Only {expected_status} appointments can be cancelled here."}
+            )
+
+        policy = _client_cancellation_policy(
+            appointment=appointment,
+            cancelled_at=cancelled_at,
+        )
+        if not policy.allowed:
+            raise ValidationError(
+                {"appointment": _client_cancellation_error_message(policy.reason_code)}
+            )
+        if policy.requires_penalty_confirmation and not accept_late_penalty:
+            raise ValidationError(
+                {"penalty_confirmation": "Confirm the late-cancellation penalty first."}
+            )
 
         old_status = appointment.status
         appointment.status = Appointment.Status.CANCELLED_BY_CLIENT
-        appointment.client_visible_reason = reason
-        appointment.cancelled_at = now
-        appointment.status_changed_at = now
+        appointment.client_visible_reason = reason.strip()
+        appointment.cancelled_at = cancelled_at
+        appointment.status_changed_at = cancelled_at
         appointment.save(
             update_fields=[
                 "status",
@@ -395,11 +495,20 @@ def cancel_requested_appointment_by_client(
             appointment=appointment,
             old_status=old_status,
             new_status=Appointment.Status.CANCELLED_BY_CLIENT,
-            reason=reason,
+            reason=appointment.client_visible_reason,
         )
         _release_active_penalties_if_cancelled(appointment)
+        penalty = None
+        if policy.requires_penalty_confirmation:
+            from apps.finance.services import create_late_cancel_penalty_for_appointment
+
+            penalty = create_late_cancel_penalty_for_appointment(
+                actor=None,
+                appointment=appointment,
+            )
         _on_commit_stale_appointment_notifications(appointment.id)
-    return appointment
+        _on_commit_schedule_master_client_cancelled_notification(appointment.id)
+    return ClientCancellationResult(appointment=appointment, penalty=penalty)
 
 
 def correct_final_appointment_status(
@@ -539,6 +648,10 @@ def _on_commit_stale_appointment_notifications(appointment_id) -> None:
     transaction.on_commit(lambda: _stale_appointment_notifications(appointment_id))
 
 
+def _on_commit_schedule_master_client_cancelled_notification(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_master_client_cancelled_notification(appointment_id))
+
+
 def _schedule_requested_notifications(appointment_id) -> None:
     from apps.notifications.services import schedule_stale_requested_notification
 
@@ -575,6 +688,15 @@ def _stale_appointment_notifications(appointment_id) -> None:
 
     appointment = Appointment.objects.get(id=appointment_id)
     cancel_pending_notifications_for_appointment(appointment=appointment)
+
+
+def _schedule_master_client_cancelled_notification(appointment_id) -> None:
+    from apps.notifications.services import schedule_master_client_cancelled_notification
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_master_client_cancelled_notification(appointment=appointment)
 
 
 def _prepare_appointment_data(
@@ -750,6 +872,65 @@ def _validate_status_timing(
         raise ValidationError(
             {"status": "An appointment can be completed or marked no-show only after it starts."}
         )
+
+
+def _client_cancellation_policy(
+    *,
+    appointment: Appointment,
+    cancelled_at: datetime,
+) -> ClientCancellationPolicy:
+    if timezone.is_naive(cancelled_at):
+        raise ValidationError({"now": "Datetime must be timezone-aware."})
+    if appointment.status not in {
+        Appointment.Status.REQUESTED,
+        Appointment.Status.CONFIRMED,
+    }:
+        return ClientCancellationPolicy(
+            allowed=False,
+            reason_code="unsupported_status",
+        )
+    if appointment.start_at <= cancelled_at:
+        return ClientCancellationPolicy(
+            allowed=False,
+            reason_code="appointment_started",
+        )
+    if appointment.status == Appointment.Status.REQUESTED:
+        return ClientCancellationPolicy(allowed=True)
+
+    from apps.finance.models import PartnerPenaltySettings
+    from apps.finance.services import is_late_cancellation
+
+    schedule_settings = PartnerScheduleSettings.objects.filter(partner=appointment.partner).first()
+    deadline_hours = schedule_settings.cancellation_deadline_hours if schedule_settings else 6
+    if not is_late_cancellation(appointment=appointment, cancelled_at=cancelled_at):
+        return ClientCancellationPolicy(
+            allowed=True,
+            deadline_hours=deadline_hours,
+        )
+
+    penalty_settings = PartnerPenaltySettings.objects.filter(partner=appointment.partner).first()
+    if penalty_settings is None or not penalty_settings.penalties_enabled:
+        return ClientCancellationPolicy(
+            allowed=False,
+            reason_code="late_cancellation_blocked",
+            deadline_hours=deadline_hours,
+        )
+    return ClientCancellationPolicy(
+        allowed=True,
+        requires_penalty_confirmation=True,
+        penalty_amount=penalty_settings.late_cancel_penalty_amount,
+        currency=penalty_settings.currency,
+        deadline_hours=deadline_hours,
+    )
+
+
+def _client_cancellation_error_message(reason_code: str) -> str:
+    messages = {
+        "appointment_started": "Only future appointments can be cancelled by the client.",
+        "late_cancellation_blocked": ("The cancellation deadline has passed; contact the master."),
+        "unsupported_status": "This appointment can no longer be cancelled by the client.",
+    }
+    return messages.get(reason_code, "This appointment cannot be cancelled by the client.")
 
 
 def _clear_final_status_timestamps(appointment: Appointment) -> None:

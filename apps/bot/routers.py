@@ -26,9 +26,11 @@ from apps.bot.profile import (
     BotProfileReply,
     build_appointment_details_reply,
     build_appointment_history_reply,
+    build_cancel_appointment_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    confirm_cancel_appointment_reply,
     set_profile_language_reply,
 )
 from apps.bot.profile import (
@@ -266,14 +268,36 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
         )
     if action == "details" and len(parts) == 5:
         return_action = parts[3]
-        if return_action not in {"future", "history"}:
-            raise ValidationError({"callback": "Unsupported return target."})
+        _validate_profile_return_action(return_action)
         return build_appointment_details_reply(
             partner=partner,
             client_profile=client_profile,
             appointment_id=parse_profile_uuid_token(parts[2]),
             return_action=return_action,
             return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "cancel" and len(parts) == 5:
+        return_action = parts[3]
+        _validate_profile_return_action(return_action)
+        return build_cancel_appointment_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            return_action=return_action,
+            return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "cancelgo" and len(parts) == 6:
+        return_action = parts[3]
+        _validate_profile_return_action(return_action)
+        if parts[5] not in {"0", "1"}:
+            raise ValidationError({"callback": "Invalid cancellation confirmation."})
+        return confirm_cancel_appointment_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            return_action=return_action,
+            return_page=parse_profile_page_token(parts[4]),
+            accept_late_penalty=parts[5] == "1",
         )
     if action == "lang" and len(parts) == 2:
         return build_profile_language_reply(partner=partner, client_profile=client_profile)
@@ -294,6 +318,11 @@ def _invalid_profile_action_reply(*, partner: Partner, language: str):
         language=language,
     )
     return BotProfileReply(text=rendered.body)
+
+
+def _validate_profile_return_action(return_action: str) -> None:
+    if return_action not in {"future", "history"}:
+        raise ValidationError({"callback": "Unsupported return target."})
 
 
 async def _client_profile_for_message(*, message: Message, partner: Partner):

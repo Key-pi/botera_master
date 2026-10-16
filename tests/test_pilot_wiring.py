@@ -6,7 +6,12 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.services import AppointmentServiceItemInput, create_manual_appointment
+from apps.appointments.services import (
+    AppointmentServiceItemInput,
+    cancel_appointment_by_client,
+    create_confirmed_appointment,
+    create_manual_appointment,
+)
 from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTelegramContactLink
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
@@ -319,6 +324,96 @@ def test_manual_appointment_notice_dispatches_to_linked_client(
     assert sent_payloads[0]["token"] == VALID_TOKEN
     assert sent_payloads[0]["chat_id"] == 555050
     assert "Запис до Pilot Partner підтверджено" in sent_payloads[0]["text"]
+
+
+@pytest.mark.django_db
+def test_client_cancellation_notice_dispatches_to_primary_master(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    master_identity = upsert_telegram_identity(
+        telegram_user_id=555060,
+        username="cancellation-master",
+    )
+    PartnerTelegramContact.objects.create(
+        partner=created.partner,
+        telegram_identity=master_identity,
+        user=created.owner,
+        is_primary=True,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555061,
+        username="cancellation-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    start_at = timezone.now() + timedelta(days=2)
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=start_at,
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+    with django_capture_on_commit_callbacks(execute=True):
+        cancel_appointment_by_client(
+            client_profile=client_profile,
+            appointment=appointment,
+            now=start_at - timedelta(hours=7),
+        )
+
+    processed = dispatch_due_notifications_task()
+
+    notice = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
+    )
+    assert processed == 1
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads == [
+        {
+            "token": VALID_TOKEN,
+            "chat_id": 555060,
+            "text": "Клієнт скасував запис: Ira, "
+            f"{start_at.astimezone(get_zone(created.partner.timezone)).date().isoformat()} о "
+            f"{start_at.astimezone(get_zone(created.partner.timezone)).strftime('%H:%M')}, "
+            "Manicure.",
+        }
+    ]
 
 
 @pytest.mark.django_db

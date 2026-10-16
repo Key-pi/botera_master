@@ -164,6 +164,16 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             context=_appointment_template_context(notification.appointment),
         )
 
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT:
+        if notification.appointment is None:
+            return None
+        return _master_notification_payload(
+            token=token,
+            notification=notification,
+            key="master.client_cancelled_appointment",
+            context=_appointment_template_context(notification.appointment),
+        )
+
     if notification.type == ScheduledNotification.Type.STALE_REQUESTED:
         if notification.appointment is None:
             return None
@@ -446,6 +456,7 @@ def _bad_request_failure_code(exc: TelegramBadRequest) -> str:
 def _is_master_notification(notification: ScheduledNotification) -> bool:
     return notification.type in {
         ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER,
+        ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
         ScheduledNotification.Type.MASTER_MORNING_DIGEST,
         ScheduledNotification.Type.STALE_REQUESTED,
         ScheduledNotification.Type.FAILED_DELIVERY_TO_MASTER,

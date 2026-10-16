@@ -19,12 +19,17 @@ from apps.appointments.client_booking import (
 from apps.appointments.models import Appointment
 from apps.appointments.services import (
     AppointmentServiceItemInput,
+    cancel_appointment_by_client,
+    client_cancellation_policy,
     create_confirmed_appointment,
     transition_appointment_status,
 )
 from apps.bot.pagination import MAX_TELEGRAM_ENTITY_PAGE_SIZE, paginate_telegram_entities
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import create_manual_client_profile, update_client_profile_language
+from apps.finance.models import Penalty
+from apps.finance.services import update_penalty_settings
+from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import PartnerScheduleSettings
 from apps.schedule.selectors import default_booking_resource_for_partner
@@ -289,6 +294,165 @@ def test_client_can_cancel_requested_booking(booking_context, rounded_future_sta
 
     assert cancelled.status == Appointment.Status.CANCELLED_BY_CLIENT
     assert cancelled.client_visible_reason == "Changed plans"
+
+
+@pytest.mark.django_db
+def test_client_can_cancel_confirmed_booking_before_deadline_without_penalty(
+    booking_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = booking_context
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = cancel_appointment_by_client(
+            client_profile=context["client"],
+            appointment=appointment,
+            now=rounded_future_start - timedelta(hours=7),
+        )
+
+    assert result.appointment.status == Appointment.Status.CANCELLED_BY_CLIENT
+    assert result.penalty is None
+    assert Penalty.objects.filter(source_appointment=appointment).exists() is False
+    assert (
+        ScheduledNotification.objects.filter(
+            appointment=appointment,
+            type=ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_late_client_cancellation_requires_acknowledged_penalty(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+        late_cancel_penalty_amount=5000,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    cancellation_time = rounded_future_start - timedelta(hours=2)
+
+    policy = client_cancellation_policy(
+        client_profile=context["client"],
+        appointment=appointment,
+        now=cancellation_time,
+    )
+    with pytest.raises(ValidationError, match="Confirm the late-cancellation penalty"):
+        cancel_appointment_by_client(
+            client_profile=context["client"],
+            appointment=appointment,
+            now=cancellation_time,
+        )
+    result = cancel_appointment_by_client(
+        client_profile=context["client"],
+        appointment=appointment,
+        accept_late_penalty=True,
+        now=cancellation_time,
+    )
+
+    assert policy.allowed is True
+    assert policy.requires_penalty_confirmation is True
+    assert policy.penalty_amount == 5000
+    assert result.appointment.status == Appointment.Status.CANCELLED_BY_CLIENT
+    assert result.penalty is not None
+    assert result.penalty.reason == Penalty.Reason.LATE_CANCEL
+    assert result.penalty.amount == 5000
+    with pytest.raises(ValidationError, match="can no longer be cancelled"):
+        cancel_appointment_by_client(
+            client_profile=context["client"],
+            appointment=appointment,
+            accept_late_penalty=True,
+            now=cancellation_time,
+        )
+    assert Penalty.objects.filter(source_appointment=appointment).count() == 1
+
+
+@pytest.mark.django_db
+def test_late_client_cancellation_is_blocked_when_penalties_are_disabled(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    cancellation_time = rounded_future_start - timedelta(hours=2)
+
+    policy = client_cancellation_policy(
+        client_profile=context["client"],
+        appointment=appointment,
+        now=cancellation_time,
+    )
+
+    assert policy.allowed is False
+    assert policy.reason_code == "late_cancellation_blocked"
+    with pytest.raises(ValidationError, match="deadline has passed"):
+        cancel_appointment_by_client(
+            client_profile=context["client"],
+            appointment=appointment,
+            now=cancellation_time,
+        )
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.CONFIRMED
+
+
+@pytest.mark.django_db
+def test_client_cancellation_rejects_another_clients_appointment(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    other_client = create_manual_client_profile(
+        actor=context["owner"],
+        partner=context["partner"],
+        name="Other client",
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    with pytest.raises(ValidationError, match="does not belong to this client"):
+        cancel_appointment_by_client(
+            client_profile=other_client,
+            appointment=appointment,
+            now=rounded_future_start - timedelta(hours=7),
+        )
 
 
 @pytest.mark.django_db

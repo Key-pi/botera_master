@@ -116,8 +116,7 @@ def ensure_default_reminder_rules(*, partner: Partner) -> tuple[ReminderRule, ..
     """Create default client/master reminder rules if they do not exist yet."""
 
     defaults = [
-        (ReminderRule.Target.CLIENT, offset)
-        for offset in DEFAULT_CLIENT_REMINDER_OFFSETS_MINUTES
+        (ReminderRule.Target.CLIENT, offset) for offset in DEFAULT_CLIENT_REMINDER_OFFSETS_MINUTES
     ]
     defaults.append((ReminderRule.Target.MASTER, DEFAULT_MASTER_REMINDER_OFFSET_MINUTES))
 
@@ -205,6 +204,36 @@ def schedule_manual_appointment_created_notification(
         type=ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
         due_at=due_at,
         idempotency_key=f"appointment:{appointment.id}:client_created",
+        now=current_time,
+    )
+
+
+def schedule_master_client_cancelled_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the immediate master notice for a client cancellation."""
+
+    if appointment.status != Appointment.Status.CANCELLED_BY_CLIENT:
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=appointment.partner,
+    )
+    status_version = appointment.status_changed_at or current_time
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
+        due_at=due_at,
+        idempotency_key=(
+            f"appointment:{appointment.id}:master_client_cancelled:{status_version.isoformat()}"
+        ),
         now=current_time,
     )
 
@@ -613,6 +642,10 @@ def _obsolete_status_for_notification(
     if notification.type == ScheduledNotification.Type.MASTER_MORNING_DIGEST:
         return None
     if appointment is None:
+        return None
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT:
+        if appointment.status != Appointment.Status.CANCELLED_BY_CLIENT:
+            return ScheduledNotification.Status.STALE
         return None
     if notification.type == ScheduledNotification.Type.STALE_REQUESTED:
         if appointment.status != Appointment.Status.REQUESTED:

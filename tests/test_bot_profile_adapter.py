@@ -14,9 +14,11 @@ from apps.appointments.services import (
 from apps.bot.profile import (
     build_appointment_details_reply,
     build_appointment_history_reply,
+    build_cancel_appointment_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    confirm_cancel_appointment_reply,
     set_profile_language_reply,
 )
 from apps.catalog.services import create_service, create_service_category
@@ -25,6 +27,8 @@ from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.finance.models import Penalty
+from apps.finance.services import update_penalty_settings
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 
@@ -186,6 +190,96 @@ def test_profile_future_history_and_details_are_paginated(
     assert f"pf:details:{completed.id.hex}:history:1" in _button_callbacks(history_reply)
     assert "Manicure" in details_reply.text
     assert "confirmed" in details_reply.text
+    assert f"pf:cancel:{future.id.hex}:future:1" in _button_callbacks(details_reply)
+
+
+@pytest.mark.django_db
+def test_profile_late_cancellation_warns_then_creates_one_penalty(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+        late_cancel_penalty_amount=5000,
+    )
+    appointment = _create_confirmed(context, profile_start)
+    cancellation_time = profile_start - timedelta(hours=2)
+
+    warning = build_cancel_appointment_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        now=cancellation_time,
+    )
+    result = confirm_cancel_appointment_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        accept_late_penalty=True,
+        now=cancellation_time,
+    )
+
+    callbacks = _button_callbacks(warning)
+    assert "Late cancellation" in warning.text
+    assert f"pf:cancelgo:{appointment.id.hex}:future:1:1" in callbacks
+    assert "Penalty: 50.00 UAH" in result.text
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.CANCELLED_BY_CLIENT
+    assert (
+        Penalty.objects.filter(
+            source_appointment=appointment,
+            reason=Penalty.Reason.LATE_CANCEL,
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_profile_late_cancellation_without_penalties_is_blocked(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    appointment = _create_confirmed(context, profile_start)
+
+    reply = build_cancel_appointment_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        now=profile_start - timedelta(hours=2),
+    )
+
+    assert "Cancellation is no longer available" in reply.text
+    assert all("cancelgo" not in callback for callback in _button_callbacks(reply))
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.CONFIRMED
+
+
+@pytest.mark.django_db
+def test_profile_final_appointment_details_do_not_offer_cancellation(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    appointment = _create_confirmed(context, profile_start - timedelta(days=6))
+    transition_appointment_status(
+        actor=context["owner"],
+        appointment=appointment,
+        new_status=Appointment.Status.COMPLETED,
+    )
+
+    reply = build_appointment_details_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        return_action="history",
+        now=profile_start,
+    )
+
+    assert all("cancel" not in callback for callback in _button_callbacks(reply))
 
 
 @pytest.mark.django_db

@@ -102,6 +102,10 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             "master_appointment_reminder",
             "Master appointment reminder",
         )
+        MASTER_CLIENT_CANCELLED_APPOINTMENT = (
+            "master_client_cancelled_appointment",
+            "Master client-cancelled appointment",
+        )
         MASTER_MORNING_DIGEST = "master_morning_digest", "Master morning digest"
         STALE_REQUESTED = "stale_requested", "Stale requested appointment"
         FAILED_DELIVERY_TO_MASTER = "failed_delivery_to_master", "Failed delivery to master"
