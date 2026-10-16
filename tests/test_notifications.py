@@ -5,7 +5,11 @@ import pytest
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal
+from apps.appointments.proposals import (
+    AppointmentProposalOptionInput,
+    create_appointment_proposal,
+)
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
@@ -389,6 +393,57 @@ def test_obsolete_reminder_is_skipped_without_delivery(
 
     assert status == ScheduledNotification.Status.SKIPPED
     assert notification.status == ScheduledNotification.Status.SKIPPED
+
+
+@pytest.mark.django_db
+def test_superseded_proposal_notification_becomes_stale_before_delivery(
+    notification_context,
+    future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["telegram_client"],
+        start_at=future_start,
+        service_items=[_service_input(context["service"])],
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        first = create_appointment_proposal(
+            actor=context["owner"],
+            appointment=appointment,
+            proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+            options=[AppointmentProposalOptionInput(start_at=future_start + timedelta(days=1))],
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        create_appointment_proposal(
+            actor=context["owner"],
+            appointment=appointment,
+            proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+            options=[AppointmentProposalOptionInput(start_at=future_start + timedelta(days=2))],
+        )
+    first_notice = ScheduledNotification.objects.get(
+        appointment_proposal=first,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
+    )
+    dispatch_at = timezone.now()
+    first_notice.due_at = dispatch_at - timedelta(seconds=1)
+    first_notice.save(update_fields=["due_at", "updated_at"])
+
+    def deliver(_notification):
+        raise AssertionError("superseded proposal should not be delivered")
+
+    status = dispatch_notification(
+        notification=first_notice,
+        deliver=deliver,
+        now=dispatch_at,
+    )
+
+    first_notice.refresh_from_db()
+    assert status == ScheduledNotification.Status.SKIPPED
+    assert first_notice.status == ScheduledNotification.Status.STALE
 
 
 @pytest.mark.django_db

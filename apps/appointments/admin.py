@@ -8,6 +8,8 @@ from django.urls import path, reverse
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.forms import (
+    AppointmentProposalAdminForm,
+    AppointmentProposalOptionAdminFormSet,
     AppointmentStatusAdminForm,
     ManualAppointmentAdminForm,
     ManualAppointmentServiceItemFormSet,
@@ -21,6 +23,7 @@ from apps.appointments.models import (
     AppointmentProposalOptionItem,
     AppointmentServiceItem,
 )
+from apps.appointments.proposals import create_appointment_proposal
 from apps.appointments.services import (
     correct_final_appointment_status,
     create_manual_appointment_with_client,
@@ -29,6 +32,7 @@ from apps.appointments.services import (
 from apps.clients.models import ClientProfile
 from apps.schedule.models import BookingResource
 from core.admin import PartnerScopedAdminMixin
+from core.timezones import to_partner_time
 
 
 class AppointmentServiceItemInline(admin.TabularInline):
@@ -66,22 +70,47 @@ class AppointmentProposalOptionItemInline(admin.TabularInline):
     ]
     can_delete = False
 
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 class AppointmentProposalOptionInline(admin.TabularInline):
     model = AppointmentProposalOption
     extra = 0
-    readonly_fields = [
-        "start_at",
-        "end_at",
+    fields = [
+        "start_at_partner_time",
+        "end_at_partner_time",
         "total_duration_minutes",
         "service_total_amount",
         "penalties_total_amount",
         "total_amount",
         "currency",
         "sort_order",
-        "selected_at",
+        "selected_at_partner_time",
     ]
+    readonly_fields = fields
     can_delete = False
+
+    @admin.display(description="Start at (partner time)")
+    def start_at_partner_time(self, obj):
+        return _partner_datetime(obj.start_at, obj.proposal.partner.timezone)
+
+    @admin.display(description="End at (partner time)")
+    def end_at_partner_time(self, obj):
+        return _partner_datetime(obj.end_at, obj.proposal.partner.timezone)
+
+    @admin.display(description="Selected at (partner time)")
+    def selected_at_partner_time(self, obj):
+        return _partner_datetime(obj.selected_at, obj.proposal.partner.timezone)
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Appointment)
@@ -139,6 +168,11 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 "<path:object_id>/status/",
                 self.admin_site.admin_view(self.status_view),
                 name="appointments_appointment_status",
+            ),
+            path(
+                "<path:object_id>/propose-time/",
+                self.admin_site.admin_view(self.propose_time_view),
+                name="appointments_appointment_propose_time",
             ),
         ]
         return custom_urls + super().get_urls()
@@ -241,12 +275,28 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         )
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
+        appointment = self.get_object(request, object_id)
+        proposal_action_url = None
+        if (
+            appointment is not None
+            and appointment.client_profile.telegram_identity_id
+            and appointment.status
+            in {
+                Appointment.Status.REQUESTED,
+                Appointment.Status.CONFIRMED,
+            }
+        ):
+            proposal_action_url = reverse(
+                "admin:appointments_appointment_propose_time",
+                args=[object_id],
+            )
         extra_context = {
             **(extra_context or {}),
             "status_action_url": reverse(
                 "admin:appointments_appointment_status",
                 args=[object_id],
             ),
+            "proposal_action_url": proposal_action_url,
         }
         return super().change_view(
             request,
@@ -322,6 +372,93 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             context,
         )
 
+    def propose_time_view(self, request, object_id):
+        """Create a typed proposal through the appointment owner service."""
+
+        appointment = self.get_object(request, object_id)
+        if appointment is None:
+            raise Http404("Appointment not found.")
+        if not self.has_change_permission(request, appointment):
+            raise PermissionDenied
+        if appointment.status not in {
+            Appointment.Status.REQUESTED,
+            Appointment.Status.CONFIRMED,
+        }:
+            self.message_user(
+                request,
+                "Only requested or confirmed appointments can receive a time proposal.",
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(
+                reverse("admin:appointments_appointment_change", args=[appointment.id])
+            )
+        if not appointment.client_profile.telegram_identity_id:
+            self.message_user(
+                request,
+                "This client has no Telegram connection and cannot respond to a proposal.",
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(
+                reverse("admin:appointments_appointment_change", args=[appointment.id])
+            )
+
+        form = AppointmentProposalAdminForm(request.POST or None)
+        option_formset = AppointmentProposalOptionAdminFormSet(
+            request.POST or None,
+            prefix="options",
+            form_kwargs={"appointment": appointment},
+        )
+        if request.method == "POST" and form.is_valid() and option_formset.is_valid():
+            proposal_type = (
+                AppointmentProposal.Type.REQUESTED_ALTERNATIVES
+                if appointment.status == Appointment.Status.REQUESTED
+                else AppointmentProposal.Type.RESCHEDULE_CONFIRMED
+            )
+            try:
+                proposal = create_appointment_proposal(
+                    actor=request.user,
+                    appointment=appointment,
+                    proposal_type=proposal_type,
+                    options=option_formset.build_options(),
+                    message=form.cleaned_data["message"],
+                    reason=form.cleaned_data["reason"],
+                )
+            except ValidationError as exc:
+                _add_validation_error(form, exc)
+            else:
+                self.log_change(
+                    request,
+                    appointment,
+                    f"Created {proposal.get_type_display()} proposal.",
+                )
+                self.message_user(request, "Time proposal created and queued for delivery.")
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:appointments_appointmentproposal_change",
+                        args=[proposal.id],
+                    )
+                )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Propose another time",
+            "subtitle": _appointment_partner_summary(appointment),
+            "opts": self.model._meta,
+            "appointment": appointment,
+            "form": form,
+            "option_formset": option_formset,
+            "media": self.media + form.media + option_formset.media,
+            "change_url": reverse(
+                "admin:appointments_appointment_change",
+                args=[appointment.id],
+            ),
+        }
+        return TemplateResponse(
+            request,
+            "admin/appointments/appointment/proposal_form.html",
+            context,
+        )
+
     def _run_status_action(self, request, queryset, status: str) -> None:
         changed_count = 0
         failed_count = 0
@@ -353,42 +490,92 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "partner",
         "type",
         "status",
-        "expires_at",
-        "responded_at",
+        "expires_at_partner_time",
+        "responded_at_partner_time",
     ]
     list_filter = ["partner", "type", "status"]
     search_fields = ["appointment__client_profile__name", "message", "reason"]
-    autocomplete_fields = ["partner", "appointment", "created_by", "selected_option"]
-    readonly_fields = ["created_at", "updated_at"]
+    fields = [
+        "partner",
+        "appointment",
+        "type",
+        "status",
+        "created_by",
+        "expires_at_partner_time",
+        "message",
+        "reason",
+        "responded_at_partner_time",
+        "selected_option",
+        "created_at_partner_time",
+        "updated_at_partner_time",
+    ]
+    readonly_fields = fields
     inlines = [AppointmentProposalOptionInline]
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if not request.user.is_superuser:
-            if db_field.name == "appointment":
-                kwargs["queryset"] = Appointment.objects.filter(
-                    partner_id__in=partner_ids_for_user(request.user)
-                )
-            elif db_field.name == "selected_option":
-                kwargs["queryset"] = AppointmentProposalOption.objects.filter(
-                    proposal__partner_id__in=partner_ids_for_user(request.user)
-                )
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    @admin.display(description="Expires at (partner time)", ordering="expires_at")
+    def expires_at_partner_time(self, obj):
+        return _partner_datetime(obj.expires_at, obj.partner.timezone)
+
+    @admin.display(description="Responded at (partner time)", ordering="responded_at")
+    def responded_at_partner_time(self, obj):
+        return _partner_datetime(obj.responded_at, obj.partner.timezone)
+
+    @admin.display(description="Created at (partner time)", ordering="created_at")
+    def created_at_partner_time(self, obj):
+        return _partner_datetime(obj.created_at, obj.partner.timezone)
+
+    @admin.display(description="Updated at (partner time)", ordering="updated_at")
+    def updated_at_partner_time(self, obj):
+        return _partner_datetime(obj.updated_at, obj.partner.timezone)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(AppointmentProposalOption)
 class AppointmentProposalOptionAdmin(admin.ModelAdmin):
     list_display = [
         "proposal",
-        "start_at",
-        "end_at",
+        "start_at_partner_time",
+        "end_at_partner_time",
         "total_amount",
         "currency",
-        "selected_at",
+        "selected_at_partner_time",
     ]
     list_filter = ["proposal__partner", "proposal__type", "proposal__status"]
     search_fields = ["proposal__appointment__client_profile__name"]
-    autocomplete_fields = ["proposal"]
+    fields = [
+        "proposal",
+        "start_at_partner_time",
+        "end_at_partner_time",
+        "total_duration_minutes",
+        "service_total_amount",
+        "penalties_total_amount",
+        "total_amount",
+        "currency",
+        "sort_order",
+        "selected_at_partner_time",
+    ]
+    readonly_fields = fields
     inlines = [AppointmentProposalOptionItemInline]
+
+    @admin.display(description="Start at (partner time)", ordering="start_at")
+    def start_at_partner_time(self, obj):
+        return _partner_datetime(obj.start_at, obj.proposal.partner.timezone)
+
+    @admin.display(description="End at (partner time)", ordering="end_at")
+    def end_at_partner_time(self, obj):
+        return _partner_datetime(obj.end_at, obj.proposal.partner.timezone)
+
+    @admin.display(description="Selected at (partner time)", ordering="selected_at")
+    def selected_at_partner_time(self, obj):
+        return _partner_datetime(obj.selected_at, obj.proposal.partner.timezone)
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -396,12 +583,14 @@ class AppointmentProposalOptionAdmin(admin.ModelAdmin):
             return queryset
         return queryset.filter(proposal__partner_id__in=partner_ids_for_user(request.user))
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if not request.user.is_superuser and db_field.name == "proposal":
-            kwargs["queryset"] = AppointmentProposal.objects.filter(
-                partner_id__in=partner_ids_for_user(request.user)
-            )
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 def _add_validation_error(form, exc: ValidationError) -> None:
@@ -418,3 +607,14 @@ def _add_validation_error(form, exc: ValidationError) -> None:
         return
     for error_message in exc.messages:
         form.add_error(None, error_message)
+
+
+def _appointment_partner_summary(appointment: Appointment) -> str:
+    start_at = _partner_datetime(appointment.start_at, appointment.partner.timezone)
+    return f"{appointment.client_profile.display_name} — {start_at} ({appointment.status})"
+
+
+def _partner_datetime(value, timezone_name: str) -> str:
+    if value is None:
+        return "-"
+    return to_partner_time(value, timezone_name).strftime("%Y-%m-%d %H:%M %Z")

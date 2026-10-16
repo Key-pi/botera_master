@@ -26,16 +26,22 @@ from apps.bot.booking import (
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
     BotProfileReply,
+    accept_appointment_proposal_reply,
     build_appointment_details_reply,
     build_appointment_history_reply,
+    build_appointment_proposal_reply,
     build_cancel_appointment_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     confirm_cancel_appointment_reply,
+    decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
     set_profile_language_reply,
+)
+from apps.bot.profile import (
+    parse_integer_token as parse_profile_integer_token,
 )
 from apps.bot.profile import (
     parse_page_token as parse_profile_page_token,
@@ -368,6 +374,36 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             return_action=return_action,
             return_page=parse_profile_page_token(parts[4]),
             accept_late_penalty=parts[5] == "1",
+        )
+    if action == "proposal" and len(parts) == 5:
+        return_action = parts[3]
+        _validate_profile_return_action(return_action)
+        return build_appointment_proposal_reply(
+            partner=partner,
+            client_profile=client_profile,
+            proposal_id=parse_profile_uuid_token(parts[2]),
+            return_action=return_action,
+            return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "proposalgo" and len(parts) == 5:
+        return_action = parts[3]
+        _validate_profile_return_action(return_action)
+        return accept_appointment_proposal_reply(
+            partner=partner,
+            client_profile=client_profile,
+            option_id=parse_profile_integer_token(parts[2]),
+            return_action=return_action,
+            return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "proposalno" and len(parts) == 5:
+        return_action = parts[3]
+        _validate_profile_return_action(return_action)
+        return decline_appointment_proposal_reply(
+            partner=partner,
+            client_profile=client_profile,
+            proposal_id=parse_profile_uuid_token(parts[2]),
+            return_action=return_action,
+            return_page=parse_profile_page_token(parts[4]),
         )
     if action == "lang" and len(parts) == 2:
         return build_profile_language_reply(partner=partner, client_profile=client_profile)

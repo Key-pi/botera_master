@@ -5,7 +5,11 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal
+from apps.appointments.proposals import (
+    AppointmentProposalOptionInput,
+    create_appointment_proposal,
+)
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
@@ -13,14 +17,17 @@ from apps.appointments.services import (
 )
 from apps.audit.models import AuditEvent
 from apps.bot.profile import (
+    accept_appointment_proposal_reply,
     build_appointment_details_reply,
     build_appointment_history_reply,
+    build_appointment_proposal_reply,
     build_cancel_appointment_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     confirm_cancel_appointment_reply,
+    decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
     set_profile_language_reply,
 )
@@ -33,6 +40,7 @@ from apps.clients.services import (
 from apps.finance.models import Penalty
 from apps.finance.services import update_penalty_settings
 from apps.messaging.models import ConversationMessage
+from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 
@@ -224,6 +232,95 @@ def test_profile_future_history_and_details_are_paginated(
     assert "Manicure" in details_reply.text
     assert "confirmed" in details_reply.text
     assert f"pf:cancel:{future.id.hex}:future:1" in _button_callbacks(details_reply)
+
+
+@pytest.mark.django_db
+def test_profile_accepts_one_of_multiple_master_proposal_options(
+    bot_profile_context,
+    profile_start,
+    django_capture_on_commit_callbacks,
+):
+    context = bot_profile_context
+    appointment = _create_confirmed(context, profile_start)
+    first_start = profile_start + timedelta(days=1)
+    second_start = profile_start + timedelta(days=2)
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=appointment,
+        proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+        options=[
+            AppointmentProposalOptionInput(start_at=first_start),
+            AppointmentProposalOptionInput(start_at=second_start),
+        ],
+        message="I can offer two alternatives.",
+    )
+    selected_option = proposal.options.order_by("sort_order", "id").last()
+
+    details = build_appointment_details_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        return_action="future",
+    )
+    proposal_reply = build_appointment_proposal_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        accepted_reply = accept_appointment_proposal_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            option_id=selected_option.id,
+        )
+
+    assert f"pf:proposal:{proposal.id.hex}:future:1" in _button_callbacks(details)
+    callbacks = _button_callbacks(proposal_reply)
+    assert f"pf:proposalgo:{selected_option.id}:future:1" in callbacks
+    assert f"pf:proposalno:{proposal.id.hex}:future:1" in callbacks
+    assert "I can offer two alternatives." in proposal_reply.text
+    assert "New time confirmed" in accepted_reply.text
+    appointment.refresh_from_db()
+    proposal.refresh_from_db()
+    assert appointment.start_at == second_start
+    assert proposal.status == AppointmentProposal.Status.ACCEPTED
+    assert ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.MASTER_CLIENT_ACCEPTED_PROPOSAL,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_profile_declines_master_proposal_without_changing_appointment(
+    bot_profile_context,
+    profile_start,
+    django_capture_on_commit_callbacks,
+):
+    context = bot_profile_context
+    appointment = _create_confirmed(context, profile_start)
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=appointment,
+        proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+        options=[AppointmentProposalOptionInput(start_at=profile_start + timedelta(days=1))],
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        reply = decline_appointment_proposal_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            proposal_id=proposal.id,
+        )
+
+    appointment.refresh_from_db()
+    proposal.refresh_from_db()
+    assert "proposal declined" in reply.text
+    assert appointment.start_at == profile_start
+    assert proposal.status == AppointmentProposal.Status.DECLINED
+    assert ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL,
+    ).exists()
 
 
 @pytest.mark.django_db

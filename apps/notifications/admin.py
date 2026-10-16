@@ -46,7 +46,13 @@ class ScheduledNotificationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     ]
     list_filter = ["type", "status", "failed_visible_to_partner", "partner"]
     search_fields = ["idempotency_key", "partner__name", "last_failure_code"]
-    autocomplete_fields = ["partner", "appointment", "client_profile", "reminder_rule"]
+    autocomplete_fields = [
+        "partner",
+        "appointment",
+        "appointment_proposal",
+        "client_profile",
+        "reminder_rule",
+    ]
     readonly_fields = [
         "idempotency_key",
         "attempt_count",

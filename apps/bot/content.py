@@ -323,6 +323,13 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("client_name", "date", "time", "services"),
     ),
     _definition(
+        "master.appointment_proposal_expired",
+        uk="Пропозиція перенесення для {client_name} застаріла: {date} о {time}, {services}.",
+        ru="Предложение переноса для {client_name} устарело: {date} в {time}, {services}.",
+        en="Reschedule proposal for {client_name} expired: {date} at {time}, {services}.",
+        placeholders=("client_name", "date", "time", "services"),
+    ),
+    _definition(
         "reminder.client_before_appointment",
         uk="Нагадування: {partner_name}, {date} о {time}, {services}.",
         ru="Напоминание: {partner_name}, {date} в {time}, {services}.",

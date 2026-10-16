@@ -322,7 +322,7 @@ Checks:
 - old diagnostic/delivery/broadcast recipient cleanup execution.
 - manual cleanup command: `python manage.py cleanup_retained_records`.
 - heartbeat command for runbook checks: `python manage.py record_worker_heartbeat <component> --queue <queue> --worker <worker>`.
-- maintenance tasks: `audit.cleanup_expired_retained_records`, `audit.refresh_worker_health`, and `audit.heartbeat`.
+- maintenance tasks: `audit.cleanup_expired_retained_records`, `audit.refresh_worker_health`, `audit.heartbeat`, and `appointments.expire_pending_proposals`.
 
 Operational rule:
 - core business history is retained while partner data is retained.
@@ -341,6 +341,17 @@ If reminders are late:
 8. Confirm pending reminders resume from durable database records.
 
 Do not manually send reminders from logs. Use system retry/manual resend actions where implemented.
+
+## Appointment Proposal Checks
+
+If a proposal remains pending after its 48-hour expiry:
+1. Check that `celery-beat` is running.
+2. Check that a worker consumes the `maintenance` queue.
+3. Inspect the `appointments.expire_pending_proposals` task logs.
+4. Restart beat or the maintenance-capable worker if needed.
+5. Confirm the proposal becomes expired and its durable client/master expiry notifications are queued once.
+
+Proposal delivery and response notifications run through the `notifications` queue. A superseded, accepted, declined, cancelled, or expired proposal's original pending notification must become stale rather than send as current.
 
 ## Broadcast Incident Flow
 

@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.models import Appointment
+from apps.appointments.proposals import AppointmentProposalOptionInput
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     available_appointment_status_targets,
@@ -194,6 +195,109 @@ class AppointmentStatusAdminForm(forms.Form):
         if self.appointment.is_final and not reason:
             raise forms.ValidationError("Correction reason is required.")
         return reason
+
+
+class AppointmentProposalAdminForm(forms.Form):
+    """Collect client-visible metadata for a master-created time proposal."""
+
+    message = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Optional message shown to the client with the proposed times.",
+    )
+    reason = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text=(
+            "Optional client-visible reason. For a requested appointment, this is also "
+            "used if the unanswered proposal expires and the request is cancelled."
+        ),
+    )
+
+    def clean_message(self) -> str:
+        return self.cleaned_data.get("message", "").strip()
+
+    def clean_reason(self) -> str:
+        return self.cleaned_data.get("reason", "").strip()
+
+
+class AppointmentProposalOptionAdminForm(forms.Form):
+    """Collect one alternative start time in the appointment partner's timezone."""
+
+    start_at = forms.SplitDateTimeField(
+        label="Proposed start time",
+        widget=AdminSplitDateTime,
+    )
+
+    def __init__(self, *args, appointment: Appointment, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.appointment = appointment
+        self.fields["start_at"].help_text = f"Enter local time in {appointment.partner.timezone}."
+
+    def clean_start_at(self):
+        start_at = self.cleaned_data["start_at"]
+        wall_clock = start_at
+        if timezone.is_aware(wall_clock):
+            wall_clock = timezone.make_naive(
+                wall_clock,
+                timezone.get_current_timezone(),
+            )
+        localized = timezone.make_aware(
+            wall_clock,
+            get_zone(self.appointment.partner.timezone),
+        )
+        if localized <= timezone.now():
+            raise forms.ValidationError("Proposed time must be in the future.")
+        if localized == self.appointment.start_at:
+            raise forms.ValidationError("Choose a time different from the current booking.")
+        return localized
+
+
+class BaseAppointmentProposalOptionFormSet(BaseFormSet):
+    """Validate a non-empty, duplicate-free list of proposal options."""
+
+    def clean(self) -> None:
+        super().clean()
+        if any(self.errors):
+            return
+
+        seen: set = set()
+        active_forms = 0
+        for form in self.forms:
+            if self._should_delete_form(form) or not form.cleaned_data:
+                continue
+            start_at = form.cleaned_data.get("start_at")
+            if start_at is None:
+                continue
+            active_forms += 1
+            if start_at in seen:
+                form.add_error("start_at", "Each proposed time must be unique.")
+            seen.add(start_at)
+        if active_forms == 0:
+            raise DjangoValidationError("Add at least one proposed time.")
+
+    def build_options(self) -> tuple[AppointmentProposalOptionInput, ...]:
+        if not self.is_valid():
+            raise RuntimeError("Proposal option formset must be valid before building inputs.")
+
+        return tuple(
+            AppointmentProposalOptionInput(
+                start_at=form.cleaned_data["start_at"],
+                sort_order=index,
+            )
+            for index, form in enumerate(self.forms)
+            if not self._should_delete_form(form)
+            and form.cleaned_data
+            and form.cleaned_data.get("start_at") is not None
+        )
+
+
+AppointmentProposalOptionAdminFormSet = formset_factory(
+    AppointmentProposalOptionAdminForm,
+    formset=BaseAppointmentProposalOptionFormSet,
+    extra=2,
+    can_delete=True,
+)
 
 
 class ManualAppointmentServiceItemForm(forms.Form):

@@ -20,8 +20,10 @@ from apps.appointments.services import (
     create_confirmed_appointment,
     create_requested_appointment,
 )
+from apps.appointments.tasks import expire_pending_appointment_proposals_task
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import create_manual_client_profile
+from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 
@@ -358,6 +360,42 @@ def test_confirmed_reschedule_expiry_leaves_appointment_unchanged(
     assert appointment.status == Appointment.Status.CONFIRMED
     assert appointment.start_at == rounded_future_start
     assert proposal.status == AppointmentProposal.Status.EXPIRED
+
+
+@pytest.mark.django_db
+def test_expiry_task_is_idempotent_and_queues_master_notice(
+    proposal_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = proposal_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[_service_input(context["service"])],
+    )
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=appointment,
+        proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+        options=[AppointmentProposalOptionInput(start_at=_option_start(rounded_future_start))],
+        expires_at=timezone.now() - timedelta(minutes=1),
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        first_count = expire_pending_appointment_proposals_task()
+    second_count = expire_pending_appointment_proposals_task()
+
+    assert first_count == 1
+    assert second_count == 0
+    assert ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.MASTER_APPOINTMENT_PROPOSAL_EXPIRED,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
 
 
 @pytest.mark.django_db

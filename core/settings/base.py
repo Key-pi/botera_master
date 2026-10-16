@@ -140,6 +140,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=3, minute=30),
         "options": {"queue": "maintenance"},
     },
+    "expire-pending-appointment-proposals": {
+        "task": "appointments.expire_pending_proposals",
+        "schedule": timedelta(minutes=1),
+        "options": {"queue": "maintenance", "expires": 90},
+    },
     "heartbeat-celery-beat": {
         "task": "audit.heartbeat",
         "schedule": timedelta(minutes=1),

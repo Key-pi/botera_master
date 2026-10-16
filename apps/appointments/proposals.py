@@ -25,6 +25,7 @@ from apps.appointments.services import (
     replace_appointment_service_items_from_snapshots,
     stale_appointment_notifications_after_commit,
 )
+from apps.audit.services import record_audit_event
 
 if TYPE_CHECKING:
     from apps.accounts.models import User
@@ -99,6 +100,20 @@ def create_appointment_proposal(
                 option_input=option_input,
                 default_sort_order=index,
             )
+        record_audit_event(
+            partner=appointment.partner,
+            actor=actor,
+            event_type="appointment.proposal_created",
+            target=proposal,
+            message="Appointment change proposal created.",
+            payload={
+                "appointment_id": str(appointment.id),
+                "proposal_type": proposal_type,
+                "option_count": len(options),
+                "expires_at": expires_at.isoformat(),
+            },
+        )
+        _on_commit_schedule_client_proposal_notification(proposal.id)
     return proposal
 
 
@@ -155,6 +170,15 @@ def decline_appointment_proposal(
         proposal.status = AppointmentProposal.Status.DECLINED
         proposal.responded_at = now
         proposal.save(update_fields=["status", "responded_at", "updated_at"])
+        record_audit_event(
+            partner=proposal.partner,
+            actor=None,
+            event_type="appointment.proposal_declined",
+            target=proposal,
+            message="Appointment change proposal declined by client.",
+            payload={"appointment_id": str(proposal.appointment_id)},
+        )
+        _on_commit_schedule_master_proposal_response_notification(proposal.id)
     return proposal
 
 
@@ -178,6 +202,14 @@ def cancel_appointment_proposal(
         proposal.status = AppointmentProposal.Status.CANCELLED
         proposal.responded_at = now
         proposal.save(update_fields=["status", "responded_at", "updated_at"])
+        record_audit_event(
+            partner=proposal.partner,
+            actor=actor,
+            event_type="appointment.proposal_cancelled",
+            target=proposal,
+            message="Appointment change proposal cancelled by partner.",
+            payload={"appointment_id": str(proposal.appointment_id)},
+        )
     return proposal
 
 
@@ -205,19 +237,15 @@ def expire_pending_appointment_proposals(
                 .select_related("appointment", "appointment__booking_resource")
                 .get(id=proposal_id)
             )
-            if (
-                proposal.status != AppointmentProposal.Status.PENDING
-                or proposal.expires_at > now
-            ):
+            if proposal.status != AppointmentProposal.Status.PENDING or proposal.expires_at > now:
                 continue
-            appointment = Appointment.objects.select_for_update().get(
-                id=proposal.appointment_id
-            )
+            appointment = Appointment.objects.select_for_update().get(id=proposal.appointment_id)
             proposal.status = AppointmentProposal.Status.EXPIRED
             proposal.responded_at = now
             proposal.save(update_fields=["status", "responded_at", "updated_at"])
             expired_count += 1
 
+            appointment_cancelled = False
             if (
                 proposal.type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES
                 and appointment.status == Appointment.Status.REQUESTED
@@ -236,6 +264,19 @@ def expire_pending_appointment_proposals(
                     ]
                 )
                 stale_appointment_notifications_after_commit(appointment.id)
+                appointment_cancelled = True
+            record_audit_event(
+                partner=proposal.partner,
+                actor=None,
+                event_type="appointment.proposal_expired",
+                target=proposal,
+                message="Appointment change proposal expired.",
+                payload={
+                    "appointment_id": str(appointment.id),
+                    "appointment_cancelled": appointment_cancelled,
+                },
+            )
+            _on_commit_schedule_expired_proposal_notifications(proposal.id)
     return expired_count
 
 
@@ -292,10 +333,20 @@ def _accept_appointment_proposal_option(
         proposal.status = AppointmentProposal.Status.ACCEPTED
         proposal.responded_at = now
         proposal.selected_option = option
-        proposal.save(
-            update_fields=["status", "responded_at", "selected_option", "updated_at"]
+        proposal.save(update_fields=["status", "responded_at", "selected_option", "updated_at"])
+        record_audit_event(
+            partner=appointment.partner,
+            actor=actor,
+            event_type="appointment.proposal_accepted",
+            target=proposal,
+            message="Appointment change proposal accepted.",
+            payload={
+                "appointment_id": str(appointment.id),
+                "selected_option_id": str(option.id),
+            },
         )
         refresh_confirmed_notifications_after_commit(appointment.id)
+        _on_commit_schedule_master_proposal_response_notification(proposal.id)
     return appointment
 
 
@@ -339,10 +390,7 @@ def _create_proposal_option(
     )
     if option_input.service_items is not None:
         AppointmentProposalOptionItem.objects.bulk_create(
-            [
-                AppointmentProposalOptionItem(option=option, **item)
-                for item in snapshot_items
-            ]
+            [AppointmentProposalOptionItem(option=option, **item) for item in snapshot_items]
         )
     return option
 
@@ -528,3 +576,53 @@ def _snapshot_currency(snapshot_items: Sequence[dict]) -> str:
     if len(currencies) != 1:
         raise ValidationError({"currency": "All service items must use one currency."})
     return currencies.pop()
+
+
+def _on_commit_schedule_client_proposal_notification(proposal_id) -> None:
+    transaction.on_commit(lambda: _schedule_client_proposal_notification(proposal_id))
+
+
+def _on_commit_schedule_master_proposal_response_notification(proposal_id) -> None:
+    transaction.on_commit(lambda: _schedule_master_proposal_response_notification(proposal_id))
+
+
+def _on_commit_schedule_expired_proposal_notifications(proposal_id) -> None:
+    transaction.on_commit(lambda: _schedule_expired_proposal_notifications(proposal_id))
+
+
+def _schedule_client_proposal_notification(proposal_id) -> None:
+    from apps.notifications.services import schedule_client_appointment_proposal_notification
+
+    proposal = (
+        AppointmentProposal.objects.select_related(
+            "partner",
+            "appointment",
+            "appointment__client_profile",
+        )
+        .prefetch_related("options", "appointment__service_items")
+        .get(id=proposal_id)
+    )
+    schedule_client_appointment_proposal_notification(proposal=proposal)
+
+
+def _schedule_master_proposal_response_notification(proposal_id) -> None:
+    from apps.notifications.services import schedule_master_proposal_response_notification
+
+    proposal = AppointmentProposal.objects.select_related(
+        "partner",
+        "appointment",
+        "appointment__client_profile",
+        "selected_option",
+    ).get(id=proposal_id)
+    schedule_master_proposal_response_notification(proposal=proposal)
+
+
+def _schedule_expired_proposal_notifications(proposal_id) -> None:
+    from apps.notifications.services import schedule_expired_proposal_notifications
+
+    proposal = AppointmentProposal.objects.select_related(
+        "partner",
+        "appointment",
+        "appointment__client_profile",
+    ).get(id=proposal_id)
+    schedule_expired_proposal_notifications(proposal=proposal)

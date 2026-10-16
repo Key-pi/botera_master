@@ -13,7 +13,11 @@ from apps.appointments.client_booking import (
     client_future_appointments_page,
     client_profile_overview,
 )
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal, AppointmentProposalOption
+from apps.appointments.proposals import (
+    accept_appointment_proposal_option,
+    decline_appointment_proposal,
+)
 from apps.appointments.services import (
     cancel_appointment_by_client,
     client_cancellation_policy,
@@ -285,6 +289,24 @@ def build_appointment_details_reply(
         ),
     )
     rows = []
+    pending_proposal = _pending_proposal_for_appointment(
+        appointment=appointment,
+        now=now or timezone.now(),
+    )
+    if pending_proposal is not None:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("review_proposal", language),
+                    callback_data=_callback(
+                        "proposal",
+                        pending_proposal.id.hex,
+                        return_action,
+                        return_page,
+                    ),
+                )
+            ]
+        )
     if appointment.status in {
         Appointment.Status.REQUESTED,
         Appointment.Status.CONFIRMED,
@@ -304,6 +326,201 @@ def build_appointment_details_reply(
         )
     rows.append([_back_button(_callback(return_action, return_page), language)])
     return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def build_appointment_proposal_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Render one live proposal and its selectable options."""
+
+    proposal = _proposal_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        proposal_id=proposal_id,
+        now=now or timezone.now(),
+    )
+    options = tuple(proposal.options.order_by("sort_order", "id"))
+    if not options:
+        raise ValidationError({"proposal": "Proposal has no options."})
+
+    language = client_profile.language
+    first_start = _proposal_option_start(proposal=proposal, option=options[0])
+    first_local = to_partner_time(first_start, partner.timezone)
+    expiry_local = to_partner_time(proposal.expires_at, partner.timezone)
+    text = _render(
+        partner=partner,
+        key="appointment.reschedule_proposed",
+        language=language,
+        context={
+            "partner_name": partner.name,
+            "date": first_local.date().isoformat(),
+            "time": first_local.strftime("%H:%M"),
+            "services": _appointment_services_label(proposal.appointment),
+            "proposal_expires_at": expiry_local.strftime("%Y-%m-%d %H:%M"),
+        },
+    )
+    option_lines = "\n".join(
+        f"{index}. {_proposal_option_label(partner=partner, proposal=proposal, option=option)}"
+        for index, option in enumerate(options, start=1)
+    )
+    text = f"{text}\n\n{option_lines}"
+    if proposal.message.strip():
+        text = f"{text}\n\n{_label('master_message', language)}: {proposal.message.strip()}"
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{index}. {_label('accept_time', language)}",
+                callback_data=_callback(
+                    "proposalgo",
+                    option.id,
+                    return_action,
+                    return_page,
+                ),
+            )
+        ]
+        for index, option in enumerate(options, start=1)
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=_label("decline_proposal", language),
+                callback_data=_callback(
+                    "proposalno",
+                    proposal.id.hex,
+                    return_action,
+                    return_page,
+                ),
+            )
+        ]
+    )
+    rows.append(
+        [
+            _back_button(
+                _callback(
+                    "details",
+                    proposal.appointment_id.hex,
+                    return_action,
+                    return_page,
+                ),
+                language,
+            )
+        ]
+    )
+    return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def accept_appointment_proposal_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    option_id: int,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Accept one client-owned option through the concurrency-safe owner service."""
+
+    option = _proposal_option_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        option_id=option_id,
+    )
+    appointment = accept_appointment_proposal_option(
+        client_profile=client_profile,
+        option=option,
+        now=now,
+    )
+    language = client_profile.language
+    partner_time = to_partner_time(appointment.start_at, partner.timezone)
+    text = _render(
+        partner=partner,
+        key="appointment.reschedule_proposal_accepted",
+        language=language,
+        context={
+            "new_date": partner_time.date().isoformat(),
+            "new_time": partner_time.strftime("%H:%M"),
+            "services": _appointment_services_label(appointment),
+        },
+    )
+    return BotProfileReply(
+        text=text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    _back_button(
+                        _callback(
+                            "details",
+                            appointment.id.hex,
+                            return_action,
+                            return_page,
+                        ),
+                        language,
+                    )
+                ]
+            ]
+        ),
+    )
+
+
+def decline_appointment_proposal_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Decline one live client-owned proposal without changing the appointment."""
+
+    proposal = _proposal_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        proposal_id=proposal_id,
+        now=now or timezone.now(),
+    )
+    declined = decline_appointment_proposal(
+        client_profile=client_profile,
+        proposal=proposal,
+        now=now,
+    )
+    language = client_profile.language
+    partner_time = to_partner_time(declined.appointment.start_at, partner.timezone)
+    text = _render(
+        partner=partner,
+        key="appointment.reschedule_proposal_declined",
+        language=language,
+        context={
+            "date": partner_time.date().isoformat(),
+            "time": partner_time.strftime("%H:%M"),
+            "services": _appointment_services_label(declined.appointment),
+        },
+    )
+    return BotProfileReply(
+        text=text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    _back_button(
+                        _callback(
+                            "details",
+                            declined.appointment_id.hex,
+                            return_action,
+                            return_page,
+                        ),
+                        language,
+                    )
+                ]
+            ]
+        ),
+    )
 
 
 def build_cancel_appointment_reply(
@@ -477,6 +694,18 @@ def parse_page_token(value: str) -> int:
         raise ValidationError({"callback": "Invalid callback page."}) from exc
 
 
+def parse_integer_token(value: str) -> int:
+    """Parse a positive integer model identifier from callback data."""
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({"callback": "Invalid callback identifier."}) from exc
+    if parsed < 1:
+        raise ValidationError({"callback": "Invalid callback identifier."})
+    return parsed
+
+
 def _appointment_list_reply(
     *,
     partner: Partner,
@@ -535,6 +764,73 @@ def _appointment_for_client(
         )
     except Appointment.DoesNotExist as exc:
         raise ValidationError({"appointment": "Appointment is not available."}) from exc
+
+
+def _pending_proposal_for_appointment(
+    *,
+    appointment: Appointment,
+    now: datetime,
+) -> AppointmentProposal | None:
+    return (
+        AppointmentProposal.objects.filter(
+            partner=appointment.partner,
+            appointment=appointment,
+            status=AppointmentProposal.Status.PENDING,
+            expires_at__gt=now,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def _proposal_for_client(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    now: datetime,
+) -> AppointmentProposal:
+    try:
+        proposal = (
+            AppointmentProposal.objects.filter(
+                partner=partner,
+                appointment__client_profile=client_profile,
+                id=proposal_id,
+            )
+            .select_related("partner", "appointment", "appointment__client_profile")
+            .prefetch_related("options", "appointment__service_items")
+            .get()
+        )
+    except AppointmentProposal.DoesNotExist as exc:
+        raise ValidationError({"proposal": "Proposal is not available."}) from exc
+    if proposal.status != AppointmentProposal.Status.PENDING or proposal.expires_at <= now:
+        raise ValidationError({"proposal": "Proposal is no longer available."})
+    return proposal
+
+
+def _proposal_option_for_client(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    option_id: int,
+) -> AppointmentProposalOption:
+    try:
+        return (
+            AppointmentProposalOption.objects.filter(
+                id=option_id,
+                proposal__partner=partner,
+                proposal__appointment__client_profile=client_profile,
+            )
+            .select_related(
+                "proposal",
+                "proposal__partner",
+                "proposal__appointment",
+                "proposal__appointment__client_profile",
+            )
+            .get()
+        )
+    except AppointmentProposalOption.DoesNotExist as exc:
+        raise ValidationError({"proposal": "Proposal option is not available."}) from exc
 
 
 def _reply_with_back(*, partner: Partner, key: str, language: str) -> BotProfileReply:
@@ -649,6 +945,27 @@ def _appointment_services_label(appointment: Appointment) -> str:
     return ", ".join(item.service_name_snapshot for item in appointment.service_items.all())
 
 
+def _proposal_option_start(
+    *,
+    proposal: AppointmentProposal,
+    option: AppointmentProposalOption,
+) -> datetime:
+    return option.start_at or proposal.appointment.start_at
+
+
+def _proposal_option_label(
+    *,
+    partner: Partner,
+    proposal: AppointmentProposal,
+    option: AppointmentProposalOption,
+) -> str:
+    local_start = to_partner_time(
+        _proposal_option_start(proposal=proposal, option=option),
+        partner.timezone,
+    )
+    return local_start.strftime("%Y-%m-%d %H:%M")
+
+
 def _optional_line(key: str, value: str, language: str) -> str:
     cleaned_value = value.strip()
     if not cleaned_value:
@@ -732,6 +1049,26 @@ def _label(key: str, language: str) -> str:
         "language": {"uk": "Мова", "ru": "Язык", "en": "Language"},
         "not_set": {"uk": "не вказано", "ru": "не указано", "en": "not set"},
         "reason": {"uk": "Причина", "ru": "Причина", "en": "Reason"},
+        "accept_time": {
+            "uk": "Обрати цей час",
+            "ru": "Выбрать это время",
+            "en": "Choose this time",
+        },
+        "decline_proposal": {
+            "uk": "Відхилити пропозицію",
+            "ru": "Отклонить предложение",
+            "en": "Decline proposal",
+        },
+        "master_message": {
+            "uk": "Повідомлення майстра",
+            "ru": "Сообщение мастера",
+            "en": "Master message",
+        },
+        "review_proposal": {
+            "uk": "Переглянути запропонований час",
+            "ru": "Посмотреть предложенное время",
+            "en": "Review proposed time",
+        },
     }
     translations = labels[key]
     return translations.get(language, translations["uk"])

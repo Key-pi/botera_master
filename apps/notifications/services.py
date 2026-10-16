@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal
 from apps.clients.services import mark_client_unreachable
 from apps.notifications.models import (
     DEFAULT_CLIENT_REMINDER_OFFSETS_MINUTES,
@@ -238,6 +238,119 @@ def schedule_master_client_cancelled_notification(
     )
 
 
+def schedule_client_appointment_proposal_notification(
+    *,
+    proposal: AppointmentProposal,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue a client-visible appointment change proposal."""
+
+    if (
+        proposal.status != AppointmentProposal.Status.PENDING
+        or not proposal.appointment.client_profile.telegram_identity_id
+    ):
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=proposal.partner,
+    )
+    return _upsert_scheduled_notification(
+        partner=proposal.partner,
+        appointment=proposal.appointment,
+        appointment_proposal=proposal,
+        client_profile=proposal.appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
+        due_at=due_at,
+        idempotency_key=f"proposal:{proposal.id}:client_created",
+        now=current_time,
+    )
+
+
+def schedule_master_proposal_response_notification(
+    *,
+    proposal: AppointmentProposal,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the accepted/declined proposal outcome for the partner contact."""
+
+    type_by_status = {
+        AppointmentProposal.Status.ACCEPTED: (
+            ScheduledNotification.Type.MASTER_CLIENT_ACCEPTED_PROPOSAL
+        ),
+        AppointmentProposal.Status.DECLINED: (
+            ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL
+        ),
+    }
+    notification_type = type_by_status.get(proposal.status)
+    if notification_type is None:
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=proposal.partner,
+    )
+    return _upsert_scheduled_notification(
+        partner=proposal.partner,
+        appointment=proposal.appointment,
+        appointment_proposal=proposal,
+        client_profile=proposal.appointment.client_profile,
+        reminder_rule=None,
+        type=notification_type,
+        due_at=due_at,
+        idempotency_key=f"proposal:{proposal.id}:master:{proposal.status}",
+        now=current_time,
+    )
+
+
+def schedule_expired_proposal_notifications(
+    *,
+    proposal: AppointmentProposal,
+    now: datetime | None = None,
+) -> tuple[ScheduledNotification, ...]:
+    """Queue expiry notices for every reachable side of an expired proposal."""
+
+    if proposal.status != AppointmentProposal.Status.EXPIRED:
+        return ()
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=proposal.partner,
+    )
+    scheduled = [
+        _upsert_scheduled_notification(
+            partner=proposal.partner,
+            appointment=proposal.appointment,
+            appointment_proposal=proposal,
+            client_profile=proposal.appointment.client_profile,
+            reminder_rule=None,
+            type=ScheduledNotification.Type.MASTER_APPOINTMENT_PROPOSAL_EXPIRED,
+            due_at=due_at,
+            idempotency_key=f"proposal:{proposal.id}:master:expired",
+            now=current_time,
+        )
+    ]
+    if proposal.appointment.client_profile.telegram_identity_id:
+        scheduled.append(
+            _upsert_scheduled_notification(
+                partner=proposal.partner,
+                appointment=proposal.appointment,
+                appointment_proposal=proposal,
+                client_profile=proposal.appointment.client_profile,
+                reminder_rule=None,
+                type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_EXPIRED,
+                due_at=due_at,
+                idempotency_key=f"proposal:{proposal.id}:client:expired",
+                now=current_time,
+            )
+        )
+    return tuple(scheduled)
+
+
 def schedule_stale_requested_notification(
     *,
     appointment: Appointment,
@@ -453,7 +566,13 @@ def _prepare_notification_for_delivery(
     with transaction.atomic():
         locked = (
             ScheduledNotification.objects.select_for_update()
-            .select_related("partner", "appointment", "client_profile", "reminder_rule")
+            .select_related(
+                "partner",
+                "appointment",
+                "appointment_proposal",
+                "client_profile",
+                "reminder_rule",
+            )
             .get(id=notification.id)
         )
         if locked.status != ScheduledNotification.Status.QUEUED or locked.due_at > now:
@@ -482,7 +601,13 @@ def _record_delivery_result(
     with transaction.atomic():
         locked = (
             ScheduledNotification.objects.select_for_update()
-            .select_related("partner", "appointment", "client_profile", "reminder_rule")
+            .select_related(
+                "partner",
+                "appointment",
+                "appointment_proposal",
+                "client_profile",
+                "reminder_rule",
+            )
             .get(id=notification.id)
         )
         if locked.status != ScheduledNotification.Status.SENDING:
@@ -587,6 +712,7 @@ def _upsert_scheduled_notification(
     *,
     partner: Partner,
     appointment: Appointment | None,
+    appointment_proposal: AppointmentProposal | None = None,
     client_profile,
     reminder_rule: ReminderRule | None,
     type: str,
@@ -602,6 +728,7 @@ def _upsert_scheduled_notification(
         defaults={
             "partner": partner,
             "appointment": appointment,
+            "appointment_proposal": appointment_proposal,
             "client_profile": client_profile,
             "reminder_rule": reminder_rule,
             "type": type,
@@ -639,7 +766,35 @@ def _obsolete_status_for_notification(
     now: datetime,
 ) -> str | None:
     appointment = notification.appointment
+    proposal = notification.appointment_proposal
     if notification.type == ScheduledNotification.Type.MASTER_MORNING_DIGEST:
+        return None
+    if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL:
+        if (
+            proposal is None
+            or proposal.status != AppointmentProposal.Status.PENDING
+            or proposal.expires_at <= now
+        ):
+            return ScheduledNotification.Status.STALE
+        return None
+    proposal_status_by_type = {
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_EXPIRED: (
+            AppointmentProposal.Status.EXPIRED
+        ),
+        ScheduledNotification.Type.MASTER_APPOINTMENT_PROPOSAL_EXPIRED: (
+            AppointmentProposal.Status.EXPIRED
+        ),
+        ScheduledNotification.Type.MASTER_CLIENT_ACCEPTED_PROPOSAL: (
+            AppointmentProposal.Status.ACCEPTED
+        ),
+        ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL: (
+            AppointmentProposal.Status.DECLINED
+        ),
+    }
+    expected_proposal_status = proposal_status_by_type.get(notification.type)
+    if expected_proposal_status is not None:
+        if proposal is None or proposal.status != expected_proposal_status:
+            return ScheduledNotification.Status.STALE
         return None
     if appointment is None:
         return None

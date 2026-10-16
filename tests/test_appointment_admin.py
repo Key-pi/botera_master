@@ -6,7 +6,11 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.models import Appointment, AppointmentServiceItem
+from apps.appointments.models import (
+    Appointment,
+    AppointmentProposal,
+    AppointmentServiceItem,
+)
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
@@ -17,7 +21,12 @@ from apps.appointments.services import (
 from apps.audit.models import AuditEvent
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.models import ClientProfile
-from apps.clients.services import create_manual_client_profile
+from apps.clients.services import (
+    create_manual_client_profile,
+    resolve_client_profile_for_telegram_identity,
+    upsert_telegram_identity,
+)
+from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import BookingResource
 from core.timezones import get_zone
@@ -307,6 +316,157 @@ def test_owner_confirms_requested_appointment_from_detail_flow(
 
 
 @pytest.mark.django_db
+def test_owner_proposes_multiple_times_through_service_backed_admin_flow(
+    appointment_admin_context,
+    django_capture_on_commit_callbacks,
+) -> None:
+    client, _superuser, created, resource, service = appointment_admin_context
+    identity = upsert_telegram_identity(
+        telegram_user_id=901001,
+        username="proposal-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=identity,
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=_future_hour(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    first_option = _future_hour(days=3)
+    second_option = _future_hour(days=4)
+    proposal_url = reverse(
+        "admin:appointments_appointment_propose_time",
+        args=[appointment.id],
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = client.post(
+            proposal_url,
+            {
+                "message": "Choose whichever time works better.",
+                "reason": "Schedule changed.",
+                **_proposal_formset_management(total_forms=2),
+                **_split_datetime_fields("options-0-start_at", first_option),
+                **_split_datetime_fields("options-1-start_at", second_option),
+            },
+        )
+
+    assert response.status_code == 302
+    proposal = AppointmentProposal.objects.get(appointment=appointment)
+    assert proposal.type == AppointmentProposal.Type.RESCHEDULE_CONFIRMED
+    assert proposal.status == AppointmentProposal.Status.PENDING
+    assert proposal.message == "Choose whichever time works better."
+    assert list(proposal.options.values_list("start_at", flat=True)) == [
+        first_option,
+        second_option,
+    ]
+    assert ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
+    assert AuditEvent.objects.filter(
+        partner=created.partner,
+        target_id=str(proposal.id),
+        event_type="appointment.proposal_created",
+    ).exists()
+    detail_response = client.get(response["Location"])
+    expected_partner_time = first_option.astimezone(get_zone(created.partner.timezone)).strftime(
+        "%Y-%m-%d %H:%M %Z"
+    )
+    assert detail_response.status_code == 200
+    assert expected_partner_time in detail_response.content.decode()
+
+
+@pytest.mark.django_db
+def test_proposal_admin_flow_requires_client_telegram_connection(
+    appointment_admin_context,
+) -> None:
+    client, _superuser, created, resource, service = appointment_admin_context
+    client_profile = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Offline client",
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=_future_hour(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+
+    response = client.get(
+        reverse(
+            "admin:appointments_appointment_propose_time",
+            args=[appointment.id],
+        )
+    )
+
+    assert response.status_code == 302
+    assert AppointmentProposal.objects.filter(appointment=appointment).exists() is False
+
+
+@pytest.mark.django_db
+def test_proposal_admin_flow_is_tenant_scoped(appointment_admin_context) -> None:
+    client, superuser, created, _resource, _service = appointment_admin_context
+    other = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Other Appointment Admin",
+        owner_username="other-appointment-admin-owner",
+        owner_password="secret",
+    )
+    other_resource = BookingResource.objects.get(partner=other.partner, is_default=True)
+    other_category = create_service_category(
+        actor=other.owner,
+        partner=other.partner,
+        name="Other services",
+    )
+    other_service = create_service(
+        actor=other.owner,
+        partner=other.partner,
+        category=other_category,
+        name="Other manicure",
+        price_amount=40_000,
+        duration_minutes=60,
+    )
+    identity = upsert_telegram_identity(
+        telegram_user_id=901002,
+        username="other-proposal-client",
+        first_name="Other",
+    )
+    other_client = resolve_client_profile_for_telegram_identity(
+        partner=other.partner,
+        telegram_identity=identity,
+    )
+    other_appointment = create_confirmed_appointment(
+        actor=other.owner,
+        partner=other.partner,
+        booking_resource=other_resource,
+        client_profile=other_client,
+        start_at=_future_hour(days=5),
+        service_items=[AppointmentServiceItemInput(service=other_service)],
+    )
+
+    response = client.get(
+        reverse(
+            "admin:appointments_appointment_propose_time",
+            args=[other_appointment.id],
+        )
+    )
+
+    assert response.status_code == 404
+    assert AppointmentProposal.objects.filter(appointment=other_appointment).exists() is False
+
+
+@pytest.mark.django_db
 def test_owner_completes_and_corrects_past_appointment_from_detail_flow(
     appointment_admin_context,
 ) -> None:
@@ -465,4 +625,13 @@ def _service_formset_management(*, total_forms: int) -> dict[str, str]:
         "service_items-INITIAL_FORMS": "0",
         "service_items-MIN_NUM_FORMS": "0",
         "service_items-MAX_NUM_FORMS": "1000",
+    }
+
+
+def _proposal_formset_management(*, total_forms: int) -> dict[str, str]:
+    return {
+        "options-TOTAL_FORMS": str(total_forms),
+        "options-INITIAL_FORMS": "0",
+        "options-MIN_NUM_FORMS": "0",
+        "options-MAX_NUM_FORMS": "1000",
     }

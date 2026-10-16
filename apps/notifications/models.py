@@ -106,6 +106,26 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             "master_client_cancelled_appointment",
             "Master client-cancelled appointment",
         )
+        CLIENT_APPOINTMENT_PROPOSAL = (
+            "client_appointment_proposal",
+            "Client appointment proposal",
+        )
+        CLIENT_APPOINTMENT_PROPOSAL_EXPIRED = (
+            "client_appointment_proposal_expired",
+            "Client appointment proposal expired",
+        )
+        MASTER_CLIENT_ACCEPTED_PROPOSAL = (
+            "master_client_accepted_proposal",
+            "Master client-accepted proposal",
+        )
+        MASTER_CLIENT_DECLINED_PROPOSAL = (
+            "master_client_declined_proposal",
+            "Master client-declined proposal",
+        )
+        MASTER_APPOINTMENT_PROPOSAL_EXPIRED = (
+            "master_appointment_proposal_expired",
+            "Master appointment proposal expired",
+        )
         MASTER_MORNING_DIGEST = "master_morning_digest", "Master morning digest"
         STALE_REQUESTED = "stale_requested", "Stale requested appointment"
         FAILED_DELIVERY_TO_MASTER = "failed_delivery_to_master", "Failed delivery to master"
@@ -121,6 +141,13 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
 
     appointment = models.ForeignKey(
         "appointments.Appointment",
+        on_delete=models.CASCADE,
+        related_name="scheduled_notifications",
+        null=True,
+        blank=True,
+    )
+    appointment_proposal = models.ForeignKey(
+        "appointments.AppointmentProposal",
         on_delete=models.CASCADE,
         related_name="scheduled_notifications",
         null=True,
@@ -158,6 +185,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             models.Index(fields=["status", "due_at"]),
             models.Index(fields=["partner", "status", "due_at"]),
             models.Index(fields=["appointment", "status"]),
+            models.Index(fields=["appointment_proposal", "status"]),
             models.Index(fields=["client_profile", "status"]),
         ]
 

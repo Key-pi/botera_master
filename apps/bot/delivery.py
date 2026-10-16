@@ -19,7 +19,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asgiref.sync import async_to_sync
 from django.utils import timezone
 
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal, AppointmentProposalOption
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     decrypt_bot_token,
@@ -172,6 +172,98 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             notification=notification,
             key="master.client_cancelled_appointment",
             context=_appointment_template_context(notification.appointment),
+        )
+
+    if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL:
+        proposal = notification.appointment_proposal
+        if (
+            proposal is None
+            or notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+        ):
+            return None
+        options = tuple(proposal.options.order_by("sort_order", "id"))
+        if not options:
+            return None
+        template = render_content_template(
+            partner=notification.partner,
+            key="appointment.reschedule_proposed",
+            language=notification.client_profile.language,
+            context=_proposal_template_context(proposal=proposal, option=options[0]),
+        )
+        text = template.body
+        if proposal.message.strip():
+            text = f"{text}\n\n{proposal.message.strip()}"
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=text,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=_proposal_review_label(notification.client_profile.language),
+                            callback_data=f"pf:proposal:{proposal.id.hex}:future:1",
+                        )
+                    ]
+                ]
+            ),
+        )
+
+    if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_EXPIRED:
+        proposal = notification.appointment_proposal
+        if (
+            proposal is None
+            or notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+        ):
+            return None
+        template = render_content_template(
+            partner=notification.partner,
+            key="appointment.reschedule_proposal_expired",
+            language=notification.client_profile.language,
+            context=_proposal_template_context(proposal=proposal),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+        )
+
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_ACCEPTED_PROPOSAL:
+        proposal = notification.appointment_proposal
+        if proposal is None:
+            return None
+        return _master_notification_payload(
+            token=token,
+            notification=notification,
+            key="master.client_accepted_reschedule",
+            context=_proposal_template_context(
+                proposal=proposal,
+                option=proposal.selected_option,
+            ),
+        )
+
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL:
+        proposal = notification.appointment_proposal
+        if proposal is None:
+            return None
+        return _master_notification_payload(
+            token=token,
+            notification=notification,
+            key="master.client_declined_reschedule",
+            context=_proposal_template_context(proposal=proposal),
+        )
+
+    if notification.type == ScheduledNotification.Type.MASTER_APPOINTMENT_PROPOSAL_EXPIRED:
+        proposal = notification.appointment_proposal
+        if proposal is None:
+            return None
+        return _master_notification_payload(
+            token=token,
+            notification=notification,
+            key="master.appointment_proposal_expired",
+            context=_proposal_template_context(proposal=proposal),
         )
 
     if notification.type == ScheduledNotification.Type.STALE_REQUESTED:
@@ -374,6 +466,41 @@ def _appointment_services_label(appointment: Appointment) -> str:
     return ", ".join(item.service_name_snapshot for item in items)
 
 
+def _proposal_template_context(
+    *,
+    proposal: AppointmentProposal,
+    option: AppointmentProposalOption | None = None,
+) -> dict[str, str]:
+    appointment = proposal.appointment
+    effective_option = option or proposal.selected_option
+    start_at = (
+        effective_option.start_at
+        if effective_option is not None and effective_option.start_at is not None
+        else appointment.start_at
+    )
+    partner_time = to_partner_time(start_at, proposal.partner.timezone)
+    expiry_time = to_partner_time(proposal.expires_at, proposal.partner.timezone)
+    return {
+        "partner_name": proposal.partner.name,
+        "client_name": appointment.client_profile.display_name,
+        "date": partner_time.date().isoformat(),
+        "time": _format_local_time(partner_time),
+        "new_date": partner_time.date().isoformat(),
+        "new_time": _format_local_time(partner_time),
+        "services": _appointment_services_label(appointment),
+        "proposal_expires_at": expiry_time.strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def _proposal_review_label(language: str) -> str:
+    labels = {
+        "uk": "Переглянути варіанти",
+        "ru": "Посмотреть варианты",
+        "en": "Review options",
+    }
+    return labels.get(language, labels["uk"])
+
+
 def _request_age_label(appointment: Appointment) -> str:
     anchor = appointment.requested_at or appointment.created_at
     minutes = max(int((timezone.now() - anchor).total_seconds() // 60), 0)
@@ -457,6 +584,9 @@ def _is_master_notification(notification: ScheduledNotification) -> bool:
     return notification.type in {
         ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER,
         ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
+        ScheduledNotification.Type.MASTER_CLIENT_ACCEPTED_PROPOSAL,
+        ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL,
+        ScheduledNotification.Type.MASTER_APPOINTMENT_PROPOSAL_EXPIRED,
         ScheduledNotification.Type.MASTER_MORNING_DIGEST,
         ScheduledNotification.Type.STALE_REQUESTED,
         ScheduledNotification.Type.FAILED_DELIVERY_TO_MASTER,

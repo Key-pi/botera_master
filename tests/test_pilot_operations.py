@@ -133,3 +133,4 @@ def test_beat_schedule_routes_urgent_and_bulk_work_to_separate_queues(settings) 
     assert schedule["dispatch-due-notifications"]["options"]["queue"] == "notifications"
     assert schedule["dispatch-broadcast-recipient"]["options"]["queue"] == "broadcasts"
     assert schedule["cleanup-expired-retained-records"]["options"]["queue"] == "maintenance"
+    assert schedule["expire-pending-appointment-proposals"]["options"]["queue"] == "maintenance"

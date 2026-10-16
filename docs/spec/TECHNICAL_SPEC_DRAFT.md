@@ -268,7 +268,7 @@ Content shape:
   - `appointment.reschedule_proposal_declined`: `{date}`, `{time}`, `{services}`.
   - `appointment.reschedule_proposal_expired`: `{date}`, `{time}`, `{services}`.
 - `appointment.late_cancel_blocked` remains system-only localized in MVP.
-- Initial editable master notification keys for this group: `master.client_cancelled_appointment`, `master.client_requested_reschedule`, `master.client_accepted_reschedule`, and `master.client_declined_reschedule`.
+- Initial editable master notification keys for this group: `master.client_cancelled_appointment`, `master.client_requested_reschedule`, `master.client_accepted_reschedule`, `master.client_declined_reschedule`, and `master.appointment_proposal_expired`.
 - Cancellation/reschedule `{reason}` is optional; templates must render cleanly when it is empty.
 - Initial editable `reminders` keys:
   - `reminder.client_before_appointment`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
@@ -581,6 +581,10 @@ Rules:
 - Failed appointment change proposal delivery should expose a manual notify/resend action for the master.
 - Reminder scheduling happens when appointment becomes confirmed.
 - Old pending reminders are cancelled/staled on reschedule, cancellation, completion, or no-show.
+- The pilot admin exposes a service-backed time-proposal action for requested and confirmed appointments; proposal and option records remain read-only operational history.
+- A time proposal may contain multiple alternatives. Client callbacks carry only opaque record identifiers and re-resolve partner/client ownership before calling the proposal owner service.
+- Proposal creation, client response, and expiry notifications are durable `ScheduledNotification` records linked to the exact proposal. Superseded or otherwise non-matching proposal notifications become stale before delivery.
+- Celery beat expires due proposals through the maintenance queue. Requested-alternative expiry may cancel the still-requested appointment, while confirmed appointments remain unchanged.
 - Jobs are idempotent by business key, not just queue id.
 - Quiet hours defer sending until quiet hours end.
 - If deferred reminder becomes useless because appointment passed, skip it.
