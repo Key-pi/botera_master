@@ -11,14 +11,17 @@ from apps.appointments.services import (
     create_confirmed_appointment,
     transition_appointment_status,
 )
+from apps.audit.models import AuditEvent
 from apps.bot.profile import (
     build_appointment_details_reply,
     build_appointment_history_reply,
     build_cancel_appointment_reply,
+    build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     confirm_cancel_appointment_reply,
+    send_client_message_to_master_reply,
     set_profile_language_reply,
 )
 from apps.catalog.services import create_service, create_service_category
@@ -29,6 +32,7 @@ from apps.clients.services import (
 )
 from apps.finance.models import Penalty
 from apps.finance.services import update_penalty_settings
+from apps.messaging.models import ConversationMessage
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 
@@ -129,6 +133,7 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     assert "pf:future:1" in callbacks
     assert "pf:history:1" in callbacks
     assert "pf:lang" in callbacks
+    assert "pf:contact" in callbacks
     assert "bk:cat:1" in callbacks
 
 
@@ -151,6 +156,34 @@ def test_profile_language_reply_updates_client_language(bot_profile_context):
     assert "pf:langset:ru" in _button_callbacks(language_reply)
     assert context["client"].language == "ru"
     assert "Язык изменён" in updated_reply.text
+
+
+@pytest.mark.django_db
+def test_profile_contact_master_queues_partner_scoped_message(bot_profile_context):
+    context = bot_profile_context
+
+    prompt = build_contact_master_prompt_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+    )
+    confirmation = send_client_message_to_master_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        text="  Could we discuss my booking?  ",
+    )
+
+    message = ConversationMessage.objects.get(partner=context["partner"])
+    assert "Write a message" in prompt.text
+    assert "pf:main" in _button_callbacks(prompt)
+    assert message.client_profile == context["client"]
+    assert message.direction == ConversationMessage.Direction.CLIENT_TO_MASTER
+    assert message.text == "Could we discuss my booking?"
+    assert message.delivery_status == ConversationMessage.DeliveryStatus.QUEUED
+    assert "message was sent" in confirmation.text
+    assert "pf:contact" in _button_callbacks(confirmation)
+    audit = AuditEvent.objects.get(target_id=str(message.id))
+    assert message.text not in audit.message
+    assert message.text not in str(audit.payload_masked)
 
 
 @pytest.mark.django_db
@@ -254,6 +287,7 @@ def test_profile_late_cancellation_without_penalties_is_blocked(
 
     assert "Cancellation is no longer available" in reply.text
     assert all("cancelgo" not in callback for callback in _button_callbacks(reply))
+    assert "pf:contact" in _button_callbacks(reply)
     appointment.refresh_from_db()
     assert appointment.status == Appointment.Status.CONFIRMED
 

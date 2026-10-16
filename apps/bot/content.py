@@ -451,6 +451,20 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("partner_name",),
     ),
     _definition(
+        "profile.contact_master_sent",
+        uk="Повідомлення передано майстру.",
+        ru="Сообщение передано мастеру.",
+        en="Your message was sent to the master.",
+        editable=False,
+    ),
+    _definition(
+        "profile.contact_master_invalid",
+        uk="Надішліть текстове повідомлення довжиною до 3500 символів.",
+        ru="Отправьте текстовое сообщение длиной до 3500 символов.",
+        en="Send a text message up to 3500 characters long.",
+        editable=False,
+    ),
+    _definition(
         "penalty.created_late_cancel",
         uk="Створено штраф за пізнє скасування: {penalty_amount} {currency}, запис {appointment_date} о {appointment_time}.",
         ru="Создан штраф за позднюю отмену: {penalty_amount} {currency}, запись {appointment_date} в {appointment_time}.",

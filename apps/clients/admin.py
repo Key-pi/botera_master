@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
+from django.urls import reverse
 
 from apps.appointments.selectors import (
     appointment_history_for_client,
@@ -135,6 +136,15 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 **(extra_context or {}),
                 "client_summary": client_operational_summary(
                     client_profile=client_profile,
+                ),
+                "message_client_url": (
+                    reverse(
+                        "admin:messaging_conversationmessage_reply",
+                        args=[client_profile.id],
+                    )
+                    if client_profile.telegram_identity_id
+                    and request.user.has_perm("messaging.add_conversationmessage")
+                    else None
                 ),
                 "future_appointments_page": future_page,
                 "appointment_history_page": history_page,

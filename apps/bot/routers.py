@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
@@ -27,10 +29,12 @@ from apps.bot.profile import (
     build_appointment_details_reply,
     build_appointment_history_reply,
     build_cancel_appointment_reply,
+    build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     confirm_cancel_appointment_reply,
+    send_client_message_to_master_reply,
     set_profile_language_reply,
 )
 from apps.bot.profile import (
@@ -48,6 +52,12 @@ from apps.bot.services import (
 from apps.partners.models import Partner
 
 
+class ClientMessageState(StatesGroup):
+    """Ephemeral input state before a durable conversation message exists."""
+
+    waiting_for_text = State()
+
+
 def build_partner_router() -> Router:
     """Build bot handlers that rely on trusted partner context middleware."""
 
@@ -58,7 +68,9 @@ def build_partner_router() -> Router:
         message: Message,
         command: CommandObject,
         partner: Partner,
+        state: FSMContext,
     ) -> None:
+        await state.clear()
         if message.from_user is None:
             return
 
@@ -81,7 +93,8 @@ def build_partner_router() -> Router:
             await message.answer(text)
 
     @router.message(Command("book"))
-    async def book_handler(message: Message, partner: Partner) -> None:
+    async def book_handler(message: Message, partner: Partner, state: FSMContext) -> None:
+        await state.clear()
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -92,7 +105,8 @@ def build_partner_router() -> Router:
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
     @router.message(Command("profile"))
-    async def profile_handler(message: Message, partner: Partner) -> None:
+    async def profile_handler(message: Message, partner: Partner, state: FSMContext) -> None:
+        await state.clear()
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -103,7 +117,8 @@ def build_partner_router() -> Router:
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
     @router.message(Command("history"))
-    async def history_handler(message: Message, partner: Partner) -> None:
+    async def history_handler(message: Message, partner: Partner, state: FSMContext) -> None:
+        await state.clear()
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -114,7 +129,8 @@ def build_partner_router() -> Router:
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
     @router.message(Command("language"))
-    async def language_handler(message: Message, partner: Partner) -> None:
+    async def language_handler(message: Message, partner: Partner, state: FSMContext) -> None:
+        await state.clear()
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -124,8 +140,47 @@ def build_partner_router() -> Router:
         )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(ClientMessageState.waiting_for_text)
+    async def contact_master_message_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        if profile is None:
+            await state.clear()
+            return
+
+        if message.text is None:
+            reply = await sync_to_async(build_contact_master_prompt_reply)(
+                partner=partner,
+                client_profile=profile,
+                invalid_message=True,
+            )
+        else:
+            try:
+                reply = await sync_to_async(send_client_message_to_master_reply)(
+                    partner=partner,
+                    client_profile=profile,
+                    text=message.text,
+                )
+            except ValidationError:
+                reply = await sync_to_async(build_contact_master_prompt_reply)(
+                    partner=partner,
+                    client_profile=profile,
+                    invalid_message=True,
+                )
+            else:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.callback_query(F.data.startswith(f"{BOOKING_CALLBACK_PREFIX}:"))
-    async def booking_callback_handler(callback: CallbackQuery, partner: Partner) -> None:
+    async def booking_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
         if callback.data == f"{BOOKING_CALLBACK_PREFIX}:noop":
             await callback.answer()
             return
@@ -150,7 +205,11 @@ def build_partner_router() -> Router:
         await callback.answer()
 
     @router.callback_query(F.data.startswith(f"{PROFILE_CALLBACK_PREFIX}:"))
-    async def profile_callback_handler(callback: CallbackQuery, partner: Partner) -> None:
+    async def profile_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
         if callback.data == f"{PROFILE_CALLBACK_PREFIX}:noop":
             await callback.answer()
             return
@@ -166,10 +225,16 @@ def build_partner_router() -> Router:
                 data=callback.data,
             )
         except ValidationError:
+            await state.clear()
             reply = await sync_to_async(_invalid_profile_action_reply)(
                 partner=partner,
                 language=profile.language,
             )
+        else:
+            if callback.data == f"{PROFILE_CALLBACK_PREFIX}:contact":
+                await state.set_state(ClientMessageState.waiting_for_text)
+            else:
+                await state.clear()
 
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
@@ -254,6 +319,11 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
     action = parts[1]
     if action == "main" and len(parts) == 2:
         return build_profile_main_reply(partner=partner, client_profile=client_profile)
+    if action == "contact" and len(parts) == 2:
+        return build_contact_master_prompt_reply(
+            partner=partner,
+            client_profile=client_profile,
+        )
     if action == "future" and len(parts) == 3:
         return build_future_appointments_reply(
             partner=partner,

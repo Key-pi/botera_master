@@ -765,6 +765,13 @@ Rules:
 
 - MVP messaging is not tied to a specific appointment.
 - Master and client both use the partner bot as the delivery channel.
+- Client free-text composition may use short-lived in-memory bot state, but a
+  message becomes business data only after validated text is stored through the
+  messaging owner service.
+- MVP text messages are limited to 3500 characters so localized/template
+  wrappers remain within Telegram's practical message limit.
+- Conversation records are immutable in partner admin. Master replies use a
+  dedicated service-backed action instead of direct model creation/editing.
 - If client blocks bot, master sees delivery failure and client becomes unreachable for this partner bot.
 - Superuser access is support/incident-only.
 

@@ -37,7 +37,9 @@ PARTNER_OWNER_PERMISSION_RULES = (
     ("notifications", "reminderrule", ("view",)),
     ("notifications", "schedulednotification", ("view",)),
     ("notifications", "deliveryattempt", ("view",)),
-    ("messaging", "conversationmessage", ("view",)),
+    # Direct model adds remain disabled; `add` authorizes the reviewed
+    # service-backed "message client" admin action.
+    ("messaging", "conversationmessage", ("view", "add")),
     ("finance", "partnerpenaltysettings", ("view", "change")),
     ("audit", "auditevent", ("view",)),
 )

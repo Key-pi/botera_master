@@ -1,6 +1,15 @@
 {% extends "admin/change_form.html" %}
 {% load client_admin i18n tz %}
 
+{% block object-tools-items %}
+  {% if message_client_url and change %}
+    <li>
+      <a href="{{ message_client_url }}">{% translate "Message client" %}</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}
+
 {% block extrastyle %}
   {{ block.super }}
   <style>

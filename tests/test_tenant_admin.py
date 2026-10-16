@@ -48,6 +48,7 @@ def test_superuser_creates_setup_required_partner_with_owner_account() -> None:
     assert created.owner.has_perm("appointments.add_appointment") is True
     assert created.owner.has_perm("appointments.change_appointment") is True
     assert created.owner.has_perm("clients.change_clientprofile") is True
+    assert created.owner.has_perm("messaging.add_conversationmessage") is True
     assert created.owner.has_perm("accounts.view_user") is False
     assert created.owner.has_perm("clients.view_telegramidentity") is False
     assert created.owner.has_perm("audit.view_platformdiagnostic") is False

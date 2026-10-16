@@ -20,6 +20,7 @@ from apps.appointments.services import (
 )
 from apps.clients.models import ClientProfile
 from apps.clients.services import SUPPORTED_CLIENT_LANGUAGES, update_client_profile_language
+from apps.messaging.services import create_client_message_to_master
 from apps.partners.models import Partner
 from core.money import Money
 from core.timezones import to_partner_time
@@ -80,12 +81,74 @@ def build_profile_main_reply(
         ],
         [
             InlineKeyboardButton(
+                text=_label("contact_master", language),
+                callback_data=_callback("contact"),
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=_label("book", language),
                 callback_data="bk:cat:1",
             )
         ],
     ]
     return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def build_contact_master_prompt_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    invalid_message: bool = False,
+) -> BotProfileReply:
+    """Prompt the client for one free-text message to the partner."""
+
+    language = client_profile.language
+    prompt = _render(
+        partner=partner,
+        key="profile.contact_master_prompt",
+        language=language,
+        context={"partner_name": partner.name},
+    )
+    if invalid_message:
+        error = _render(
+            partner=partner,
+            key="profile.contact_master_invalid",
+            language=language,
+        )
+        prompt = f"{error}\n\n{prompt}"
+    return BotProfileReply(
+        text=prompt,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[_back_button(_callback("main"), language)]],
+        ),
+    )
+
+
+def send_client_message_to_master_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    text: str,
+) -> BotProfileReply:
+    """Queue a client message and return the personal-area confirmation."""
+
+    create_client_message_to_master(
+        partner=partner,
+        client_profile=client_profile,
+        text=text,
+    )
+    language = client_profile.language
+    confirmation = _render(
+        partner=partner,
+        key="profile.contact_master_sent",
+        language=language,
+    )
+    main = build_profile_main_reply(partner=partner, client_profile=client_profile)
+    return BotProfileReply(
+        text=f"{confirmation}\n\n{main.text}",
+        reply_markup=main.reply_markup,
+    )
 
 
 def build_profile_language_reply(
@@ -276,7 +339,15 @@ def build_cancel_appointment_reply(
                     language=language,
                 ),
                 reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[[_back_button(back_callback, language)]],
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text=_label("contact_master", language),
+                                callback_data=_callback("contact"),
+                            )
+                        ],
+                        [_back_button(back_callback, language)],
+                    ],
                 ),
             )
         raise ValidationError({"appointment": "This appointment cannot be cancelled."})
@@ -643,6 +714,11 @@ def _label(key: str, language: str) -> str:
             "uk": "Скасувати запис",
             "ru": "Отменить запись",
             "en": "Cancel booking",
+        },
+        "contact_master": {
+            "uk": "Написати майстру",
+            "ru": "Написать мастеру",
+            "en": "Message master",
         },
         "comment": {"uk": "Коментар", "ru": "Комментарий", "en": "Comment"},
         "confirm_cancel": {

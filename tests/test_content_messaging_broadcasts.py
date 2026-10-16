@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.audit.models import AuditEvent
 from apps.bot.models import PartnerTemplateOverride, SystemTemplate
 from apps.bot.services import (
     render_content_template,
@@ -27,7 +28,11 @@ from apps.clients.services import (
     upsert_telegram_identity,
 )
 from apps.messaging.models import ConversationMessage
-from apps.messaging.services import create_master_reply_to_client, dispatch_conversation_message
+from apps.messaging.services import (
+    MAX_CONVERSATION_MESSAGE_LENGTH,
+    create_master_reply_to_client,
+    dispatch_conversation_message,
+)
 from apps.notifications.models import DeliveryAttempt
 from apps.notifications.services import DeliveryResult
 from apps.partners.services import create_partner_with_owner
@@ -167,6 +172,24 @@ def test_master_reply_terminal_failure_marks_client_unreachable(communication_co
     assert message.delivery_status == ConversationMessage.DeliveryStatus.FAILED
     assert context["active_client"].bot_unreachable is True
     assert DeliveryAttempt.objects.filter(conversation_message=message).count() == 1
+    audit = AuditEvent.objects.get(target_id=str(message.id))
+    assert audit.event_type == "messaging.message_created"
+    assert message.text not in audit.message
+    assert message.text not in str(audit.payload_masked)
+
+
+@pytest.mark.django_db
+def test_conversation_message_rejects_text_over_telegram_safe_limit(communication_context):
+    context = communication_context
+
+    with pytest.raises(ValidationError, match="must not exceed"):
+        create_master_reply_to_client(
+            actor=context["owner"],
+            client_profile=context["active_client"],
+            text="x" * (MAX_CONVERSATION_MESSAGE_LENGTH + 1),
+        )
+
+    assert ConversationMessage.objects.count() == 0
 
 
 @pytest.mark.django_db
