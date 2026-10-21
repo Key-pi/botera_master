@@ -113,6 +113,7 @@ def confirmed_busy_intervals_for_resource(
     booking_resource: BookingResource,
     start_at: datetime,
     end_at: datetime,
+    exclude_appointment: Appointment | None = None,
 ) -> tuple[TimeInterval, ...]:
     """Return confirmed appointment intervals for schedule slot generation."""
 
@@ -120,5 +121,6 @@ def confirmed_busy_intervals_for_resource(
         booking_resource=booking_resource,
         start_at=start_at,
         end_at=end_at,
+        exclude_appointment=exclude_appointment,
     ).only("start_at", "end_at")
     return tuple(TimeInterval(item.start_at, item.end_at) for item in appointments)

@@ -106,9 +106,21 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             "master_client_cancelled_appointment",
             "Master client-cancelled appointment",
         )
+        MASTER_CLIENT_REQUESTED_RESCHEDULE = (
+            "master_client_requested_reschedule",
+            "Master client-requested reschedule",
+        )
         CLIENT_APPOINTMENT_PROPOSAL = (
             "client_appointment_proposal",
             "Client appointment proposal",
+        )
+        CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED = (
+            "client_appointment_proposal_accepted",
+            "Client appointment proposal accepted",
+        )
+        CLIENT_APPOINTMENT_PROPOSAL_DECLINED = (
+            "client_appointment_proposal_declined",
+            "Client appointment proposal declined",
         )
         CLIENT_APPOINTMENT_PROPOSAL_EXPIRED = (
             "client_appointment_proposal_expired",

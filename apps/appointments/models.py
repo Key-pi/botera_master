@@ -217,11 +217,7 @@ class AppointmentProposal(PartnerBoundModel):
             raise ValidationError(
                 {"appointment": "Proposal appointment must belong to the same partner."}
             )
-        if (
-            self.selected_option_id
-            and self.id
-            and self.selected_option.proposal_id != self.id
-        ):
+        if self.selected_option_id and self.id and self.selected_option.proposal_id != self.id:
             raise ValidationError(
                 {"selected_option": "Selected option must belong to this proposal."}
             )
@@ -242,6 +238,7 @@ class AppointmentProposalOption(models.Model):
     penalties_total_amount = models.PositiveIntegerField(default=0)
     total_amount = models.PositiveIntegerField(default=0)
     currency = models.CharField(max_length=3, default=DEFAULT_CURRENCY)
+    is_near_fit = models.BooleanField(default=False)
     sort_order = models.PositiveIntegerField(default=0)
     selected_at = models.DateTimeField(null=True, blank=True)
 

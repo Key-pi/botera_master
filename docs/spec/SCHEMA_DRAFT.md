@@ -480,6 +480,7 @@ Key fields:
 - `penalties_total_amount`
 - `total_amount`
 - `currency`
+- `is_near_fit`: whether this option extends past availability within configured tolerance
 - `sort_order`
 - `selected_at`
 

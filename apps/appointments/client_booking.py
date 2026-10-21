@@ -8,19 +8,27 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils import timezone
 
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal
+from apps.appointments.proposals import (
+    AppointmentProposalOptionInput,
+    create_appointment_proposal,
+)
 from apps.appointments.selectors import (
     appointments_for_client,
     confirmed_busy_intervals_for_resource,
 )
 from apps.appointments.services import (
     AppointmentServiceItemInput,
+    acquire_booking_resource_advisory_lock_if_supported,
     cancel_requested_appointment_by_client,
     create_confirmed_appointment,
     create_requested_appointment,
+    refresh_confirmed_notifications_after_commit,
 )
+from apps.audit.services import record_audit_event
 from apps.bot.pagination import (
     DEFAULT_TELEGRAM_ENTITY_PAGE_SIZE,
     Page,
@@ -96,6 +104,17 @@ class ClientBookingResult:
     """Result of final client confirmation."""
 
     appointment: Appointment
+    requires_master_confirmation: bool
+    is_near_fit: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ClientRescheduleResult:
+    """Result of a client request to move an existing confirmed appointment."""
+
+    appointment: Appointment
+    proposal: AppointmentProposal | None
+    previous_start_at: datetime
     requires_master_confirmation: bool
     is_near_fit: bool
 
@@ -189,7 +208,7 @@ def available_booking_dates(
         slots = _slot_options_for_local_date(
             partner=partner,
             booking_resource=booking_resource,
-            summary=summary,
+            duration_minutes=summary.duration_minutes,
             local_date=local_date,
             now=now,
         )
@@ -223,7 +242,7 @@ def available_booking_slots(
     slots = _slot_options_for_local_date(
         partner=partner,
         booking_resource=booking_resource,
-        summary=summary,
+        duration_minutes=summary.duration_minutes,
         local_date=local_date,
         now=now,
     )
@@ -293,6 +312,143 @@ def confirm_client_booking(
     )
 
 
+def available_client_reschedule_dates(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    start_date: date,
+    days: int,
+    page: int = 1,
+    per_page: int = BOOKING_DATES_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingDateOption]:
+    """Return dates where the existing appointment snapshots fit another slot."""
+
+    if days <= 0:
+        raise ValidationError({"days": "Search window must be positive."})
+    current_time = now or timezone.now()
+    _validate_client_reschedule(
+        partner=partner,
+        client_profile=client_profile,
+        appointment=appointment,
+        now=current_time,
+    )
+    duration_minutes = _appointment_duration_minutes(appointment)
+    options: list[BookingDateOption] = []
+    for offset in range(days):
+        local_date = start_date + timedelta(days=offset)
+        slots = _reschedule_slot_options_for_local_date(
+            appointment=appointment,
+            duration_minutes=duration_minutes,
+            local_date=local_date,
+            now=current_time,
+        )
+        if slots:
+            options.append(
+                BookingDateOption(
+                    local_date=local_date,
+                    slot_count=len(slots),
+                    first_slot_at=slots[0].start_at,
+                    has_near_fit=any(slot.is_near_fit for slot in slots),
+                )
+            )
+    return paginate_telegram_entities(tuple(options), page=page, per_page=per_page)
+
+
+def available_client_reschedule_slots(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    local_date: date,
+    page: int = 1,
+    per_page: int = BOOKING_SLOTS_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingSlotOption]:
+    """Return slots for moving one client-owned confirmed appointment."""
+
+    current_time = now or timezone.now()
+    _validate_client_reschedule(
+        partner=partner,
+        client_profile=client_profile,
+        appointment=appointment,
+        now=current_time,
+    )
+    slots = _reschedule_slot_options_for_local_date(
+        appointment=appointment,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        local_date=local_date,
+        now=current_time,
+    )
+    return paginate_telegram_entities(slots, page=page, per_page=per_page)
+
+
+def reschedule_client_appointment(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    start_at: datetime,
+    now: datetime | None = None,
+) -> ClientRescheduleResult:
+    """Move immediately or create a master-confirmed proposal per partner settings."""
+
+    _validate_aware_datetime(start_at, "start_at")
+    current_time = now or timezone.now()
+    _validate_client_reschedule(
+        partner=partner,
+        client_profile=client_profile,
+        appointment=appointment,
+        now=current_time,
+    )
+    matching_slot = _find_matching_reschedule_slot(
+        appointment=appointment,
+        start_at=start_at,
+        now=current_time,
+    )
+    schedule_settings = _schedule_settings_for_booking(partner)
+    previous_start_at = appointment.start_at
+
+    if (
+        matching_slot.is_near_fit
+        or schedule_settings.confirmation_mode == PartnerScheduleSettings.ConfirmationMode.MANUAL
+    ):
+        proposal = create_appointment_proposal(
+            actor=None,
+            appointment=appointment,
+            proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+            options=[
+                AppointmentProposalOptionInput(
+                    start_at=matching_slot.start_at,
+                    is_near_fit=matching_slot.is_near_fit,
+                )
+            ],
+        )
+        return ClientRescheduleResult(
+            appointment=appointment,
+            proposal=proposal,
+            previous_start_at=previous_start_at,
+            requires_master_confirmation=True,
+            is_near_fit=matching_slot.is_near_fit,
+        )
+
+    moved = _auto_confirm_client_reschedule(
+        partner=partner,
+        client_profile=client_profile,
+        appointment=appointment,
+        start_at=start_at,
+        now=current_time,
+    )
+    return ClientRescheduleResult(
+        appointment=moved,
+        proposal=None,
+        previous_start_at=previous_start_at,
+        requires_master_confirmation=False,
+        is_near_fit=False,
+    )
+
+
 def cancel_client_requested_booking(
     *,
     client_profile: ClientProfile,
@@ -354,9 +510,9 @@ def client_profile_overview(
 ) -> ClientProfileOverview:
     """Return basic personal-area profile data for the client."""
 
-    visit_count = appointments_for_client(client_profile).filter(
-        status=Appointment.Status.COMPLETED
-    ).count()
+    visit_count = (
+        appointments_for_client(client_profile).filter(status=Appointment.Status.COMPLETED).count()
+    )
     return ClientProfileOverview(
         client_profile=client_profile,
         visit_count=visit_count,
@@ -372,9 +528,10 @@ def _slot_options_for_local_date(
     *,
     partner: Partner,
     booking_resource: BookingResource,
-    summary: BookingSummary,
+    duration_minutes: int,
     local_date: date,
     now: datetime | None,
+    exclude_appointment: Appointment | None = None,
 ) -> tuple[BookingSlotOption, ...]:
     schedule_settings = _schedule_settings_for_booking(partner)
     range_start, range_end = _local_date_range(partner=partner, local_date=local_date)
@@ -382,14 +539,13 @@ def _slot_options_for_local_date(
         booking_resource=booking_resource,
         start_at=range_start,
         end_at=range_end
-        + timedelta(
-            minutes=summary.duration_minutes + schedule_settings.near_fit_tolerance_minutes
-        ),
+        + timedelta(minutes=duration_minutes + schedule_settings.near_fit_tolerance_minutes),
+        exclude_appointment=exclude_appointment,
     )
     slots = generate_available_slots(
         partner=partner,
         booking_resource=booking_resource,
-        duration_minutes=summary.duration_minutes,
+        duration_minutes=duration_minutes,
         range_start=range_start,
         range_end=range_end,
         schedule_settings=schedule_settings,
@@ -411,7 +567,7 @@ def _find_matching_slot(
     slots = _slot_options_for_local_date(
         partner=partner,
         booking_resource=booking_resource,
-        summary=summary,
+        duration_minutes=summary.duration_minutes,
         local_date=local_date,
         now=now,
     )
@@ -419,6 +575,148 @@ def _find_matching_slot(
         if slot.start_at == start_at:
             return slot
     raise ValidationError({"start_at": "Selected slot is no longer available."})
+
+
+def _reschedule_slot_options_for_local_date(
+    *,
+    appointment: Appointment,
+    duration_minutes: int,
+    local_date: date,
+    now: datetime,
+) -> tuple[BookingSlotOption, ...]:
+    slots = _slot_options_for_local_date(
+        partner=appointment.partner,
+        booking_resource=appointment.booking_resource,
+        duration_minutes=duration_minutes,
+        local_date=local_date,
+        now=now,
+        exclude_appointment=appointment,
+    )
+    return tuple(slot for slot in slots if slot.start_at != appointment.start_at)
+
+
+def _find_matching_reschedule_slot(
+    *,
+    appointment: Appointment,
+    start_at: datetime,
+    now: datetime,
+) -> BookingSlotOption:
+    local_date = to_partner_time(start_at, appointment.partner.timezone).date()
+    slots = _reschedule_slot_options_for_local_date(
+        appointment=appointment,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        local_date=local_date,
+        now=now,
+    )
+    for slot in slots:
+        if slot.start_at == start_at:
+            return slot
+    raise ValidationError({"start_at": "Selected slot is no longer available."})
+
+
+def _auto_confirm_client_reschedule(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    start_at: datetime,
+    now: datetime,
+) -> Appointment:
+    with transaction.atomic():
+        appointment = (
+            Appointment.objects.select_for_update()
+            .select_related("partner", "booking_resource", "client_profile")
+            .prefetch_related("service_items")
+            .get(id=appointment.id)
+        )
+        _validate_client_reschedule(
+            partner=partner,
+            client_profile=client_profile,
+            appointment=appointment,
+            now=now,
+        )
+        acquire_booking_resource_advisory_lock_if_supported(appointment.booking_resource)
+        matching_slot = _find_matching_reschedule_slot(
+            appointment=appointment,
+            start_at=start_at,
+            now=now,
+        )
+        schedule_settings = _schedule_settings_for_booking(partner)
+        if (
+            matching_slot.is_near_fit
+            or schedule_settings.confirmation_mode != PartnerScheduleSettings.ConfirmationMode.AUTO
+        ):
+            raise ValidationError({"start_at": "Booking settings changed. Choose the time again."})
+
+        previous_start_at = appointment.start_at
+        AppointmentProposal.objects.filter(
+            appointment=appointment,
+            status=AppointmentProposal.Status.PENDING,
+        ).update(status=AppointmentProposal.Status.SUPERSEDED, responded_at=now)
+        appointment.start_at = matching_slot.start_at
+        appointment.end_at = matching_slot.end_at
+        appointment.confirmation_mode_snapshot = schedule_settings.confirmation_mode
+        appointment.is_near_fit = False
+        appointment.save(
+            update_fields=[
+                "start_at",
+                "end_at",
+                "confirmation_mode_snapshot",
+                "is_near_fit",
+                "updated_at",
+            ]
+        )
+        record_audit_event(
+            partner=partner,
+            actor=None,
+            event_type="appointment.client_rescheduled",
+            target=appointment,
+            message="Client rescheduled a confirmed appointment.",
+            payload={
+                "previous_start_at": previous_start_at.isoformat(),
+                "new_start_at": appointment.start_at.isoformat(),
+            },
+        )
+        refresh_confirmed_notifications_after_commit(appointment.id)
+        transaction.on_commit(
+            lambda: _schedule_master_client_reschedule_notification(appointment.id)
+        )
+    return appointment
+
+
+def _schedule_master_client_reschedule_notification(appointment_id) -> None:
+    from apps.notifications.services import schedule_master_client_reschedule_notification
+
+    appointment = (
+        Appointment.objects.select_related("partner", "client_profile")
+        .prefetch_related("service_items")
+        .get(id=appointment_id)
+    )
+    schedule_master_client_reschedule_notification(appointment=appointment)
+
+
+def _appointment_duration_minutes(appointment: Appointment) -> int:
+    duration_minutes = sum(item.duration_minutes for item in appointment.service_items.all())
+    if duration_minutes <= 0:
+        raise ValidationError({"appointment": "Appointment has no service duration."})
+    return duration_minutes
+
+
+def _validate_client_reschedule(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    appointment: Appointment,
+    now: datetime,
+) -> None:
+    if client_profile.partner_id != partner.id:
+        raise ValidationError({"client_profile": "Client profile must belong to this partner."})
+    if appointment.partner_id != partner.id or appointment.client_profile_id != client_profile.id:
+        raise ValidationError({"appointment": "Appointment is not available to this client."})
+    if appointment.status != Appointment.Status.CONFIRMED:
+        raise ValidationError({"appointment": "Only a confirmed appointment can be moved."})
+    if appointment.start_at <= now:
+        raise ValidationError({"appointment": "Past appointments cannot be moved."})
 
 
 def _active_services_for_selection(
@@ -490,9 +788,7 @@ def _local_date_range(*, partner: Partner, local_date: date) -> tuple[datetime, 
 def _schedule_settings_for_booking(partner: Partner) -> PartnerScheduleSettings:
     schedule_settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
     if schedule_settings.confirmation_mode not in PartnerScheduleSettings.ConfirmationMode.values:
-        raise ValidationError(
-            {"confirmation_mode": "Booking confirmation mode is not configured."}
-        )
+        raise ValidationError({"confirmation_mode": "Booking confirmation mode is not configured."})
     return schedule_settings
 
 

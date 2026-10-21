@@ -35,7 +35,11 @@ from apps.bot.profile import (
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_reschedule_dates_reply,
+    build_reschedule_final_confirm_reply,
+    build_reschedule_slots_reply,
     confirm_cancel_appointment_reply,
+    confirm_reschedule_reply,
     decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
     set_profile_language_reply,
@@ -374,6 +378,39 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             return_action=return_action,
             return_page=parse_profile_page_token(parts[4]),
             accept_late_penalty=parts[5] == "1",
+        )
+    if action == "rsd" and len(parts) == 5:
+        return build_reschedule_dates_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            return_page=parse_profile_page_token(parts[3]),
+            page=parse_profile_page_token(parts[4]),
+        )
+    if action == "rss" and len(parts) == 6:
+        return build_reschedule_slots_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            local_date=parse_date_token(parts[3]),
+            return_page=parse_profile_page_token(parts[4]),
+            page=parse_profile_page_token(parts[5]),
+        )
+    if action == "rsf" and len(parts) == 5:
+        return build_reschedule_final_confirm_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            start_at=parse_timestamp_token(parts[3]),
+            return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "rsg" and len(parts) == 5:
+        return confirm_reschedule_reply(
+            partner=partner,
+            client_profile=client_profile,
+            appointment_id=parse_profile_uuid_token(parts[2]),
+            start_at=parse_timestamp_token(parts[3]),
+            return_page=parse_profile_page_token(parts[4]),
         )
     if action == "proposal" and len(parts) == 5:
         return_action = parts[3]

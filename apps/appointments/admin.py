@@ -23,7 +23,11 @@ from apps.appointments.models import (
     AppointmentProposalOptionItem,
     AppointmentServiceItem,
 )
-from apps.appointments.proposals import create_appointment_proposal
+from apps.appointments.proposals import (
+    accept_appointment_proposal_option_as_partner,
+    create_appointment_proposal,
+    decline_appointment_proposal_as_partner,
+)
 from apps.appointments.services import (
     correct_final_appointment_status,
     create_manual_appointment_with_client,
@@ -88,6 +92,7 @@ class AppointmentProposalOptionInline(admin.TabularInline):
         "penalties_total_amount",
         "total_amount",
         "currency",
+        "is_near_fit",
         "sort_order",
         "selected_at_partner_time",
     ]
@@ -511,6 +516,68 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     ]
     readonly_fields = fields
     inlines = [AppointmentProposalOptionInline]
+    actions = ["accept_client_reschedule", "decline_client_reschedule"]
+
+    @admin.action(description="Accept selected client reschedule requests")
+    def accept_client_reschedule(self, request, queryset):
+        accepted = 0
+        failed = 0
+        for proposal in queryset:
+            options = tuple(proposal.options.order_by("sort_order", "id")[:2])
+            if len(options) != 1:
+                failed += 1
+                continue
+            try:
+                accept_appointment_proposal_option_as_partner(
+                    actor=request.user,
+                    option=options[0],
+                )
+            except ValidationError:
+                failed += 1
+            else:
+                accepted += 1
+        self._proposal_action_message(
+            request,
+            success_count=accepted,
+            failed_count=failed,
+            verb="accepted",
+        )
+
+    @admin.action(description="Decline selected client reschedule requests")
+    def decline_client_reschedule(self, request, queryset):
+        declined = 0
+        failed = 0
+        for proposal in queryset:
+            try:
+                decline_appointment_proposal_as_partner(
+                    actor=request.user,
+                    proposal=proposal,
+                )
+            except ValidationError:
+                failed += 1
+            else:
+                declined += 1
+        self._proposal_action_message(
+            request,
+            success_count=declined,
+            failed_count=failed,
+            verb="declined",
+        )
+
+    def _proposal_action_message(
+        self,
+        request,
+        *,
+        success_count: int,
+        failed_count: int,
+        verb: str,
+    ) -> None:
+        level = messages.WARNING if failed_count else messages.SUCCESS
+        self.message_user(
+            request,
+            f"Client requests {verb}: {success_count}; failed validation: {failed_count}.",
+            level=level,
+        )
 
     @admin.display(description="Expires at (partner time)", ordering="expires_at")
     def expires_at_partner_time(self, obj):
@@ -532,7 +599,7 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
-        return False
+        return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -559,6 +626,7 @@ class AppointmentProposalOptionAdmin(admin.ModelAdmin):
         "penalties_total_amount",
         "total_amount",
         "currency",
+        "is_near_fit",
         "sort_order",
         "selected_at_partner_time",
     ]

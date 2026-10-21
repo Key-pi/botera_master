@@ -26,7 +26,11 @@ from apps.bot.profile import (
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_reschedule_dates_reply,
+    build_reschedule_final_confirm_reply,
+    build_reschedule_slots_reply,
     confirm_cancel_appointment_reply,
+    confirm_reschedule_reply,
     decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
     set_profile_language_reply,
@@ -42,7 +46,9 @@ from apps.finance.services import update_penalty_settings
 from apps.messaging.models import ConversationMessage
 from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
+from apps.schedule.models import PartnerScheduleSettings
 from apps.schedule.selectors import default_booking_resource_for_partner
+from apps.schedule.services import create_availability_window, update_schedule_settings
 
 
 @pytest.fixture
@@ -232,6 +238,112 @@ def test_profile_future_history_and_details_are_paginated(
     assert "Manicure" in details_reply.text
     assert "confirmed" in details_reply.text
     assert f"pf:cancel:{future.id.hex}:future:1" in _button_callbacks(details_reply)
+    assert f"pf:rsd:{future.id.hex}:1:1" in _button_callbacks(details_reply)
+
+
+@pytest.mark.django_db
+def test_profile_auto_reschedule_flow_moves_booking_and_notifies_master(
+    bot_profile_context,
+    profile_start,
+    django_capture_on_commit_callbacks,
+):
+    context = bot_profile_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=profile_start,
+        end_at=profile_start + timedelta(hours=3),
+    )
+    appointment = _create_confirmed(context, profile_start)
+    new_start = profile_start + timedelta(hours=1)
+    current_time = profile_start - timedelta(hours=1)
+
+    dates = build_reschedule_dates_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        now=current_time,
+    )
+    slots = build_reschedule_slots_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        local_date=profile_start.date(),
+        now=current_time,
+    )
+    final = build_reschedule_final_confirm_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        start_at=new_start,
+        now=current_time,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        confirmed = confirm_reschedule_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            appointment_id=appointment.id,
+            start_at=new_start,
+            now=current_time,
+        )
+
+    assert any(
+        callback.startswith(f"pf:rss:{appointment.id.hex}") for callback in _button_callbacks(dates)
+    )
+    assert f"pf:rsf:{appointment.id.hex}:{int(new_start.timestamp())}:1" in _button_callbacks(slots)
+    assert f"pf:rsg:{appointment.id.hex}:{int(new_start.timestamp())}:1" in _button_callbacks(final)
+    assert "Booking moved" in confirmed.text
+    appointment.refresh_from_db()
+    assert appointment.start_at == new_start
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_profile_manual_reschedule_flow_keeps_old_booking_pending_master(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.MANUAL,
+        slot_step_minutes=30,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=profile_start,
+        end_at=profile_start + timedelta(hours=3),
+    )
+    appointment = _create_confirmed(context, profile_start)
+    new_start = profile_start + timedelta(hours=1)
+
+    reply = confirm_reschedule_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        start_at=new_start,
+        now=profile_start - timedelta(hours=1),
+    )
+
+    appointment.refresh_from_db()
+    proposal = AppointmentProposal.objects.get(appointment=appointment)
+    assert "Reschedule request" in reply.text
+    assert appointment.start_at == profile_start
+    assert proposal.created_by is None
+    assert proposal.options.get().start_at == new_start
 
 
 @pytest.mark.django_db

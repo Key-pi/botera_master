@@ -42,6 +42,7 @@ class AppointmentProposalOptionInput:
     start_at: datetime | None = None
     service_items: Sequence[AppointmentServiceItemInput] | None = None
     penalties_total_amount: int | None = None
+    is_near_fit: bool = False
     sort_order: int = 0
 
 
@@ -113,7 +114,10 @@ def create_appointment_proposal(
                 "expires_at": expires_at.isoformat(),
             },
         )
-        _on_commit_schedule_client_proposal_notification(proposal.id)
+        if actor is None:
+            _on_commit_schedule_master_client_reschedule_notification(proposal.id)
+        else:
+            _on_commit_schedule_client_proposal_notification(proposal.id)
     return proposal
 
 
@@ -166,6 +170,8 @@ def decline_appointment_proposal(
         )
         if proposal.appointment.client_profile_id != client_profile.id:
             raise ValidationError({"proposal": "Proposal does not belong to this client."})
+        if proposal.created_by_id is None:
+            raise ValidationError({"proposal": "A client cannot decline their own request."})
         _validate_pending_proposal(proposal=proposal, now=now)
         proposal.status = AppointmentProposal.Status.DECLINED
         proposal.responded_at = now
@@ -178,7 +184,41 @@ def decline_appointment_proposal(
             message="Appointment change proposal declined by client.",
             payload={"appointment_id": str(proposal.appointment_id)},
         )
-        _on_commit_schedule_master_proposal_response_notification(proposal.id)
+        _on_commit_schedule_proposal_response_notification(proposal.id)
+    return proposal
+
+
+def decline_appointment_proposal_as_partner(
+    *,
+    actor: User,
+    proposal: AppointmentProposal,
+    now: datetime | None = None,
+) -> AppointmentProposal:
+    """Decline a client-created reschedule request from the partner admin."""
+
+    now = now or timezone.now()
+    with transaction.atomic():
+        proposal = (
+            AppointmentProposal.objects.select_for_update()
+            .select_related("partner", "appointment")
+            .get(id=proposal.id)
+        )
+        ensure_partner_access(actor, proposal.partner)
+        if proposal.created_by_id is not None:
+            raise ValidationError({"proposal": "Only a client request can be declined here."})
+        _validate_pending_proposal(proposal=proposal, now=now)
+        proposal.status = AppointmentProposal.Status.DECLINED
+        proposal.responded_at = now
+        proposal.save(update_fields=["status", "responded_at", "updated_at"])
+        record_audit_event(
+            partner=proposal.partner,
+            actor=actor,
+            event_type="appointment.client_reschedule_declined",
+            target=proposal,
+            message="Client reschedule request declined by partner.",
+            payload={"appointment_id": str(proposal.appointment_id)},
+        )
+        _on_commit_schedule_proposal_response_notification(proposal.id)
     return proposal
 
 
@@ -307,8 +347,14 @@ def _accept_appointment_proposal_option(
         )
         if client_profile is not None and appointment.client_profile_id != client_profile.id:
             raise ValidationError({"proposal": "Proposal does not belong to this client."})
+        if client_profile is not None and proposal.created_by_id is None:
+            raise ValidationError({"proposal": "A client cannot accept their own request."})
         if actor is not None:
             ensure_partner_access(actor, proposal.partner)
+            if proposal.created_by_id is not None:
+                raise ValidationError(
+                    {"proposal": "Only a client-created request can be accepted here."}
+                )
         _validate_pending_proposal(proposal=proposal, now=now)
         _validate_acceptance_status(appointment=appointment, proposal=proposal)
 
@@ -346,7 +392,7 @@ def _accept_appointment_proposal_option(
             },
         )
         refresh_confirmed_notifications_after_commit(appointment.id)
-        _on_commit_schedule_master_proposal_response_notification(proposal.id)
+        _on_commit_schedule_proposal_response_notification(proposal.id)
     return appointment
 
 
@@ -386,6 +432,7 @@ def _create_proposal_option(
         penalties_total_amount=penalties_total_amount,
         total_amount=service_total_amount + penalties_total_amount,
         currency=_snapshot_currency(snapshot_items),
+        is_near_fit=option_input.is_near_fit,
         sort_order=option_input.sort_order or default_sort_order,
     )
     if option_input.service_items is not None:
@@ -464,6 +511,8 @@ def _apply_option_to_appointment(
     appointment.penalties_total_amount = option.penalties_total_amount
     appointment.total_amount = option.total_amount
     appointment.currency = option.currency
+    appointment.is_near_fit = option.is_near_fit
+    update_fields.append("is_near_fit")
 
     if proposal.type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES:
         appointment.status = Appointment.Status.CONFIRMED
@@ -582,8 +631,12 @@ def _on_commit_schedule_client_proposal_notification(proposal_id) -> None:
     transaction.on_commit(lambda: _schedule_client_proposal_notification(proposal_id))
 
 
-def _on_commit_schedule_master_proposal_response_notification(proposal_id) -> None:
-    transaction.on_commit(lambda: _schedule_master_proposal_response_notification(proposal_id))
+def _on_commit_schedule_master_client_reschedule_notification(proposal_id) -> None:
+    transaction.on_commit(lambda: _schedule_master_client_reschedule_notification(proposal_id))
+
+
+def _on_commit_schedule_proposal_response_notification(proposal_id) -> None:
+    transaction.on_commit(lambda: _schedule_proposal_response_notification(proposal_id))
 
 
 def _on_commit_schedule_expired_proposal_notifications(proposal_id) -> None:
@@ -605,15 +658,40 @@ def _schedule_client_proposal_notification(proposal_id) -> None:
     schedule_client_appointment_proposal_notification(proposal=proposal)
 
 
-def _schedule_master_proposal_response_notification(proposal_id) -> None:
-    from apps.notifications.services import schedule_master_proposal_response_notification
+def _schedule_master_client_reschedule_notification(proposal_id) -> None:
+    from apps.notifications.services import schedule_master_client_reschedule_notification
+
+    proposal = (
+        AppointmentProposal.objects.select_related(
+            "partner",
+            "appointment",
+            "appointment__client_profile",
+        )
+        .prefetch_related("options", "appointment__service_items")
+        .get(id=proposal_id)
+    )
+    schedule_master_client_reschedule_notification(
+        appointment=proposal.appointment,
+        proposal=proposal,
+    )
+
+
+def _schedule_proposal_response_notification(proposal_id) -> None:
+    from apps.notifications.services import (
+        schedule_client_proposal_response_notification,
+        schedule_master_proposal_response_notification,
+    )
 
     proposal = AppointmentProposal.objects.select_related(
         "partner",
         "appointment",
         "appointment__client_profile",
         "selected_option",
+        "created_by",
     ).get(id=proposal_id)
+    if proposal.created_by_id is None:
+        schedule_client_proposal_response_notification(proposal=proposal)
+        return
     schedule_master_proposal_response_notification(proposal=proposal)
 
 

@@ -174,6 +174,25 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             context=_appointment_template_context(notification.appointment),
         )
 
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE:
+        if notification.appointment is None:
+            return None
+        proposal = notification.appointment_proposal
+        option = None
+        if proposal is not None:
+            option = proposal.options.order_by("sort_order", "id").first()
+        context = (
+            _proposal_template_context(proposal=proposal, option=option)
+            if proposal is not None
+            else _appointment_template_context(notification.appointment)
+        )
+        return _master_notification_payload(
+            token=token,
+            notification=notification,
+            key="master.client_requested_reschedule",
+            context=context,
+        )
+
     if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL:
         proposal = notification.appointment_proposal
         if (
@@ -223,6 +242,35 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             key="appointment.reschedule_proposal_expired",
             language=notification.client_profile.language,
             context=_proposal_template_context(proposal=proposal),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+        )
+
+    if notification.type in {
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_DECLINED,
+    }:
+        proposal = notification.appointment_proposal
+        if (
+            proposal is None
+            or notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+        ):
+            return None
+        option = proposal.selected_option or proposal.options.order_by("sort_order", "id").first()
+        key = (
+            "appointment.reschedule_proposal_accepted"
+            if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED
+            else "appointment.reschedule_proposal_declined"
+        )
+        template = render_content_template(
+            partner=notification.partner,
+            key=key,
+            language=notification.client_profile.language,
+            context=_proposal_template_context(proposal=proposal, option=option),
         )
         return TelegramPayload(
             token=token,
@@ -584,6 +632,7 @@ def _is_master_notification(notification: ScheduledNotification) -> bool:
     return notification.type in {
         ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER,
         ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
+        ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,
         ScheduledNotification.Type.MASTER_CLIENT_ACCEPTED_PROPOSAL,
         ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL,
         ScheduledNotification.Type.MASTER_APPOINTMENT_PROPOSAL_EXPIRED,

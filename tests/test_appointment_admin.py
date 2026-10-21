@@ -11,6 +11,10 @@ from apps.appointments.models import (
     AppointmentProposal,
     AppointmentServiceItem,
 )
+from apps.appointments.proposals import (
+    AppointmentProposalOptionInput,
+    create_appointment_proposal,
+)
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
@@ -120,6 +124,57 @@ def test_owner_creates_manual_appointment_with_overrides_and_custom_line(
     assert service_lines[1].service_name_snapshot == "Nail repair"
     assert service_lines[1].price_amount == 10_050
     assert service_lines[1].is_custom is True
+
+
+@pytest.mark.django_db
+def test_owner_accepts_client_reschedule_request_from_proposal_admin(
+    appointment_admin_context,
+    django_capture_on_commit_callbacks,
+) -> None:
+    client, _superuser, created, resource, service = appointment_admin_context
+    identity = upsert_telegram_identity(
+        telegram_user_id=987654,
+        username="reschedule-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=identity,
+    )
+    start_at = _future_hour(days=3)
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=client_profile,
+        start_at=start_at,
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    proposal = create_appointment_proposal(
+        actor=None,
+        appointment=appointment,
+        proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+        options=[AppointmentProposalOptionInput(start_at=start_at + timedelta(hours=2))],
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = client.post(
+            reverse("admin:appointments_appointmentproposal_changelist"),
+            {
+                "action": "accept_client_reschedule",
+                "_selected_action": str(proposal.id),
+            },
+        )
+
+    assert response.status_code == 302
+    appointment.refresh_from_db()
+    proposal.refresh_from_db()
+    assert appointment.start_at == start_at + timedelta(hours=2)
+    assert proposal.status == AppointmentProposal.Status.ACCEPTED
+    assert ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
+    ).exists()
 
 
 @pytest.mark.django_db

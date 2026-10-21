@@ -238,6 +238,47 @@ def schedule_master_client_cancelled_notification(
     )
 
 
+def schedule_master_client_reschedule_notification(
+    *,
+    appointment: Appointment,
+    proposal: AppointmentProposal | None = None,
+    now: datetime | None = None,
+) -> ScheduledNotification:
+    """Queue a master notice for an auto-move or a pending client request."""
+
+    if proposal is not None:
+        if (
+            proposal.appointment_id != appointment.id
+            or proposal.status != AppointmentProposal.Status.PENDING
+            or proposal.created_by_id is not None
+        ):
+            raise ValidationError({"proposal": "Proposal is not a pending client request."})
+        idempotency_key = f"proposal:{proposal.id}:master:client_requested"
+    else:
+        if appointment.status != Appointment.Status.CONFIRMED:
+            raise ValidationError(
+                {"appointment": "Auto-rescheduled appointment must be confirmed."}
+            )
+        idempotency_key = (
+            f"appointment:{appointment.id}:master:client_rescheduled:"
+            f"{appointment.start_at.isoformat()}"
+        )
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(due_at=current_time, partner=appointment.partner)
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        appointment_proposal=proposal,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,
+        due_at=due_at,
+        idempotency_key=idempotency_key,
+        now=current_time,
+    )
+
+
 def schedule_client_appointment_proposal_notification(
     *,
     proposal: AppointmentProposal,
@@ -302,6 +343,42 @@ def schedule_master_proposal_response_notification(
         type=notification_type,
         due_at=due_at,
         idempotency_key=f"proposal:{proposal.id}:master:{proposal.status}",
+        now=current_time,
+    )
+
+
+def schedule_client_proposal_response_notification(
+    *,
+    proposal: AppointmentProposal,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the partner's accepted/declined response to a client request."""
+
+    if proposal.created_by_id is not None:
+        return None
+    type_by_status = {
+        AppointmentProposal.Status.ACCEPTED: (
+            ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED
+        ),
+        AppointmentProposal.Status.DECLINED: (
+            ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_DECLINED
+        ),
+    }
+    notification_type = type_by_status.get(proposal.status)
+    if notification_type is None or not proposal.appointment.client_profile.telegram_identity_id:
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(due_at=current_time, partner=proposal.partner)
+    return _upsert_scheduled_notification(
+        partner=proposal.partner,
+        appointment=proposal.appointment,
+        appointment_proposal=proposal,
+        client_profile=proposal.appointment.client_profile,
+        reminder_rule=None,
+        type=notification_type,
+        due_at=due_at,
+        idempotency_key=f"proposal:{proposal.id}:client:{proposal.status}",
         now=current_time,
     )
 
@@ -777,6 +854,16 @@ def _obsolete_status_for_notification(
         ):
             return ScheduledNotification.Status.STALE
         return None
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE:
+        if proposal is not None:
+            if proposal.status != AppointmentProposal.Status.PENDING:
+                return ScheduledNotification.Status.STALE
+            return None
+        if appointment is None or appointment.status != Appointment.Status.CONFIRMED:
+            return ScheduledNotification.Status.STALE
+        if appointment.start_at <= now:
+            return ScheduledNotification.Status.SKIPPED
+        return None
     proposal_status_by_type = {
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_EXPIRED: (
             AppointmentProposal.Status.EXPIRED
@@ -788,6 +875,12 @@ def _obsolete_status_for_notification(
             AppointmentProposal.Status.ACCEPTED
         ),
         ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL: (
+            AppointmentProposal.Status.DECLINED
+        ),
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED: (
+            AppointmentProposal.Status.ACCEPTED
+        ),
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_DECLINED: (
             AppointmentProposal.Status.DECLINED
         ),
     }

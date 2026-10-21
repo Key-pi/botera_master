@@ -8,6 +8,7 @@ from apps.accounts.models import User
 from apps.appointments.client_booking import (
     available_booking_dates,
     available_booking_slots,
+    available_client_reschedule_slots,
     booking_category_page,
     booking_services_page,
     build_booking_summary,
@@ -15,8 +16,9 @@ from apps.appointments.client_booking import (
     client_appointment_history_page,
     client_profile_overview,
     confirm_client_booking,
+    reschedule_client_appointment,
 )
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     cancel_appointment_by_client,
@@ -242,6 +244,185 @@ def test_near_fit_booking_is_requested_even_when_auto_confirm(
     assert result.appointment.status == Appointment.Status.REQUESTED
     assert result.appointment.is_near_fit is True
     assert result.is_near_fit is True
+
+
+@pytest.mark.django_db
+def test_client_auto_reschedule_moves_same_appointment_and_notifies_master(
+    booking_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+    )
+    _open_window(context, rounded_future_start, hours=3)
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    new_start = rounded_future_start + timedelta(hours=1)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = reschedule_client_appointment(
+            partner=context["partner"],
+            client_profile=context["client"],
+            appointment=appointment,
+            start_at=new_start,
+            now=rounded_future_start - timedelta(hours=1),
+        )
+
+    appointment.refresh_from_db()
+    assert result.requires_master_confirmation is False
+    assert result.proposal is None
+    assert appointment.start_at == new_start
+    assert appointment.end_at == new_start + timedelta(hours=1)
+    assert appointment.status == Appointment.Status.CONFIRMED
+    assert appointment.service_items.get().service_name_snapshot == "Manicure"
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_client_manual_reschedule_keeps_old_time_and_creates_partner_proposal(
+    booking_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.MANUAL,
+        slot_step_minutes=30,
+    )
+    _open_window(context, rounded_future_start, hours=3)
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    new_start = rounded_future_start + timedelta(hours=1)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = reschedule_client_appointment(
+            partner=context["partner"],
+            client_profile=context["client"],
+            appointment=appointment,
+            start_at=new_start,
+            now=rounded_future_start - timedelta(hours=1),
+        )
+
+    appointment.refresh_from_db()
+    proposal = AppointmentProposal.objects.get(appointment=appointment)
+    option = proposal.options.get()
+    assert result.requires_master_confirmation is True
+    assert result.proposal == proposal
+    assert appointment.start_at == rounded_future_start
+    assert proposal.created_by is None
+    assert proposal.status == AppointmentProposal.Status.PENDING
+    assert option.start_at == new_start
+    assert option.is_near_fit is False
+    assert ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,
+    ).exists()
+    assert not ScheduledNotification.objects.filter(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_near_fit_client_reschedule_requires_master_even_in_auto_mode(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+        near_fit_tolerance_minutes=10,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    new_start = rounded_future_start + timedelta(days=1)
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=new_start,
+        end_at=new_start + timedelta(minutes=50),
+    )
+
+    result = reschedule_client_appointment(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment=appointment,
+        start_at=new_start,
+        now=rounded_future_start - timedelta(hours=1),
+    )
+
+    appointment.refresh_from_db()
+    assert result.requires_master_confirmation is True
+    assert result.is_near_fit is True
+    assert appointment.start_at == rounded_future_start
+    assert result.proposal.options.get().is_near_fit is True
+
+
+@pytest.mark.django_db
+def test_reschedule_slots_exclude_current_appointment_but_not_other_bookings(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+    )
+    _open_window(context, rounded_future_start, hours=3)
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    slots = available_client_reschedule_slots(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment=appointment,
+        local_date=rounded_future_start.date(),
+        now=rounded_future_start - timedelta(hours=1),
+    )
+
+    starts = {slot.start_at for slot in slots.items}
+    assert rounded_future_start not in starts
+    assert rounded_future_start + timedelta(hours=1) in starts
 
 
 @pytest.mark.django_db

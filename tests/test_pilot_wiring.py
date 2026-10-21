@@ -9,6 +9,7 @@ from apps.accounts.models import User
 from apps.appointments.models import AppointmentProposal
 from apps.appointments.proposals import (
     AppointmentProposalOptionInput,
+    accept_appointment_proposal_option_as_partner,
     create_appointment_proposal,
 )
 from apps.appointments.services import (
@@ -506,6 +507,111 @@ def test_appointment_proposal_notice_dispatches_with_client_action(
         sent_payloads[0]["reply_markup"].inline_keyboard[0][0].callback_data
         == f"pf:proposal:{proposal.id.hex}:future:1"
     )
+
+
+@pytest.mark.django_db
+def test_client_reschedule_request_and_acceptance_dispatch_to_each_side(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    master_identity = upsert_telegram_identity(
+        telegram_user_id=555080,
+        username="reschedule-master",
+    )
+    PartnerTelegramContact.objects.create(
+        partner=created.partner,
+        telegram_identity=master_identity,
+        user=created.owner,
+        is_primary=True,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555081,
+        username="reschedule-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    proposed_start = appointment.start_at + timedelta(days=1)
+    with django_capture_on_commit_callbacks(execute=True):
+        proposal = create_appointment_proposal(
+            actor=None,
+            appointment=appointment,
+            proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+            options=[AppointmentProposalOptionInput(start_at=proposed_start)],
+        )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    assert dispatch_due_notifications_task() == 1
+    local_start = proposed_start.astimezone(get_zone(created.partner.timezone))
+    assert sent_payloads == [
+        {
+            "token": VALID_TOKEN,
+            "chat_id": 555080,
+            "text": "Клієнт просить перенести запис: Ira, "
+            f"{local_start.date().isoformat()} о {local_start.strftime('%H:%M')}, Manicure.",
+        }
+    ]
+
+    sent_payloads.clear()
+    with django_capture_on_commit_callbacks(execute=True):
+        accept_appointment_proposal_option_as_partner(
+            actor=created.owner,
+            option=proposal.options.get(),
+        )
+
+    assert dispatch_due_notifications_task() == 1
+    response_notice = ScheduledNotification.objects.get(
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
+    )
+    assert response_notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads == [
+        {
+            "token": VALID_TOKEN,
+            "chat_id": 555081,
+            "text": "Новий час підтверджено: "
+            f"{local_start.date().isoformat()} о {local_start.strftime('%H:%M')}, Manicure.",
+        }
+    ]
 
 
 @pytest.mark.django_db
