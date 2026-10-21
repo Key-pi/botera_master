@@ -252,7 +252,8 @@ Content shape:
   - `booking.request_cancelled_by_client`: `{date}`, `{time}`.
   - `booking.request_confirmed_by_master`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.request_declined_by_master`: `{partner_name}`, `{date}`, `{time}`, `{reason}`.
-- `booking.slot_taken` and "no available slots" remain system-only localized service texts in MVP.
+- `booking.slot_taken`, `booking.selection_changed`, and "no available slots"
+  remain system-only localized service texts in MVP.
 - Ordinary client booking summary/final confirmation does not show penalties unless penalties have already been explicitly applied to that appointment.
 - Initial editable `cancellation/reschedule` keys:
   - `appointment.cancel_confirm_prompt`: `{date}`, `{time}`, `{services}`.

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from uuid import UUID
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -11,6 +14,7 @@ from django.core.exceptions import ValidationError
 from apps.bot.booking import (
     BOOKING_CALLBACK_PREFIX,
     BotBookingReply,
+    booking_selection_signature,
     build_booking_categories_reply,
     build_booking_dates_reply,
     build_booking_final_confirm_reply,
@@ -22,6 +26,8 @@ from apps.bot.booking import (
     parse_page_token,
     parse_timestamp_token,
     parse_uuid_token,
+    remove_booking_service_selection,
+    toggle_booking_service_selection,
 )
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
@@ -68,6 +74,26 @@ class ClientMessageState(StatesGroup):
     waiting_for_text = State()
 
 
+class BookingFlowState(StatesGroup):
+    """Ephemeral multi-service selection for one active booking conversation."""
+
+    active = State()
+
+
+@dataclass(frozen=True, slots=True)
+class BookingCallbackResult:
+    """Booking adapter response plus the next ephemeral FSM state."""
+
+    reply: BotBookingReply
+    selected_service_ids: tuple[UUID, ...]
+    summary_signature: str = ""
+    complete: bool = False
+
+
+BOOKING_SERVICE_IDS_STATE_KEY = "booking_service_ids"
+BOOKING_SUMMARY_SIGNATURE_STATE_KEY = "booking_summary_signature"
+
+
 def build_partner_router() -> Router:
     """Build bot handlers that rely on trusted partner context middleware."""
 
@@ -111,6 +137,11 @@ def build_partner_router() -> Router:
         reply = await sync_to_async(build_booking_categories_reply)(
             partner=partner,
             language=profile.language,
+        )
+        await _store_booking_state(
+            state=state,
+            selected_service_ids=(),
+            summary_signature="",
         )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
@@ -190,7 +221,6 @@ def build_partner_router() -> Router:
         partner: Partner,
         state: FSMContext,
     ) -> None:
-        await state.clear()
         if callback.data == f"{BOOKING_CALLBACK_PREFIX}:noop":
             await callback.answer()
             return
@@ -199,17 +229,31 @@ def build_partner_router() -> Router:
         if profile is None or callback.message is None or callback.data is None:
             return
 
+        selected_service_ids, summary_signature = _booking_state_values(await state.get_data())
         try:
-            reply = await sync_to_async(_booking_reply_from_callback_data)(
+            result = await sync_to_async(_booking_reply_from_callback_data)(
                 partner=partner,
                 client_profile=profile,
                 data=callback.data,
+                selected_service_ids=selected_service_ids,
+                summary_signature=summary_signature,
             )
         except ValidationError:
+            await state.clear()
             reply = await sync_to_async(_invalid_booking_action_reply)(
                 partner=partner,
                 language=profile.language,
             )
+        else:
+            reply = result.reply
+            if result.complete:
+                await state.clear()
+            else:
+                await _store_booking_state(
+                    state=state,
+                    selected_service_ids=result.selected_service_ids,
+                    summary_signature=result.summary_signature,
+                )
 
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
@@ -252,7 +296,14 @@ def build_partner_router() -> Router:
     return router
 
 
-def _booking_reply_from_callback_data(*, partner: Partner, client_profile, data: str):
+def _booking_reply_from_callback_data(
+    *,
+    partner: Partner,
+    client_profile,
+    data: str,
+    selected_service_ids: tuple[UUID, ...] = (),
+    summary_signature: str = "",
+) -> BookingCallbackResult:
     parts = data.split(":")
     if len(parts) < 2 or parts[0] != BOOKING_CALLBACK_PREFIX:
         raise ValidationError({"callback": "Unsupported callback."})
@@ -260,65 +311,222 @@ def _booking_reply_from_callback_data(*, partner: Partner, client_profile, data:
     action = parts[1]
     language = client_profile.language
     if action == "cat" and len(parts) == 3:
-        return build_booking_categories_reply(
-            partner=partner,
-            language=language,
-            page=parse_page_token(parts[2]),
+        return BookingCallbackResult(
+            reply=build_booking_categories_reply(
+                partner=partner,
+                language=language,
+                page=parse_page_token(parts[2]),
+                selected_service_ids=selected_service_ids,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
         )
     if action == "svc" and len(parts) == 4:
-        return build_booking_services_reply(
+        return BookingCallbackResult(
+            reply=build_booking_services_reply(
+                partner=partner,
+                category_id=parse_uuid_token(parts[2]),
+                language=language,
+                page=parse_page_token(parts[3]),
+                selected_service_ids=selected_service_ids,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+    if action == "toggle" and len(parts) == 4:
+        change = toggle_booking_service_selection(
             partner=partner,
-            category_id=parse_uuid_token(parts[2]),
-            language=language,
-            page=parse_page_token(parts[3]),
+            selected_service_ids=selected_service_ids,
+            service_id=parse_uuid_token(parts[2]),
+        )
+        return BookingCallbackResult(
+            reply=build_booking_services_reply(
+                partner=partner,
+                category_id=change.category_id,
+                language=language,
+                page=parse_page_token(parts[3]),
+                selected_service_ids=change.selected_service_ids,
+            ),
+            selected_service_ids=change.selected_service_ids,
+        )
+    if action == "clear" and len(parts) == 4:
+        category_id = parse_uuid_token(parts[2])
+        return BookingCallbackResult(
+            reply=build_booking_services_reply(
+                partner=partner,
+                category_id=category_id,
+                language=language,
+                page=parse_page_token(parts[3]),
+            ),
+            selected_service_ids=(),
+        )
+    if action == "clearcat" and len(parts) == 3:
+        return BookingCallbackResult(
+            reply=build_booking_categories_reply(
+                partner=partner,
+                language=language,
+                page=parse_page_token(parts[2]),
+            ),
+            selected_service_ids=(),
+        )
+    if action == "restart" and len(parts) == 3:
+        return BookingCallbackResult(
+            reply=build_booking_categories_reply(
+                partner=partner,
+                language=language,
+                page=parse_page_token(parts[2]),
+            ),
+            selected_service_ids=(),
         )
     if action == "sum" and len(parts) == 3:
-        return build_booking_summary_reply(
+        current_signature = booking_selection_signature(
             partner=partner,
-            service_id=parse_uuid_token(parts[2]),
-            language=language,
+            selected_service_ids=selected_service_ids,
         )
-    if action == "dates" and len(parts) == 4:
-        return build_booking_dates_reply(
-            partner=partner,
-            service_id=parse_uuid_token(parts[2]),
-            language=language,
-            page=parse_page_token(parts[3]),
+        selection_changed = bool(summary_signature and current_signature != summary_signature)
+        return BookingCallbackResult(
+            reply=build_booking_summary_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                language=language,
+                page=parse_page_token(parts[2]),
+                selection_changed=selection_changed,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=current_signature,
         )
-    if action == "slots" and len(parts) == 5:
-        return build_booking_slots_reply(
-            partner=partner,
+    if action == "remove" and len(parts) == 4:
+        selection_changed = False
+        if summary_signature:
+            selection_changed = (
+                booking_selection_signature(
+                    partner=partner,
+                    selected_service_ids=selected_service_ids,
+                )
+                != summary_signature
+            )
+        updated_ids = remove_booking_service_selection(
+            selected_service_ids=selected_service_ids,
             service_id=parse_uuid_token(parts[2]),
-            local_date=parse_date_token(parts[3]),
-            language=language,
-            page=parse_page_token(parts[4]),
         )
-    if action == "final" and len(parts) == 4:
-        return build_booking_final_confirm_reply(
+        if not updated_ids:
+            return BookingCallbackResult(
+                reply=build_booking_categories_reply(partner=partner, language=language),
+                selected_service_ids=(),
+            )
+        current_signature = booking_selection_signature(
             partner=partner,
-            service_id=parse_uuid_token(parts[2]),
-            start_at=parse_timestamp_token(parts[3]),
-            language=language,
+            selected_service_ids=updated_ids,
         )
-    if action == "create" and len(parts) == 4:
-        return confirm_booking_reply(
+        return BookingCallbackResult(
+            reply=build_booking_summary_reply(
+                partner=partner,
+                selected_service_ids=updated_ids,
+                language=language,
+                page=parse_page_token(parts[3]),
+                selection_changed=selection_changed,
+            ),
+            selected_service_ids=updated_ids,
+            summary_signature=current_signature,
+        )
+
+    if action in {"dates", "slots", "final", "create"}:
+        review_result = _booking_selection_review_result(
             partner=partner,
-            client_profile=client_profile,
-            service_id=parse_uuid_token(parts[2]),
-            start_at=parse_timestamp_token(parts[3]),
             language=language,
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+        if review_result is not None:
+            return review_result
+
+    if action == "dates" and len(parts) == 3:
+        return BookingCallbackResult(
+            reply=build_booking_dates_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                language=language,
+                page=parse_page_token(parts[2]),
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+    if action == "slots" and len(parts) == 4:
+        return BookingCallbackResult(
+            reply=build_booking_slots_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                local_date=parse_date_token(parts[2]),
+                language=language,
+                page=parse_page_token(parts[3]),
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+    if action == "final" and len(parts) == 3:
+        return BookingCallbackResult(
+            reply=build_booking_final_confirm_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                start_at=parse_timestamp_token(parts[2]),
+                language=language,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+    if action == "create" and len(parts) == 3:
+        return BookingCallbackResult(
+            reply=confirm_booking_reply(
+                partner=partner,
+                client_profile=client_profile,
+                selected_service_ids=selected_service_ids,
+                start_at=parse_timestamp_token(parts[2]),
+                language=language,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+            complete=True,
         )
 
     raise ValidationError({"callback": "Unsupported callback."})
 
 
+def _booking_selection_review_result(
+    *,
+    partner: Partner,
+    language: str,
+    selected_service_ids: tuple[UUID, ...],
+    summary_signature: str,
+) -> BookingCallbackResult | None:
+    current_signature = booking_selection_signature(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+    )
+    if current_signature == summary_signature:
+        return None
+    return BookingCallbackResult(
+        reply=build_booking_summary_reply(
+            partner=partner,
+            selected_service_ids=selected_service_ids,
+            language=language,
+            selection_changed=True,
+        ),
+        selected_service_ids=selected_service_ids,
+        summary_signature=current_signature,
+    )
+
+
 def _invalid_booking_action_reply(*, partner: Partner, language: str):
     rendered = render_content_template(
         partner=partner,
-        key="booking.slot_taken",
+        key="booking.selection_changed",
         language=language,
     )
-    return BotBookingReply(text=rendered.body)
+    categories = build_booking_categories_reply(partner=partner, language=language)
+    return BotBookingReply(
+        text=f"{rendered.body}\n\n{categories.text}",
+        reply_markup=categories.reply_markup,
+    )
 
 
 def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data: str):
@@ -466,6 +674,35 @@ def _invalid_profile_action_reply(*, partner: Partner, language: str):
 def _validate_profile_return_action(return_action: str) -> None:
     if return_action not in {"future", "history"}:
         raise ValidationError({"callback": "Unsupported return target."})
+
+
+async def _store_booking_state(
+    *,
+    state: FSMContext,
+    selected_service_ids: tuple[UUID, ...],
+    summary_signature: str,
+) -> None:
+    await state.set_state(BookingFlowState.active)
+    await state.set_data(
+        {
+            BOOKING_SERVICE_IDS_STATE_KEY: [service_id.hex for service_id in selected_service_ids],
+            BOOKING_SUMMARY_SIGNATURE_STATE_KEY: summary_signature,
+        }
+    )
+
+
+def _booking_state_values(data: dict) -> tuple[tuple[UUID, ...], str]:
+    raw_ids = data.get(BOOKING_SERVICE_IDS_STATE_KEY, ())
+    if not isinstance(raw_ids, (list, tuple)):
+        return (), ""
+    try:
+        service_ids = tuple(UUID(str(value)) for value in raw_ids)
+    except (TypeError, ValueError):
+        return (), ""
+    summary_signature = data.get(BOOKING_SUMMARY_SIGNATURE_STATE_KEY, "")
+    if not isinstance(summary_signature, str):
+        summary_signature = ""
+    return service_ids, summary_signature
 
 
 async def _client_profile_for_message(*, message: Message, partner: Partner):

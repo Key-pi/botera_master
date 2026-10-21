@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from datetime import timezone as datetime_timezone
+from hashlib import sha256
 from uuid import UUID
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -10,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.appointments.client_booking import (
+    BookingServiceLine,
     BookingSummary,
     available_booking_dates,
     available_booking_slots,
@@ -18,7 +21,9 @@ from apps.appointments.client_booking import (
     build_booking_summary,
     confirm_client_booking,
 )
-from apps.catalog.models import ServiceCategory
+from apps.bot.pagination import paginate_telegram_entities
+from apps.catalog.models import Service, ServiceCategory
+from apps.catalog.selectors import active_services_for_booking
 from apps.clients.models import ClientProfile
 from apps.partners.models import Partner
 from apps.schedule.models import PartnerScheduleSettings
@@ -29,6 +34,7 @@ from .services import render_content_template
 
 BOOKING_CALLBACK_PREFIX = "bk"
 BOOKING_SEARCH_DAYS = 30
+BOOKING_SUMMARY_PAGE_SIZE = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,14 +45,24 @@ class BotBookingReply:
     reply_markup: InlineKeyboardMarkup | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BookingSelectionChange:
+    """Validated ephemeral selection update for the Telegram adapter."""
+
+    selected_service_ids: tuple[UUID, ...]
+    category_id: UUID
+
+
 def build_booking_categories_reply(
     *,
     partner: Partner,
     language: str,
     page: int = 1,
+    selected_service_ids: Iterable[UUID | str] = (),
 ) -> BotBookingReply:
     """Render the first booking screen with active service categories."""
 
+    selected_ids = _coerce_service_ids(selected_service_ids)
     category_page = booking_category_page(partner=partner, page=page)
     if not category_page.items:
         return _reply(partner=partner, key="booking.no_categories", language=language)
@@ -61,6 +77,14 @@ def build_booking_categories_reply(
         for category in category_page.items
     ]
     rows.extend(_pagination_rows("cat", category_page.page, category_page))
+    rows.extend(
+        _selection_control_rows(
+            selected_count=len(selected_ids),
+            language=language,
+            done_callback=_callback("sum", 1),
+            clear_callback=_callback("clearcat", category_page.page),
+        )
+    )
     return _reply(
         partner=partner,
         key="booking.category_select",
@@ -75,9 +99,12 @@ def build_booking_services_reply(
     category_id: UUID,
     language: str,
     page: int = 1,
+    selected_service_ids: Iterable[UUID | str] = (),
 ) -> BotBookingReply:
     """Render services for one trusted partner category."""
 
+    selected_ids = _coerce_service_ids(selected_service_ids)
+    selected_id_set = set(selected_ids)
     category = _category_for_partner(partner=partner, category_id=category_id)
     services_page = booking_services_page(
         partner=partner,
@@ -90,13 +117,25 @@ def build_booking_services_reply(
     rows = [
         [
             InlineKeyboardButton(
-                text=_service_button_label(service, language),
-                callback_data=_callback("sum", service.id.hex),
+                text=_service_button_label(
+                    service,
+                    language,
+                    selected=service.id in selected_id_set,
+                ),
+                callback_data=_callback("toggle", service.id.hex, services_page.page),
             )
         ]
         for service in services_page.items
     ]
     rows.extend(_pagination_rows("svc", services_page.page, services_page, category.id.hex))
+    rows.extend(
+        _selection_control_rows(
+            selected_count=len(selected_ids),
+            language=language,
+            done_callback=_callback("sum", 1),
+            clear_callback=_callback("clear", category.id.hex, services_page.page),
+        )
+    )
     rows.append([_back_button(_callback("cat", 1), language)])
     return _reply(
         partner=partner,
@@ -110,39 +149,79 @@ def build_booking_services_reply(
 def build_booking_summary_reply(
     *,
     partner: Partner,
-    service_id: UUID,
+    selected_service_ids: Iterable[UUID | str],
     language: str,
+    page: int = 1,
+    selection_changed: bool = False,
 ) -> BotBookingReply:
-    """Render selected service summary and let the client choose a date."""
+    """Render a paginated multi-service summary before date selection."""
 
-    summary = build_booking_summary(partner=partner, selected_service_ids=[service_id])
+    summary = build_booking_summary(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+    )
+    service_page = paginate_telegram_entities(
+        summary.service_lines,
+        page=page,
+        per_page=BOOKING_SUMMARY_PAGE_SIZE,
+    )
     rows = [
         [
             InlineKeyboardButton(
-                text=_label("choose_date", language),
-                callback_data=_callback("dates", service_id.hex, 1),
+                text=f"{_label('remove', language)}: {line.name}",
+                callback_data=_callback("remove", line.service_id.hex, service_page.page),
             )
-        ],
-        [_back_button(_callback("cat", 1), language)],
+        ]
+        for line in service_page.items
     ]
-    return _reply(
+    rows.extend(_pagination_rows("sum", service_page.page, service_page))
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_label("choose_date", language),
+                    callback_data=_callback("dates", 1),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=_label("clear", language),
+                    callback_data=_callback("clearcat", 1),
+                )
+            ],
+            [_back_button(_callback("restart", 1), language)],
+        ]
+    )
+    reply = _reply(
         partner=partner,
         key="booking.summary",
         language=language,
-        context=_summary_context(summary=summary, language=language),
+        context=_summary_context(
+            summary=summary,
+            language=language,
+            visible_lines=service_page.items,
+            page_indicator=(service_page.indicator if service_page.total_pages > 1 else ""),
+        ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+    if not selection_changed:
+        return reply
+    notice = _render(partner=partner, key="booking.selection_changed", language=language)
+    return BotBookingReply(
+        text=f"{notice}\n\n{reply.text}",
+        reply_markup=reply.reply_markup,
     )
 
 
 def build_booking_dates_reply(
     *,
     partner: Partner,
-    service_id: UUID,
+    selected_service_ids: Iterable[UUID | str],
     language: str,
     page: int = 1,
     now: datetime | None = None,
 ) -> BotBookingReply:
-    """Render local dates with at least one slot for the selected service."""
+    """Render local dates with slots for the selected service set."""
 
     current_time = now or timezone.now()
     settings = _schedule_settings(partner)
@@ -150,14 +229,34 @@ def build_booking_dates_reply(
     days = min(settings.booking_horizon_days, BOOKING_SEARCH_DAYS)
     dates_page = available_booking_dates(
         partner=partner,
-        selected_service_ids=[service_id],
+        selected_service_ids=selected_service_ids,
         start_date=start_date,
         days=days,
         page=page,
         now=current_time,
     )
     if not dates_page.items:
-        return _reply(partner=partner, key="booking.no_dates", language=language)
+        return _reply(
+            partner=partner,
+            key="booking.no_dates",
+            language=language,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=_label("change_services", language),
+                            callback_data=_callback("restart", 1),
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text=_label("contact_master", language),
+                            callback_data="pf:contact",
+                        )
+                    ],
+                ]
+            ),
+        )
 
     rows = [
         [
@@ -165,7 +264,6 @@ def build_booking_dates_reply(
                 text=_date_button_label(option.local_date, option.slot_count, language),
                 callback_data=_callback(
                     "slots",
-                    service_id.hex,
                     option.local_date.strftime("%Y%m%d"),
                     1,
                 ),
@@ -173,8 +271,8 @@ def build_booking_dates_reply(
         ]
         for option in dates_page.items
     ]
-    rows.extend(_pagination_rows("dates", dates_page.page, dates_page, service_id.hex))
-    rows.append([_back_button(_callback("sum", service_id.hex), language)])
+    rows.extend(_pagination_rows("dates", dates_page.page, dates_page))
+    rows.append([_back_button(_callback("sum", 1), language)])
     return _reply(
         partner=partner,
         key="booking.date_select",
@@ -187,7 +285,7 @@ def build_booking_dates_reply(
 def build_booking_slots_reply(
     *,
     partner: Partner,
-    service_id: UUID,
+    selected_service_ids: Iterable[UUID | str],
     local_date: date,
     language: str,
     page: int = 1,
@@ -195,16 +293,40 @@ def build_booking_slots_reply(
 ) -> BotBookingReply:
     """Render slots for one selected local date."""
 
-    summary = build_booking_summary(partner=partner, selected_service_ids=[service_id])
+    summary = build_booking_summary(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+    )
     slots_page = available_booking_slots(
         partner=partner,
-        selected_service_ids=[service_id],
+        selected_service_ids=selected_service_ids,
         local_date=local_date,
         page=page,
         now=now,
     )
     if not slots_page.items:
-        return _reply(partner=partner, key="booking.no_slots", language=language)
+        return _reply(
+            partner=partner,
+            key="booking.no_slots",
+            language=language,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [_back_button(_callback("dates", 1), language)],
+                    [
+                        InlineKeyboardButton(
+                            text=_label("change_services", language),
+                            callback_data=_callback("restart", 1),
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text=_label("contact_master", language),
+                            callback_data="pf:contact",
+                        )
+                    ],
+                ]
+            ),
+        )
 
     rows = [
         [
@@ -215,7 +337,7 @@ def build_booking_slots_reply(
                     slot.is_near_fit,
                     language,
                 ),
-                callback_data=_callback("final", service_id.hex, _timestamp_token(slot.start_at)),
+                callback_data=_callback("final", _timestamp_token(slot.start_at)),
             )
         ]
         for slot in slots_page.items
@@ -225,18 +347,17 @@ def build_booking_slots_reply(
             "slots",
             slots_page.page,
             slots_page,
-            service_id.hex,
             local_date.strftime("%Y%m%d"),
         )
     )
-    rows.append([_back_button(_callback("dates", service_id.hex, 1), language)])
+    rows.append([_back_button(_callback("dates", 1), language)])
     return _reply(
         partner=partner,
         key="booking.time_select",
         language=language,
         context={
             "date": local_date.isoformat(),
-            "services": _services_label(summary),
+            "services": _services_label(summary.service_lines),
             "duration": _duration_label(summary.duration_minutes, language),
         },
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
@@ -246,17 +367,20 @@ def build_booking_slots_reply(
 def build_booking_final_confirm_reply(
     *,
     partner: Partner,
-    service_id: UUID,
+    selected_service_ids: Iterable[UUID | str],
     start_at: datetime,
     language: str,
     now: datetime | None = None,
 ) -> BotBookingReply:
     """Render final confirmation for a selected slot after fresh slot validation."""
 
-    summary = build_booking_summary(partner=partner, selected_service_ids=[service_id])
+    summary = build_booking_summary(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+    )
     selected_slot = _find_slot_for_final_confirm(
         partner=partner,
-        service_id=service_id,
+        selected_service_ids=selected_service_ids,
         local_date=to_partner_time(start_at, partner.timezone).date(),
         start_at=start_at,
         now=now,
@@ -285,14 +409,13 @@ def build_booking_final_confirm_reply(
         [
             InlineKeyboardButton(
                 text=_label("confirm", language),
-                callback_data=_callback("create", service_id.hex, _timestamp_token(start_at)),
+                callback_data=_callback("create", _timestamp_token(start_at)),
             )
         ],
         [
             _back_button(
                 _callback(
                     "slots",
-                    service_id.hex,
                     to_partner_time(start_at, partner.timezone).strftime("%Y%m%d"),
                     1,
                 ),
@@ -307,7 +430,7 @@ def confirm_booking_reply(
     *,
     partner: Partner,
     client_profile: ClientProfile,
-    service_id: UUID,
+    selected_service_ids: Iterable[UUID | str],
     start_at: datetime,
     language: str,
     now: datetime | None = None,
@@ -317,7 +440,7 @@ def confirm_booking_reply(
     result = confirm_client_booking(
         partner=partner,
         client_profile=client_profile,
-        selected_service_ids=[service_id],
+        selected_service_ids=selected_service_ids,
         start_at=start_at,
         now=now,
     )
@@ -372,6 +495,66 @@ def parse_page_token(value: str) -> int:
         return max(1, int(value))
     except (TypeError, ValueError) as exc:
         raise ValidationError({"callback": "Invalid callback page."}) from exc
+
+
+def toggle_booking_service_selection(
+    *,
+    partner: Partner,
+    selected_service_ids: Iterable[UUID | str],
+    service_id: UUID,
+) -> BookingSelectionChange:
+    """Toggle one active partner service in an ephemeral booking selection."""
+
+    service = _active_service_for_partner(partner=partner, service_id=service_id)
+    selected_ids = list(_coerce_service_ids(selected_service_ids))
+    if service.id in selected_ids:
+        selected_ids.remove(service.id)
+    else:
+        selected_ids.append(service.id)
+    return BookingSelectionChange(
+        selected_service_ids=tuple(selected_ids),
+        category_id=service.category_id,
+    )
+
+
+def remove_booking_service_selection(
+    *,
+    selected_service_ids: Iterable[UUID | str],
+    service_id: UUID,
+) -> tuple[UUID, ...]:
+    """Remove one selected service without trusting a callback-only identifier."""
+
+    selected_ids = list(_coerce_service_ids(selected_service_ids))
+    if service_id not in selected_ids:
+        raise ValidationError({"service": "Service is not part of this booking selection."})
+    selected_ids.remove(service_id)
+    return tuple(selected_ids)
+
+
+def booking_selection_signature(
+    *,
+    partner: Partner,
+    selected_service_ids: Iterable[UUID | str],
+) -> str:
+    """Fingerprint the client-visible service values reviewed in the summary."""
+
+    summary = build_booking_summary(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+    )
+    values = sorted(
+        (
+            line.service_id.hex,
+            line.name,
+            line.description,
+            str(line.price_amount),
+            line.currency,
+            str(line.duration_minutes),
+        )
+        for line in summary.service_lines
+    )
+    serialized = "\x1f".join("\x1e".join(value) for value in values)
+    return sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _reply(
@@ -435,6 +618,31 @@ def _pagination_rows(action: str, current_page: int, page, *extra_parts: object)
     return [row]
 
 
+def _selection_control_rows(
+    *,
+    selected_count: int,
+    language: str,
+    done_callback: str,
+    clear_callback: str,
+) -> list[list[InlineKeyboardButton]]:
+    if selected_count <= 0:
+        return []
+    return [
+        [
+            InlineKeyboardButton(
+                text=f"{_label('done', language)} ({selected_count})",
+                callback_data=done_callback,
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=_label("clear", language),
+                callback_data=clear_callback,
+            )
+        ],
+    ]
+
+
 def _back_button(callback_data: str, language: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(text=_label("back", language), callback_data=callback_data)
 
@@ -446,6 +654,13 @@ def _category_for_partner(*, partner: Partner, category_id: UUID) -> ServiceCate
         raise ValidationError({"category": "Category is not available."}) from exc
 
 
+def _active_service_for_partner(*, partner: Partner, service_id: UUID) -> Service:
+    try:
+        return active_services_for_booking(partner).select_related("category").get(id=service_id)
+    except Service.DoesNotExist as exc:
+        raise ValidationError({"service": "Service is not available."}) from exc
+
+
 def _schedule_settings(partner: Partner) -> PartnerScheduleSettings:
     settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
     return settings
@@ -454,7 +669,7 @@ def _schedule_settings(partner: Partner) -> PartnerScheduleSettings:
 def _find_slot_for_final_confirm(
     *,
     partner: Partner,
-    service_id: UUID,
+    selected_service_ids: Iterable[UUID | str],
     local_date: date,
     start_at: datetime,
     now: datetime | None,
@@ -463,7 +678,7 @@ def _find_slot_for_final_confirm(
     while True:
         slot_page = available_booking_slots(
             partner=partner,
-            selected_service_ids=[service_id],
+            selected_service_ids=selected_service_ids,
             local_date=local_date,
             page=page_number,
             now=now,
@@ -476,9 +691,18 @@ def _find_slot_for_final_confirm(
         page_number += 1
 
 
-def _summary_context(*, summary: BookingSummary, language: str) -> dict[str, str]:
+def _summary_context(
+    *,
+    summary: BookingSummary,
+    language: str,
+    visible_lines: Iterable[BookingServiceLine] | None = None,
+    page_indicator: str = "",
+) -> dict[str, str]:
+    services = _services_label(visible_lines or summary.service_lines)
+    if page_indicator:
+        services = f"{services}\n{page_indicator}"
     return {
-        "services": _services_label(summary),
+        "services": services,
         "duration": _duration_label(summary.duration_minutes, language),
         "service_total": _money_label(summary.service_total_amount, summary.currency),
         "currency": summary.currency,
@@ -493,17 +717,18 @@ def _datetime_context(*, partner: Partner, start_at: datetime) -> dict[str, str]
     }
 
 
-def _services_label(summary: BookingSummary) -> str:
-    return "\n".join(line.name for line in summary.service_lines)
+def _services_label(lines: Iterable[BookingServiceLine]) -> str:
+    return "\n".join(line.name for line in lines)
 
 
 def _appointment_services_label(appointment) -> str:
     return ", ".join(item.service_name_snapshot for item in appointment.service_items.all())
 
 
-def _service_button_label(service, language: str) -> str:
+def _service_button_label(service, language: str, *, selected: bool) -> str:
+    marker = "✓" if selected else "○"
     return (
-        f"{service.name} · "
+        f"{marker} {service.name} · "
         f"{_duration_label(service.duration_minutes, language)} · "
         f"{_money_label(service.price_amount, service.currency)} {service.currency}"
     )
@@ -539,11 +764,38 @@ def _timestamp_token(value: datetime) -> int:
     return int(value.astimezone(datetime_timezone.utc).timestamp())
 
 
+def _coerce_service_ids(values: Iterable[UUID | str]) -> tuple[UUID, ...]:
+    service_ids: list[UUID] = []
+    seen: set[UUID] = set()
+    for value in values:
+        try:
+            service_id = value if isinstance(value, UUID) else UUID(str(value))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"services": "Invalid service selection."}) from exc
+        if service_id not in seen:
+            service_ids.append(service_id)
+            seen.add(service_id)
+    return tuple(service_ids)
+
+
 def _label(key: str, language: str) -> str:
     labels = {
         "back": {"uk": "Назад", "ru": "Назад", "en": "Back"},
         "choose_date": {"uk": "Обрати дату", "ru": "Выбрать дату", "en": "Choose date"},
+        "change_services": {
+            "uk": "Змінити послуги",
+            "ru": "Изменить услуги",
+            "en": "Change services",
+        },
+        "clear": {"uk": "Очистити вибір", "ru": "Очистить выбор", "en": "Clear selection"},
         "confirm": {"uk": "Підтвердити", "ru": "Подтвердить", "en": "Confirm"},
+        "contact_master": {
+            "uk": "Написати майстру",
+            "ru": "Написать мастеру",
+            "en": "Message master",
+        },
+        "done": {"uk": "Готово", "ru": "Готово", "en": "Done"},
+        "remove": {"uk": "Прибрати", "ru": "Убрать", "en": "Remove"},
         "slots": {"uk": "слотів", "ru": "слотов", "en": "slots"},
         "minutes": {"uk": "хв", "ru": "мин", "en": "min"},
         "needs_confirmation": {

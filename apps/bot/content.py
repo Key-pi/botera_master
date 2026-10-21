@@ -106,6 +106,13 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("services", "duration", "service_total", "currency"),
     ),
     _definition(
+        "booking.selection_changed",
+        uk="Набір або параметри послуг змінилися. Перевірте вибір ще раз.",
+        ru="Набор или параметры услуг изменились. Проверьте выбор ещё раз.",
+        en="The selected services or their details changed. Review your selection again.",
+        editable=False,
+    ),
+    _definition(
         "booking.date_select",
         uk="Оберіть дату. Доступний запис на {booking_horizon_days} днів вперед.",
         ru="Выберите дату. Запись доступна на {booking_horizon_days} дней вперед.",

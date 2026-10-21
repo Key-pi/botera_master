@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.appointments.models import Appointment
 from apps.bot.booking import (
+    booking_selection_signature,
     build_booking_categories_reply,
     build_booking_dates_reply,
     build_booking_final_confirm_reply,
@@ -15,6 +16,7 @@ from apps.bot.booking import (
     build_booking_summary_reply,
     confirm_booking_reply,
 )
+from apps.bot.routers import _booking_reply_from_callback_data
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
@@ -48,6 +50,19 @@ def bot_booking_context():
         price_amount=50000,
         duration_minutes=60,
     )
+    second_category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Brows",
+    )
+    second_service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=second_category,
+        name="Brow styling",
+        price_amount=20_000,
+        duration_minutes=30,
+    )
     identity = upsert_telegram_identity(
         telegram_user_id=777001,
         username="client",
@@ -64,6 +79,8 @@ def bot_booking_context():
         "resource": default_booking_resource_for_partner(created.partner),
         "category": category,
         "service": service,
+        "second_category": second_category,
+        "second_service": second_service,
         "client": client,
     }
 
@@ -92,8 +109,19 @@ def _first_callback(reply):
     return reply.reply_markup.inline_keyboard[0][0].callback_data
 
 
+def _callback_data(reply):
+    if reply.reply_markup is None:
+        return []
+    return [
+        button.callback_data
+        for row in reply.reply_markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+
+
 @pytest.mark.django_db
-def test_bot_booking_reply_builders_walk_single_service_flow(
+def test_bot_booking_reply_builders_walk_multi_service_flow(
     bot_booking_context,
     bot_booking_start,
 ):
@@ -115,43 +143,57 @@ def test_bot_booking_reply_builders_walk_single_service_flow(
     )
     summary = build_booking_summary_reply(
         partner=context["partner"],
-        service_id=context["service"].id,
+        selected_service_ids=[context["service"].id, context["second_service"].id],
         language="en",
     )
     dates = build_booking_dates_reply(
         partner=context["partner"],
-        service_id=context["service"].id,
+        selected_service_ids=[context["service"].id, context["second_service"].id],
         language="en",
         now=now,
     )
     slots = build_booking_slots_reply(
         partner=context["partner"],
-        service_id=context["service"].id,
+        selected_service_ids=[context["service"].id, context["second_service"].id],
         local_date=bot_booking_start.date(),
         language="en",
         now=now,
     )
     final = build_booking_final_confirm_reply(
         partner=context["partner"],
-        service_id=context["service"].id,
+        selected_service_ids=[context["service"].id, context["second_service"].id],
         start_at=bot_booking_start,
         language="en",
         now=now,
     )
 
     assert "Choose a service category" in categories.text
-    assert _first_callback(categories) == f"bk:svc:{context['category'].id.hex}:1"
+    category_callbacks = {
+        button.callback_data for row in categories.reply_markup.inline_keyboard for button in row
+    }
+    assert f"bk:svc:{context['category'].id.hex}:1" in category_callbacks
+    assert f"bk:svc:{context['second_category'].id.hex}:1" in category_callbacks
     assert "Manicure" in services.reply_markup.inline_keyboard[0][0].text
-    assert _first_callback(services) == f"bk:sum:{context['service'].id.hex}"
+    assert _first_callback(services) == f"bk:toggle:{context['service'].id.hex}:1"
     assert "Your selection" in summary.text
-    assert _first_callback(summary) == f"bk:dates:{context['service'].id.hex}:1"
+    assert "Manicure" in summary.text
+    assert "Brow styling" in summary.text
+    assert summary.reply_markup.inline_keyboard[-3][0].callback_data == "bk:dates:1"
     assert "Choose a date" in dates.text
-    assert _first_callback(dates).startswith(f"bk:slots:{context['service'].id.hex}:")
+    assert _first_callback(dates).startswith("bk:slots:")
     assert _first_callback(dates).endswith(":1")
     assert "Choose a time" in slots.text
-    assert _first_callback(slots).startswith(f"bk:final:{context['service'].id.hex}:")
+    assert "Manicure" in slots.text
+    assert "Brow styling" in slots.text
+    assert _first_callback(slots).startswith("bk:final:")
     assert "Confirm booking" in final.text
-    assert _first_callback(final).startswith(f"bk:create:{context['service'].id.hex}:")
+    assert "90 min" in final.text
+    assert _first_callback(final).startswith("bk:create:")
+    assert all(
+        len(callback_data.encode("utf-8")) <= 64
+        for reply in (categories, services, summary, dates, slots, final)
+        for callback_data in _callback_data(reply)
+    )
 
 
 @pytest.mark.django_db
@@ -170,7 +212,7 @@ def test_confirm_booking_reply_creates_confirmed_appointment(
     reply = confirm_booking_reply(
         partner=context["partner"],
         client_profile=context["client"],
-        service_id=context["service"].id,
+        selected_service_ids=[context["service"].id, context["second_service"].id],
         start_at=bot_booking_start,
         language="en",
         now=bot_booking_start - timedelta(hours=1),
@@ -178,7 +220,8 @@ def test_confirm_booking_reply_creates_confirmed_appointment(
 
     appointment = Appointment.objects.get(partner=context["partner"])
     assert appointment.status == Appointment.Status.CONFIRMED
-    assert appointment.service_items.count() == 1
+    assert appointment.service_items.count() == 2
+    assert appointment.end_at - appointment.start_at == timedelta(minutes=90)
     assert "confirmed" in reply.text
 
 
@@ -209,6 +252,94 @@ def test_bot_booking_adapter_rejects_cross_partner_service(bot_booking_context):
     with pytest.raises(ValidationError):
         build_booking_summary_reply(
             partner=context["partner"],
-            service_id=other_service.id,
+            selected_service_ids=[other_service.id],
             language="en",
         )
+
+
+@pytest.mark.django_db
+def test_booking_callback_selection_survives_categories_and_revalidates_summary(
+    bot_booking_context,
+):
+    context = bot_booking_context
+    first = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=f"bk:toggle:{context['service'].id.hex}:1",
+    )
+    second = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=f"bk:toggle:{context['second_service'].id.hex}:1",
+        selected_service_ids=first.selected_service_ids,
+    )
+    summary = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="bk:sum:1",
+        selected_service_ids=second.selected_service_ids,
+    )
+
+    assert set(summary.selected_service_ids) == {
+        context["service"].id,
+        context["second_service"].id,
+    }
+    assert summary.summary_signature == booking_selection_signature(
+        partner=context["partner"],
+        selected_service_ids=summary.selected_service_ids,
+    )
+
+    context["second_service"].price_amount += 5_000
+    context["second_service"].save(update_fields=["price_amount", "updated_at"])
+    review = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="bk:dates:1",
+        selected_service_ids=summary.selected_service_ids,
+        summary_signature=summary.summary_signature,
+    )
+
+    assert "changed" in review.reply.text
+    assert "Your selection" in review.reply.text
+    assert review.summary_signature != summary.summary_signature
+    assert review.complete is False
+
+    summary_review = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="bk:sum:1",
+        selected_service_ids=summary.selected_service_ids,
+        summary_signature=summary.summary_signature,
+    )
+
+    assert "changed" in summary_review.reply.text
+    assert summary_review.summary_signature == review.summary_signature
+
+
+@pytest.mark.django_db
+def test_booking_callback_can_remove_and_reset_selected_services(bot_booking_context):
+    context = bot_booking_context
+    selected_ids = (context["service"].id, context["second_service"].id)
+
+    removed = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=f"bk:remove:{context['second_service'].id.hex}:1",
+        selected_service_ids=selected_ids,
+    )
+
+    assert removed.selected_service_ids == (context["service"].id,)
+    assert "Manicure" in removed.reply.text
+    assert "Brow styling" not in removed.reply.text
+
+    reset = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="bk:restart:1",
+        selected_service_ids=removed.selected_service_ids,
+        summary_signature=removed.summary_signature,
+    )
+
+    assert reset.selected_service_ids == ()
+    assert reset.summary_signature == ""
+    assert "Choose a service category" in reset.reply.text
