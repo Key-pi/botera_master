@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from datetime import timezone as datetime_timezone
 from hashlib import sha256
 from uuid import UUID
@@ -15,6 +15,7 @@ from apps.appointments.client_booking import (
     BookingServiceLine,
     BookingSummary,
     available_booking_dates,
+    available_booking_months,
     available_booking_slots,
     booking_category_page,
     booking_services_page,
@@ -33,8 +34,8 @@ from core.timezones import to_partner_time
 from .services import render_content_template
 
 BOOKING_CALLBACK_PREFIX = "bk"
-BOOKING_SEARCH_DAYS = 30
 BOOKING_SUMMARY_PAGE_SIZE = 5
+NEAREST_DATE_SOURCE = "n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,12 +227,11 @@ def build_booking_dates_reply(
     current_time = now or timezone.now()
     settings = _schedule_settings(partner)
     start_date = to_partner_time(current_time, partner.timezone).date()
-    days = min(settings.booking_horizon_days, BOOKING_SEARCH_DAYS)
     dates_page = available_booking_dates(
         partner=partner,
         selected_service_ids=selected_service_ids,
         start_date=start_date,
-        days=days,
+        days=settings.booking_horizon_days,
         page=page,
         now=current_time,
     )
@@ -241,19 +241,138 @@ def build_booking_dates_reply(
             key="booking.no_dates",
             language=language,
             reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=_no_dates_rows(language=language),
+            ),
+        )
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_date_button_label(option.local_date, option.slot_count, language),
+                callback_data=_callback(
+                    "slots",
+                    option.local_date.strftime("%Y%m%d"),
+                    1,
+                    NEAREST_DATE_SOURCE,
+                ),
+            )
+        ]
+        for option in dates_page.items
+    ]
+    rows.extend(_pagination_rows("dates", dates_page.page, dates_page))
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=_label("choose_month", language),
+                callback_data=_callback("months", 1),
+            )
+        ]
+    )
+    rows.append([_back_button(_callback("sum", 1), language)])
+    return _reply(
+        partner=partner,
+        key="booking.date_select",
+        language=language,
+        context={"booking_horizon_days": str(settings.booking_horizon_days)},
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def build_booking_months_reply(
+    *,
+    partner: Partner,
+    selected_service_ids: Iterable[UUID | str],
+    language: str,
+    page: int = 1,
+    now: datetime | None = None,
+) -> BotBookingReply:
+    """Render months that contain available dates inside the booking horizon."""
+
+    current_time = now or timezone.now()
+    settings = _schedule_settings(partner)
+    start_date = to_partner_time(current_time, partner.timezone).date()
+    months_page = available_booking_months(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+        start_date=start_date,
+        days=settings.booking_horizon_days,
+        page=page,
+        now=current_time,
+    )
+    if not months_page.items:
+        return _reply(
+            partner=partner,
+            key="booking.no_dates",
+            language=language,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=_no_dates_rows(language=language),
+            ),
+        )
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_month_button_label(
+                    option.month_start,
+                    option.available_date_count,
+                    language,
+                ),
+                callback_data=_callback("month", _month_token(option.month_start), 1),
+            )
+        ]
+        for option in months_page.items
+    ]
+    rows.extend(_pagination_rows("months", months_page.page, months_page))
+    rows.append([_back_button(_callback("dates", 1), language)])
+    return _reply(
+        partner=partner,
+        key="booking.month_select",
+        language=language,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def build_booking_month_dates_reply(
+    *,
+    partner: Partner,
+    selected_service_ids: Iterable[UUID | str],
+    month_start: date,
+    language: str,
+    page: int = 1,
+    now: datetime | None = None,
+) -> BotBookingReply:
+    """Render available dates within one selected local calendar month."""
+
+    current_time = now or timezone.now()
+    settings = _schedule_settings(partner)
+    horizon_start = to_partner_time(current_time, partner.timezone).date()
+    horizon_end = horizon_start + timedelta(days=settings.booking_horizon_days)
+    if month_start.day != 1:
+        raise ValidationError({"month": "Month must start on its first day."})
+    month_end = _next_month(month_start)
+    search_start = max(horizon_start, month_start)
+    search_end = min(horizon_end, month_end)
+    if search_start >= search_end:
+        raise ValidationError({"month": "Month is outside the booking horizon."})
+
+    dates_page = available_booking_dates(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+        start_date=search_start,
+        days=(search_end - search_start).days,
+        page=page,
+        now=current_time,
+    )
+    month_token = _month_token(month_start)
+    if not dates_page.items:
+        return _reply(
+            partner=partner,
+            key="booking.no_dates",
+            language=language,
+            reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=_label("change_services", language),
-                            callback_data=_callback("restart", 1),
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text=_label("contact_master", language),
-                            callback_data="pf:contact",
-                        )
-                    ],
+                    [_back_button(_callback("months", 1), language)],
+                    *_no_dates_rows(language=language),
                 ]
             ),
         )
@@ -266,13 +385,14 @@ def build_booking_dates_reply(
                     "slots",
                     option.local_date.strftime("%Y%m%d"),
                     1,
+                    month_token,
                 ),
             )
         ]
         for option in dates_page.items
     ]
-    rows.extend(_pagination_rows("dates", dates_page.page, dates_page))
-    rows.append([_back_button(_callback("sum", 1), language)])
+    rows.extend(_pagination_rows("month", dates_page.page, dates_page, month_token))
+    rows.append([_back_button(_callback("months", 1), language)])
     return _reply(
         partner=partner,
         key="booking.date_select",
@@ -289,10 +409,12 @@ def build_booking_slots_reply(
     local_date: date,
     language: str,
     page: int = 1,
+    date_source: str = NEAREST_DATE_SOURCE,
     now: datetime | None = None,
 ) -> BotBookingReply:
     """Render slots for one selected local date."""
 
+    validate_date_source_token(date_source=date_source, local_date=local_date)
     summary = build_booking_summary(
         partner=partner,
         selected_service_ids=selected_service_ids,
@@ -311,7 +433,7 @@ def build_booking_slots_reply(
             language=language,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [_back_button(_callback("dates", 1), language)],
+                    [_back_button(_date_list_callback(date_source), language)],
                     [
                         InlineKeyboardButton(
                             text=_label("change_services", language),
@@ -337,7 +459,11 @@ def build_booking_slots_reply(
                     slot.is_near_fit,
                     language,
                 ),
-                callback_data=_callback("final", _timestamp_token(slot.start_at)),
+                callback_data=_callback(
+                    "final",
+                    _timestamp_token(slot.start_at),
+                    date_source,
+                ),
             )
         ]
         for slot in slots_page.items
@@ -348,9 +474,10 @@ def build_booking_slots_reply(
             slots_page.page,
             slots_page,
             local_date.strftime("%Y%m%d"),
+            date_source,
         )
     )
-    rows.append([_back_button(_callback("dates", 1), language)])
+    rows.append([_back_button(_date_list_callback(date_source), language)])
     return _reply(
         partner=partner,
         key="booking.time_select",
@@ -370,10 +497,13 @@ def build_booking_final_confirm_reply(
     selected_service_ids: Iterable[UUID | str],
     start_at: datetime,
     language: str,
+    date_source: str = NEAREST_DATE_SOURCE,
     now: datetime | None = None,
 ) -> BotBookingReply:
     """Render final confirmation for a selected slot after fresh slot validation."""
 
+    local_date = to_partner_time(start_at, partner.timezone).date()
+    validate_date_source_token(date_source=date_source, local_date=local_date)
     summary = build_booking_summary(
         partner=partner,
         selected_service_ids=selected_service_ids,
@@ -381,12 +511,17 @@ def build_booking_final_confirm_reply(
     selected_slot = _find_slot_for_final_confirm(
         partner=partner,
         selected_service_ids=selected_service_ids,
-        local_date=to_partner_time(start_at, partner.timezone).date(),
+        local_date=local_date,
         start_at=start_at,
         now=now,
     )
     if selected_slot is None:
-        return _reply(partner=partner, key="booking.slot_taken", language=language)
+        return build_booking_slot_taken_reply(
+            partner=partner,
+            start_at=start_at,
+            language=language,
+            date_source=date_source,
+        )
 
     text = _render(
         partner=partner,
@@ -409,21 +544,59 @@ def build_booking_final_confirm_reply(
         [
             InlineKeyboardButton(
                 text=_label("confirm", language),
-                callback_data=_callback("create", _timestamp_token(start_at)),
+                callback_data=_callback(
+                    "create",
+                    _timestamp_token(start_at),
+                    date_source,
+                ),
             )
         ],
         [
             _back_button(
                 _callback(
                     "slots",
-                    to_partner_time(start_at, partner.timezone).strftime("%Y%m%d"),
+                    local_date.strftime("%Y%m%d"),
                     1,
+                    date_source,
                 ),
                 language,
             )
         ],
     ]
     return BotBookingReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def build_booking_slot_taken_reply(
+    *,
+    partner: Partner,
+    start_at: datetime,
+    language: str,
+    date_source: str,
+) -> BotBookingReply:
+    """Return a stale-slot error with navigation back to the originating date list."""
+
+    local_date = to_partner_time(start_at, partner.timezone).date()
+    validate_date_source_token(date_source=date_source, local_date=local_date)
+    return _reply(
+        partner=partner,
+        key="booking.slot_taken",
+        language=language,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    _back_button(
+                        _callback(
+                            "slots",
+                            local_date.strftime("%Y%m%d"),
+                            1,
+                            date_source,
+                        ),
+                        language,
+                    )
+                ]
+            ]
+        ),
+    )
 
 
 def confirm_booking_reply(
@@ -477,6 +650,15 @@ def parse_date_token(value: str) -> date:
         return datetime.strptime(value, "%Y%m%d").date()
     except ValueError as exc:
         raise ValidationError({"callback": "Invalid callback date."}) from exc
+
+
+def parse_month_token(value: str) -> date:
+    """Parse a compact local calendar month callback token."""
+
+    try:
+        return datetime.strptime(value, "%Y%m").date().replace(day=1)
+    except ValueError as exc:
+        raise ValidationError({"callback": "Invalid callback month."}) from exc
 
 
 def parse_timestamp_token(value: str) -> datetime:
@@ -643,6 +825,23 @@ def _selection_control_rows(
     ]
 
 
+def _no_dates_rows(*, language: str) -> list[list[InlineKeyboardButton]]:
+    return [
+        [
+            InlineKeyboardButton(
+                text=_label("change_services", language),
+                callback_data=_callback("restart", 1),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=_label("contact_master", language),
+                callback_data="pf:contact",
+            )
+        ],
+    ]
+
+
 def _back_button(callback_data: str, language: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(text=_label("back", language), callback_data=callback_data)
 
@@ -738,6 +937,13 @@ def _date_button_label(local_date: date, slot_count: int, language: str) -> str:
     return f"{local_date.isoformat()} · {slot_count} {_label('slots', language)}"
 
 
+def _month_button_label(month_start: date, date_count: int, language: str) -> str:
+    return (
+        f"{_month_name(month_start.month, language)} {month_start.year} · "
+        f"{date_count} {_available_dates_label(date_count, language)}"
+    )
+
+
 def _slot_button_label(
     start_at: datetime,
     timezone_name: str,
@@ -764,6 +970,32 @@ def _timestamp_token(value: datetime) -> int:
     return int(value.astimezone(datetime_timezone.utc).timestamp())
 
 
+def _month_token(value: date) -> str:
+    return value.strftime("%Y%m")
+
+
+def _next_month(month_start: date) -> date:
+    if month_start.month == 12:
+        return date(month_start.year + 1, 1, 1)
+    return date(month_start.year, month_start.month + 1, 1)
+
+
+def validate_date_source_token(*, date_source: str, local_date: date) -> None:
+    """Validate a callback return target without trusting callback state."""
+
+    if date_source == NEAREST_DATE_SOURCE:
+        return
+    if parse_month_token(date_source) != local_date.replace(day=1):
+        raise ValidationError({"callback": "Date does not belong to the selected month."})
+
+
+def _date_list_callback(date_source: str) -> str:
+    if date_source == NEAREST_DATE_SOURCE:
+        return _callback("dates", 1)
+    parse_month_token(date_source)
+    return _callback("month", date_source, 1)
+
+
 def _coerce_service_ids(values: Iterable[UUID | str]) -> tuple[UUID, ...]:
     service_ids: list[UUID] = []
     seen: set[UUID] = set()
@@ -782,6 +1014,11 @@ def _label(key: str, language: str) -> str:
     labels = {
         "back": {"uk": "Назад", "ru": "Назад", "en": "Back"},
         "choose_date": {"uk": "Обрати дату", "ru": "Выбрать дату", "en": "Choose date"},
+        "choose_month": {
+            "uk": "Обрати місяць",
+            "ru": "Выбрать месяц",
+            "en": "Choose month",
+        },
         "change_services": {
             "uk": "Змінити послуги",
             "ru": "Изменить услуги",
@@ -806,3 +1043,72 @@ def _label(key: str, language: str) -> str:
     }
     translations = labels[key]
     return translations.get(language, translations["uk"])
+
+
+def _available_dates_label(count: int, language: str) -> str:
+    if language == "en":
+        return "available date" if count == 1 else "available dates"
+
+    last_digit = count % 10
+    last_two_digits = count % 100
+    if language == "ru":
+        if last_digit == 1 and last_two_digits != 11:
+            return "доступная дата"
+        if 2 <= last_digit <= 4 and not 12 <= last_two_digits <= 14:
+            return "доступные даты"
+        return "доступных дат"
+
+    if last_digit == 1 and last_two_digits != 11:
+        return "доступна дата"
+    if 2 <= last_digit <= 4 and not 12 <= last_two_digits <= 14:
+        return "доступні дати"
+    return "доступних дат"
+
+
+def _month_name(month: int, language: str) -> str:
+    names = {
+        "uk": (
+            "Січень",
+            "Лютий",
+            "Березень",
+            "Квітень",
+            "Травень",
+            "Червень",
+            "Липень",
+            "Серпень",
+            "Вересень",
+            "Жовтень",
+            "Листопад",
+            "Грудень",
+        ),
+        "ru": (
+            "Январь",
+            "Февраль",
+            "Март",
+            "Апрель",
+            "Май",
+            "Июнь",
+            "Июль",
+            "Август",
+            "Сентябрь",
+            "Октябрь",
+            "Ноябрь",
+            "Декабрь",
+        ),
+        "en": (
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ),
+    }
+    language_names = names.get(language, names["uk"])
+    return language_names[month - 1]

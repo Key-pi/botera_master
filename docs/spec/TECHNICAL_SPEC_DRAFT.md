@@ -252,8 +252,8 @@ Content shape:
   - `booking.request_cancelled_by_client`: `{date}`, `{time}`.
   - `booking.request_confirmed_by_master`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.request_declined_by_master`: `{partner_name}`, `{date}`, `{time}`, `{reason}`.
-- `booking.slot_taken`, `booking.selection_changed`, and "no available slots"
-  remain system-only localized service texts in MVP.
+- `booking.slot_taken`, `booking.selection_changed`, `booking.month_select`,
+  and "no available slots" remain system-only localized service texts in MVP.
 - Ordinary client booking summary/final confirmation does not show penalties unless penalties have already been explicitly applied to that appointment.
 - Initial editable `cancellation/reschedule` keys:
   - `appointment.cancel_confirm_prompt`: `{date}`, `{time}`, `{services}`.
@@ -892,6 +892,13 @@ Tenant strategy:
 Time-range strategy:
 
 - Availability windows, blocked time, and appointments all need indexed start/end timestamps.
+- Client date selection shows seven nearest available dates per page and a
+  month picker containing only months/dates with valid slots inside the partner
+  booking horizon.
+- Wide-horizon date discovery should preload availability, blocked time, and
+  confirmed busy intervals for the requested range once, then generate each
+  local date from that bounded in-memory context instead of issuing queries per
+  day.
 - Confirmed appointment overlap is the critical protected case and is explicitly confirmed as impossible for one booking resource.
 - Solo-master MVP has one default booking resource per partner.
 - Future studio support can add multiple booking resources under one partner, allowing parallel appointments for different masters/resources.

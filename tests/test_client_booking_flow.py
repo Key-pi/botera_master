@@ -146,6 +146,36 @@ def test_client_can_browse_categories_services_summary_dates_and_slots(
 
 
 @pytest.mark.django_db
+def test_year_horizon_date_search_uses_bounded_schedule_queries(
+    booking_context,
+    rounded_future_start,
+    django_assert_max_num_queries,
+):
+    context = booking_context
+    far_start = rounded_future_start + timedelta(days=300)
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        booking_horizon_days=365,
+    )
+    _open_window(context, far_start)
+
+    with django_assert_max_num_queries(6):
+        dates = available_booking_dates(
+            partner=context["partner"],
+            selected_service_ids=[context["service"].id],
+            start_date=rounded_future_start.date(),
+            days=365,
+            booking_resource=context["resource"],
+            now=rounded_future_start - timedelta(hours=1),
+        )
+
+    assert len(dates.items) == 1
+    assert dates.items[0].local_date == far_start.date()
+
+
+@pytest.mark.django_db
 def test_auto_confirm_booking_creates_confirmed_and_blocks_same_slot(
     booking_context,
     rounded_future_start,

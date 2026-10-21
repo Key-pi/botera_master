@@ -513,9 +513,11 @@ def generate_available_slots(
     range_end: datetime,
     schedule_settings: PartnerScheduleSettings | None = None,
     busy_intervals: Sequence[TimeInterval] = (),
+    schedule_windows: Sequence[AvailabilityWindow] | None = None,
+    blocked_intervals: Sequence[TimeInterval] | None = None,
     now: datetime | None = None,
 ) -> tuple[GeneratedSlot, ...]:
-    """Generate client-visible slots from concrete windows, blocks, and busy intervals."""
+    """Generate slots, optionally reusing schedule data loaded for a wider range."""
 
     _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
     if duration_minutes <= 0:
@@ -536,24 +538,50 @@ def generate_available_slots(
     if search_start >= search_end:
         return ()
 
-    windows = availability_windows_for_resource(
-        partner=partner,
-        booking_resource=booking_resource,
-        start_at=search_start,
-        end_at=search_end,
-    )
-    blocks = tuple(
-        TimeInterval(block.start_at, block.end_at)
-        for block in blocked_times_for_resource(
-            partner=partner,
-            booking_resource=booking_resource,
-            start_at=search_start,
-            end_at=search_end + timedelta(minutes=schedule_settings.near_fit_tolerance_minutes),
-        )
-    )
     duration = timedelta(minutes=duration_minutes)
     step = timedelta(minutes=schedule_settings.slot_step_minutes)
     tolerance = timedelta(minutes=schedule_settings.near_fit_tolerance_minutes)
+    overlap_lookahead = duration + tolerance
+    if schedule_windows is None:
+        windows = tuple(
+            availability_windows_for_resource(
+                partner=partner,
+                booking_resource=booking_resource,
+                start_at=search_start,
+                end_at=search_end,
+            )
+        )
+    else:
+        windows = tuple(
+            window
+            for window in schedule_windows
+            if window.partner_id == partner.id
+            and window.booking_resource_id == booking_resource.id
+            and window.start_at < search_end
+            and window.end_at > search_start
+        )
+
+    if blocked_intervals is None:
+        blocks = tuple(
+            TimeInterval(block.start_at, block.end_at)
+            for block in blocked_times_for_resource(
+                partner=partner,
+                booking_resource=booking_resource,
+                start_at=search_start,
+                end_at=search_end + overlap_lookahead,
+            )
+        )
+    else:
+        blocks = tuple(
+            interval
+            for interval in blocked_intervals
+            if interval.start_at < search_end + overlap_lookahead and interval.end_at > search_start
+        )
+    relevant_busy_intervals = tuple(
+        interval
+        for interval in busy_intervals
+        if interval.start_at < search_end + overlap_lookahead and interval.end_at > search_start
+    )
     slots_by_interval: dict[tuple[datetime, datetime], GeneratedSlot] = {}
 
     for window in windows:
@@ -569,7 +597,7 @@ def generate_available_slots(
             if (is_normal_fit or is_near_fit) and not _overlaps_any(
                 candidate_start,
                 candidate_end,
-                (*blocks, *busy_intervals),
+                (*blocks, *relevant_busy_intervals),
             ):
                 key = (candidate_start, candidate_end)
                 previous = slots_by_interval.get(key)

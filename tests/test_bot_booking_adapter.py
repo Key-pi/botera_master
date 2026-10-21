@@ -11,6 +11,8 @@ from apps.bot.booking import (
     build_booking_categories_reply,
     build_booking_dates_reply,
     build_booking_final_confirm_reply,
+    build_booking_month_dates_reply,
+    build_booking_months_reply,
     build_booking_services_reply,
     build_booking_slots_reply,
     build_booking_summary_reply,
@@ -181,11 +183,12 @@ def test_bot_booking_reply_builders_walk_multi_service_flow(
     assert summary.reply_markup.inline_keyboard[-3][0].callback_data == "bk:dates:1"
     assert "Choose a date" in dates.text
     assert _first_callback(dates).startswith("bk:slots:")
-    assert _first_callback(dates).endswith(":1")
+    assert _first_callback(dates).endswith(":1:n")
     assert "Choose a time" in slots.text
     assert "Manicure" in slots.text
     assert "Brow styling" in slots.text
     assert _first_callback(slots).startswith("bk:final:")
+    assert _first_callback(slots).endswith(":n")
     assert "Confirm booking" in final.text
     assert "90 min" in final.text
     assert _first_callback(final).startswith("bk:create:")
@@ -343,3 +346,132 @@ def test_booking_callback_can_remove_and_reset_selected_services(bot_booking_con
     assert reset.selected_service_ids == ()
     assert reset.summary_signature == ""
     assert "Choose a service category" in reset.reply.text
+
+
+@pytest.mark.django_db
+def test_booking_month_navigation_reaches_far_horizon_and_preserves_back_path(
+    bot_booking_context,
+    bot_booking_start,
+):
+    context = bot_booking_context
+    now = bot_booking_start - timedelta(hours=1)
+    far_start = bot_booking_start + timedelta(days=90)
+    month_token = far_start.strftime("%Y%m")
+    selected_ids = (context["service"].id, context["second_service"].id)
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        booking_horizon_days=180,
+    )
+    _open_window(context, far_start)
+
+    nearest_dates = build_booking_dates_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        language="en",
+        now=now,
+    )
+    months = build_booking_months_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        language="en",
+        now=now,
+    )
+    month_dates = build_booking_month_dates_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        month_start=far_start.date().replace(day=1),
+        language="en",
+        now=now,
+    )
+    slots = build_booking_slots_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        local_date=far_start.date(),
+        language="en",
+        date_source=month_token,
+        now=now,
+    )
+    final = build_booking_final_confirm_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        start_at=far_start,
+        language="en",
+        date_source=month_token,
+        now=now,
+    )
+
+    assert far_start.strftime("%Y%m%d") in _first_callback(nearest_dates)
+    assert f"bk:month:{month_token}:1" in _callback_data(months)
+    assert _first_callback(month_dates) == (
+        f"bk:slots:{far_start.strftime('%Y%m%d')}:1:{month_token}"
+    )
+    assert slots.reply_markup.inline_keyboard[-1][0].callback_data == (f"bk:month:{month_token}:1")
+    assert final.reply_markup.inline_keyboard[-1][0].callback_data == (
+        f"bk:slots:{far_start.strftime('%Y%m%d')}:1:{month_token}"
+    )
+    assert all(
+        len(callback_data.encode("utf-8")) <= 64
+        for reply in (nearest_dates, months, month_dates, slots, final)
+        for callback_data in _callback_data(reply)
+    )
+
+    with pytest.raises(ValidationError):
+        build_booking_slots_reply(
+            partner=context["partner"],
+            selected_service_ids=selected_ids,
+            local_date=far_start.date(),
+            language="en",
+            date_source="209901",
+            now=now,
+        )
+
+
+@pytest.mark.django_db
+def test_final_booking_race_returns_to_slots_without_clearing_selection(
+    bot_booking_context,
+    bot_booking_start,
+):
+    context = bot_booking_context
+    selected_ids = (context["service"].id, context["second_service"].id)
+    now = bot_booking_start - timedelta(hours=1)
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+    )
+    _open_window(context, bot_booking_start)
+    final = build_booking_final_confirm_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        start_at=bot_booking_start,
+        language="en",
+        now=now,
+    )
+    confirm_booking_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        selected_service_ids=selected_ids,
+        start_at=bot_booking_start,
+        language="en",
+        now=now,
+    )
+
+    result = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=_first_callback(final),
+        selected_service_ids=selected_ids,
+        summary_signature=booking_selection_signature(
+            partner=context["partner"],
+            selected_service_ids=selected_ids,
+        ),
+    )
+
+    assert result.complete is False
+    assert result.selected_service_ids == selected_ids
+    assert "already taken" in result.reply.text
+    assert result.reply.reply_markup.inline_keyboard[0][0].callback_data == (
+        f"bk:slots:{bot_booking_start.strftime('%Y%m%d')}:1:n"
+    )

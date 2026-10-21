@@ -120,6 +120,13 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("booking_horizon_days",),
     ),
     _definition(
+        "booking.month_select",
+        uk="Оберіть місяць, у якому є доступні дати.",
+        ru="Выберите месяц, в котором есть доступные даты.",
+        en="Choose a month that has available dates.",
+        editable=False,
+    ),
+    _definition(
         "booking.no_categories",
         uk="Наразі немає доступних категорій послуг.",
         ru="Сейчас нет доступных категорий услуг.",

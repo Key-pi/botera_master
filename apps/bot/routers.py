@@ -18,16 +18,21 @@ from apps.bot.booking import (
     build_booking_categories_reply,
     build_booking_dates_reply,
     build_booking_final_confirm_reply,
+    build_booking_month_dates_reply,
+    build_booking_months_reply,
     build_booking_services_reply,
+    build_booking_slot_taken_reply,
     build_booking_slots_reply,
     build_booking_summary_reply,
     confirm_booking_reply,
     parse_date_token,
+    parse_month_token,
     parse_page_token,
     parse_timestamp_token,
     parse_uuid_token,
     remove_booking_service_selection,
     toggle_booking_service_selection,
+    validate_date_source_token,
 )
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
@@ -66,6 +71,7 @@ from apps.bot.services import (
     resolve_client_profile_from_telegram_user,
 )
 from apps.partners.models import Partner
+from core.timezones import to_partner_time
 
 
 class ClientMessageState(StatesGroup):
@@ -430,7 +436,7 @@ def _booking_reply_from_callback_data(
             summary_signature=current_signature,
         )
 
-    if action in {"dates", "slots", "final", "create"}:
+    if action in {"dates", "months", "month", "slots", "final", "create"}:
         review_result = _booking_selection_review_result(
             partner=partner,
             language=language,
@@ -451,7 +457,30 @@ def _booking_reply_from_callback_data(
             selected_service_ids=selected_service_ids,
             summary_signature=summary_signature,
         )
-    if action == "slots" and len(parts) == 4:
+    if action == "months" and len(parts) == 3:
+        return BookingCallbackResult(
+            reply=build_booking_months_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                language=language,
+                page=parse_page_token(parts[2]),
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+    if action == "month" and len(parts) == 4:
+        return BookingCallbackResult(
+            reply=build_booking_month_dates_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                month_start=parse_month_token(parts[2]),
+                language=language,
+                page=parse_page_token(parts[3]),
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+        )
+    if action == "slots" and len(parts) == 5:
         return BookingCallbackResult(
             reply=build_booking_slots_reply(
                 partner=partner,
@@ -459,30 +488,53 @@ def _booking_reply_from_callback_data(
                 local_date=parse_date_token(parts[2]),
                 language=language,
                 page=parse_page_token(parts[3]),
+                date_source=parts[4],
             ),
             selected_service_ids=selected_service_ids,
             summary_signature=summary_signature,
         )
-    if action == "final" and len(parts) == 3:
+    if action == "final" and len(parts) == 4:
         return BookingCallbackResult(
             reply=build_booking_final_confirm_reply(
                 partner=partner,
                 selected_service_ids=selected_service_ids,
                 start_at=parse_timestamp_token(parts[2]),
                 language=language,
+                date_source=parts[3],
             ),
             selected_service_ids=selected_service_ids,
             summary_signature=summary_signature,
         )
-    if action == "create" and len(parts) == 3:
-        return BookingCallbackResult(
-            reply=confirm_booking_reply(
+    if action == "create" and len(parts) == 4:
+        start_at = parse_timestamp_token(parts[2])
+        date_source = parts[3]
+        validate_date_source_token(
+            date_source=date_source,
+            local_date=to_partner_time(start_at, partner.timezone).date(),
+        )
+        try:
+            reply = confirm_booking_reply(
                 partner=partner,
                 client_profile=client_profile,
                 selected_service_ids=selected_service_ids,
-                start_at=parse_timestamp_token(parts[2]),
+                start_at=start_at,
                 language=language,
-            ),
+            )
+        except ValidationError as exc:
+            if "start_at" not in getattr(exc, "message_dict", {}):
+                raise
+            return BookingCallbackResult(
+                reply=build_booking_slot_taken_reply(
+                    partner=partner,
+                    start_at=start_at,
+                    language=language,
+                    date_source=date_source,
+                ),
+                selected_service_ids=selected_service_ids,
+                summary_signature=summary_signature,
+            )
+        return BookingCallbackResult(
+            reply=reply,
             selected_service_ids=selected_service_ids,
             summary_signature=summary_signature,
             complete=True,

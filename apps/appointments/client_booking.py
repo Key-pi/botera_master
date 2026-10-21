@@ -37,8 +37,13 @@ from apps.bot.pagination import (
 from apps.catalog.models import DEFAULT_CURRENCY, Service, ServiceCategory
 from apps.catalog.selectors import active_categories_for_booking, active_services_for_booking
 from apps.schedule.models import PartnerScheduleSettings
+from apps.schedule.selectors import (
+    availability_windows_for_resource,
+    blocked_times_for_resource,
+)
 from apps.schedule.services import (
     GeneratedSlot,
+    TimeInterval,
     generate_available_slots,
     get_or_create_default_booking_resource,
 )
@@ -51,6 +56,7 @@ if TYPE_CHECKING:
 
 
 BOOKING_DATES_PAGE_SIZE = 7
+BOOKING_MONTHS_PAGE_SIZE = 6
 BOOKING_SLOTS_PAGE_SIZE = 8
 CLIENT_HISTORY_PAGE_SIZE = 5
 
@@ -88,6 +94,14 @@ class BookingDateOption:
     slot_count: int
     first_slot_at: datetime
     has_near_fit: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BookingMonthOption:
+    """A local calendar month containing at least one available booking date."""
+
+    month_start: date
+    available_date_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,30 +213,49 @@ def available_booking_dates(
     if days <= 0:
         raise ValidationError({"days": "Search window must be positive."})
 
-    booking_resource = booking_resource or get_or_create_default_booking_resource(partner=partner)
-    summary = build_booking_summary(partner=partner, selected_service_ids=selected_service_ids)
-    options: list[BookingDateOption] = []
+    options = _available_booking_date_options(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+        start_date=start_date,
+        days=days,
+        booking_resource=booking_resource,
+        now=now,
+    )
+    return paginate_telegram_entities(options, page=page, per_page=per_page)
 
-    for offset in range(days):
-        local_date = start_date + timedelta(days=offset)
-        slots = _slot_options_for_local_date(
-            partner=partner,
-            booking_resource=booking_resource,
-            duration_minutes=summary.duration_minutes,
-            local_date=local_date,
-            now=now,
-        )
-        if slots:
-            options.append(
-                BookingDateOption(
-                    local_date=local_date,
-                    slot_count=len(slots),
-                    first_slot_at=slots[0].start_at,
-                    has_near_fit=any(slot.is_near_fit for slot in slots),
-                )
-            )
 
-    return paginate_telegram_entities(tuple(options), page=page, per_page=per_page)
+def available_booking_months(
+    *,
+    partner: Partner,
+    selected_service_ids: Iterable[UUID | str],
+    start_date: date,
+    days: int,
+    booking_resource: BookingResource | None = None,
+    page: int = 1,
+    per_page: int = BOOKING_MONTHS_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingMonthOption]:
+    """Return months that contain at least one available date in the horizon."""
+
+    if days <= 0:
+        raise ValidationError({"days": "Search window must be positive."})
+    date_options = _available_booking_date_options(
+        partner=partner,
+        selected_service_ids=selected_service_ids,
+        start_date=start_date,
+        days=days,
+        booking_resource=booking_resource,
+        now=now,
+    )
+    date_counts: dict[date, int] = {}
+    for option in date_options:
+        month_start = option.local_date.replace(day=1)
+        date_counts[month_start] = date_counts.get(month_start, 0) + 1
+    months = tuple(
+        BookingMonthOption(month_start=month_start, available_date_count=count)
+        for month_start, count in sorted(date_counts.items())
+    )
+    return paginate_telegram_entities(months, page=page, per_page=per_page)
 
 
 def available_booking_slots(
@@ -522,6 +555,85 @@ def client_profile_overview(
             now=now,
         ),
     )
+
+
+def _available_booking_date_options(
+    *,
+    partner: Partner,
+    selected_service_ids: Iterable[UUID | str],
+    start_date: date,
+    days: int,
+    booking_resource: BookingResource | None,
+    now: datetime | None,
+) -> tuple[BookingDateOption, ...]:
+    """Compute a date range while loading schedule and busy data only once."""
+
+    current_time = now or timezone.now()
+    booking_resource = booking_resource or get_or_create_default_booking_resource(partner=partner)
+    summary = build_booking_summary(partner=partner, selected_service_ids=selected_service_ids)
+    schedule_settings = _schedule_settings_for_booking(partner)
+    range_start, _first_day_end = _local_date_range(
+        partner=partner,
+        local_date=start_date,
+    )
+    _last_day_start, range_end = _local_date_range(
+        partner=partner,
+        local_date=start_date + timedelta(days=days - 1),
+    )
+    schedule_windows = tuple(
+        availability_windows_for_resource(
+            partner=partner,
+            booking_resource=booking_resource,
+            start_at=range_start,
+            end_at=range_end,
+        )
+    )
+    if not schedule_windows:
+        return ()
+
+    duration_and_tolerance = timedelta(
+        minutes=summary.duration_minutes + schedule_settings.near_fit_tolerance_minutes
+    )
+    blocked_intervals = tuple(
+        TimeInterval(block.start_at, block.end_at)
+        for block in blocked_times_for_resource(
+            partner=partner,
+            booking_resource=booking_resource,
+            start_at=range_start,
+            end_at=range_end + duration_and_tolerance,
+        )
+    )
+    busy_intervals = confirmed_busy_intervals_for_resource(
+        booking_resource=booking_resource,
+        start_at=range_start,
+        end_at=range_end + duration_and_tolerance,
+    )
+    options: list[BookingDateOption] = []
+    for offset in range(days):
+        local_date = start_date + timedelta(days=offset)
+        day_start, day_end = _local_date_range(partner=partner, local_date=local_date)
+        slots = generate_available_slots(
+            partner=partner,
+            booking_resource=booking_resource,
+            duration_minutes=summary.duration_minutes,
+            range_start=day_start,
+            range_end=day_end,
+            schedule_settings=schedule_settings,
+            busy_intervals=busy_intervals,
+            schedule_windows=schedule_windows,
+            blocked_intervals=blocked_intervals,
+            now=current_time,
+        )
+        if slots:
+            options.append(
+                BookingDateOption(
+                    local_date=local_date,
+                    slot_count=len(slots),
+                    first_slot_at=slots[0].start_at,
+                    has_near_fit=any(slot.is_near_fit for slot in slots),
+                )
+            )
+    return tuple(options)
 
 
 def _slot_options_for_local_date(

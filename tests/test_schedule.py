@@ -177,6 +177,52 @@ def test_blocked_time_removes_overlapping_slots(
 
 
 @pytest.mark.django_db
+def test_block_after_range_end_still_blocks_service_crossing_boundary(
+    partner_with_schedule,
+    rounded_future_start,
+):
+    created = partner_with_schedule
+    booking_resource = default_booking_resource_for_partner(created.partner)
+    range_end = rounded_future_start.replace(hour=0) + timedelta(days=1)
+    window_start = range_end - timedelta(minutes=30)
+    window_end = range_end + timedelta(minutes=30)
+    schedule_settings = update_schedule_settings(
+        actor=created.owner,
+        partner=created.partner,
+        confirmation_mode="manual",
+        slot_step_minutes=30,
+        booking_horizon_days=7,
+    )
+    create_availability_window(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=booking_resource,
+        start_at=window_start,
+        end_at=window_end,
+    )
+    create_blocked_time(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=booking_resource,
+        start_at=range_end + timedelta(minutes=15),
+        end_at=range_end + timedelta(minutes=20),
+        reason="after midnight",
+    )
+
+    slots = generate_available_slots(
+        partner=created.partner,
+        booking_resource=booking_resource,
+        duration_minutes=60,
+        range_start=window_start,
+        range_end=range_end,
+        schedule_settings=schedule_settings,
+        now=window_start - timedelta(hours=1),
+    )
+
+    assert slots == ()
+
+
+@pytest.mark.django_db
 def test_booking_horizon_limits_generated_slots(
     partner_with_schedule,
     rounded_future_start,
