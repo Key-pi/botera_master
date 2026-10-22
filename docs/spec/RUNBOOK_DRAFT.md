@@ -1,7 +1,7 @@
 # BoteraMaster MVP Runbook
 
 Status: implemented operational baseline for the approved Pilot Wiring milestone.
-Last updated: 2026-10-15.
+Last updated: 2026-10-22.
 
 This runbook covers the implemented single-host Docker Compose pilot. Durable
 business state remains in PostgreSQL; Redis and Celery transport work but do not
@@ -167,11 +167,14 @@ flow.
 4. Send `/start`, then `/book`, from a client Telegram account.
 5. Select a category, service, date, and time; confirm the booking.
 6. For manual confirmation, verify the master receives the immediate request with
-   **Confirm** and **Decline** actions. Confirm it in Telegram; partner admin remains the
-   operational fallback and currently owns proposing alternative times.
-7. Verify the client notification becomes `sent`, or has a durable masked
+   **Confirm**, **Decline**, and **Propose another time** actions. Exercise the needed
+   action in Telegram and verify the appointment/proposal state in partner admin.
+7. From the client profile, send a message to the master. Verify the linked master
+   contact receives it with **Reply**, then answer in Telegram and verify the client
+   receives the queued reply through the partner bot.
+8. Verify the client notification becomes `sent`, or has a durable masked
    failure/retry state.
-8. Verify the master receives partner-facing notifications, or readiness clearly
+9. Verify the master receives partner-facing notifications, or readiness clearly
    reports the missing master contact.
 
 ```bash

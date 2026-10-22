@@ -891,7 +891,14 @@ def test_conversation_task_delivers_client_message_to_primary_master_contact(
     sent_payloads = []
 
     async def fake_send(token, chat_id, text, photo="", reply_markup=None):
-        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+        sent_payloads.append(
+            {
+                "token": token,
+                "chat_id": chat_id,
+                "text": text,
+                "callback_data": reply_markup.inline_keyboard[0][0].callback_data,
+            }
+        )
 
     monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
 
@@ -908,6 +915,7 @@ def test_conversation_task_delivers_client_message_to_primary_master_contact(
             "token": VALID_TOKEN,
             "chat_id": 555101,
             "text": "Повідомлення від client : Need help with my booking",
+            "callback_data": f"mm:reply:{message.id.hex}",
         }
     ]
 

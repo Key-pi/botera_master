@@ -25,6 +25,7 @@ from apps.bot.master import (
     build_master_booking_request_reply,
     master_booking_request_markup,
 )
+from apps.bot.messaging import master_client_message_markup
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     decrypt_bot_token,
@@ -442,6 +443,14 @@ def _payload_for_conversation_message(message: ConversationMessage) -> TelegramP
         token=token,
         chat_id=contact.telegram_identity.telegram_user_id,
         text=template.body,
+        reply_markup=(
+            master_client_message_markup(
+                message_id=message.id,
+                language=message.partner.default_language,
+            )
+            if contact.user_id
+            else None
+        ),
     )
 
 

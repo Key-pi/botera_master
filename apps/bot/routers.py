@@ -57,6 +57,14 @@ from apps.bot.master import (
     send_master_requested_alternative_proposal_reply,
     toggle_master_requested_alternative_slot_reply,
 )
+from apps.bot.messaging import (
+    MASTER_MESSAGE_CALLBACK_PREFIX,
+    BotConversationReply,
+    build_master_conversation_reply_prompt,
+    cancel_master_conversation_reply,
+    parse_master_message_id,
+    queue_master_conversation_reply,
+)
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
     BotProfileReply,
@@ -124,6 +132,12 @@ class MasterProposalFlowState(StatesGroup):
     active = State()
 
 
+class MasterMessageFlowState(StatesGroup):
+    """Ephemeral master input before a durable reply is queued."""
+
+    waiting_for_text = State()
+
+
 @dataclass(frozen=True, slots=True)
 class BookingCallbackResult:
     """Booking adapter response plus the next ephemeral FSM state."""
@@ -167,6 +181,15 @@ class MasterProposalStateValues:
     selected_start_ats: tuple[datetime, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class MasterMessageCallbackResult:
+    """Master messaging response plus the next ephemeral input state."""
+
+    reply: BotConversationReply
+    source_message_id: UUID | None = None
+    wait_for_text: bool = False
+
+
 BOOKING_SERVICE_IDS_STATE_KEY = "booking_service_ids"
 BOOKING_SUMMARY_SIGNATURE_STATE_KEY = "booking_summary_signature"
 BOOKING_COMMENT_STATE_KEY = "booking_comment"
@@ -176,6 +199,7 @@ BOOKING_INPUT_COMMENT = "comment"
 BOOKING_INPUT_PHONE = "phone"
 MASTER_PROPOSAL_APPOINTMENT_STATE_KEY = "master_proposal_appointment_id"
 MASTER_PROPOSAL_STARTS_STATE_KEY = "master_proposal_start_ats"
+MASTER_MESSAGE_SOURCE_STATE_KEY = "master_message_source_id"
 
 
 def build_partner_router() -> Router:
@@ -393,6 +417,49 @@ def build_partner_router() -> Router:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(MasterMessageFlowState.waiting_for_text)
+    async def master_conversation_reply_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        source_message_id = _master_message_state_id(await state.get_data())
+        if contact is None or contact.user is None or source_message_id is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        try:
+            if message.text is None:
+                reply = await sync_to_async(build_master_conversation_reply_prompt)(
+                    partner=partner,
+                    actor=contact.user,
+                    source_message_id=source_message_id,
+                    invalid_message=True,
+                )
+            else:
+                reply = await sync_to_async(queue_master_conversation_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    source_message_id=source_message_id,
+                    text=message.text,
+                )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+        else:
+            if message.text is not None:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.callback_query(F.data.startswith(f"{BOOKING_CALLBACK_PREFIX}:"))
     async def booking_callback_handler(
         callback: CallbackQuery,
@@ -467,6 +534,61 @@ def build_partner_router() -> Router:
                 await state.clear()
 
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith(f"{MASTER_MESSAGE_CALLBACK_PREFIX}:"))
+    async def master_message_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        try:
+            result = await sync_to_async(_master_message_result_from_callback_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+            )
+        except ValidationError:
+            await state.clear()
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+
+        if result.wait_for_text and result.source_message_id is not None:
+            await _store_master_message_state(
+                state=state,
+                source_message_id=result.source_message_id,
+            )
+            await callback.message.answer(
+                result.reply.text,
+                reply_markup=result.reply.reply_markup,
+            )
+        else:
+            await state.clear()
+            await callback.message.edit_text(
+                result.reply.text,
+                reply_markup=result.reply.reply_markup,
+            )
         await callback.answer()
 
     @router.callback_query(F.data.startswith(f"{MASTER_REQUEST_CALLBACK_PREFIX}:"))
@@ -1222,6 +1344,39 @@ def _master_reply_from_callback_data(*, partner: Partner, actor, data: str) -> B
     ).reply
 
 
+def _master_message_result_from_callback_data(
+    *,
+    partner: Partner,
+    actor,
+    data: str,
+) -> MasterMessageCallbackResult:
+    """Resolve one master messaging callback inside trusted partner scope."""
+
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != MASTER_MESSAGE_CALLBACK_PREFIX:
+        raise ValidationError({"callback": "Unsupported callback."})
+    source_message_id = parse_master_message_id(parts[2])
+    if parts[1] == "reply":
+        return MasterMessageCallbackResult(
+            reply=build_master_conversation_reply_prompt(
+                partner=partner,
+                actor=actor,
+                source_message_id=source_message_id,
+            ),
+            source_message_id=source_message_id,
+            wait_for_text=True,
+        )
+    if parts[1] == "cancel":
+        return MasterMessageCallbackResult(
+            reply=cancel_master_conversation_reply(
+                partner=partner,
+                actor=actor,
+                source_message_id=source_message_id,
+            )
+        )
+    raise ValidationError({"callback": "Unsupported callback."})
+
+
 def _master_request_id_from_callback(data: str) -> UUID | None:
     parts = data.split(":")
     if len(parts) < 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
@@ -1352,6 +1507,34 @@ async def _store_master_proposal_state(
             ],
         }
     )
+
+
+async def _store_master_message_state(
+    *,
+    state: FSMContext,
+    source_message_id: UUID,
+) -> None:
+    await state.set_state(MasterMessageFlowState.waiting_for_text)
+    await state.set_data({MASTER_MESSAGE_SOURCE_STATE_KEY: source_message_id.hex})
+
+
+def _master_message_state_id(data: dict) -> UUID | None:
+    raw_message_id = data.get(MASTER_MESSAGE_SOURCE_STATE_KEY)
+    if not raw_message_id:
+        return None
+    try:
+        return parse_master_message_id(str(raw_message_id))
+    except ValidationError:
+        return None
+
+
+def _invalid_master_message_action_reply(*, partner: Partner) -> BotConversationReply:
+    rendered = render_content_template(
+        partner=partner,
+        key="error.invalid_action",
+        language=partner.default_language,
+    )
+    return BotConversationReply(text=rendered.body)
 
 
 def _master_proposal_state_values(data: dict) -> MasterProposalStateValues:
