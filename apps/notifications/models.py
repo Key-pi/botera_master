@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import time
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -188,6 +189,13 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         null=True,
         blank=True,
     )
+    source_notification = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        related_name="failure_markers",
+        null=True,
+        blank=True,
+    )
     type = models.CharField(max_length=64, choices=Type.choices)
     due_at = models.DateTimeField(db_index=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
@@ -209,9 +217,33 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             models.Index(fields=["appointment_proposal", "status"]),
             models.Index(fields=["client_profile", "status"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        type="failed_delivery_to_master",
+                        source_notification__isnull=False,
+                    )
+                    | ~models.Q(type="failed_delivery_to_master")
+                    & models.Q(source_notification__isnull=True)
+                ),
+                name="notifications_failure_marker_has_source",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.type}:{self.status}:{self.due_at}"
+
+    def clean(self) -> None:
+        super().clean()
+        if (
+            self.source_notification_id
+            and self.partner_id
+            and self.source_notification.partner_id != self.partner_id
+        ):
+            raise ValidationError(
+                {"source_notification": "Source notification must belong to the same partner."}
+            )
 
 
 class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):

@@ -39,6 +39,7 @@ from apps.bot.booking import (
     toggle_booking_service_selection,
     validate_date_source_token,
 )
+from apps.bot.delivery import deliver_scheduled_notification
 from apps.bot.master import (
     MASTER_REQUEST_CALLBACK_PREFIX,
     BotMasterReply,
@@ -64,6 +65,16 @@ from apps.bot.messaging import (
     cancel_master_conversation_reply,
     parse_master_message_id,
     queue_master_conversation_reply,
+)
+from apps.bot.notification_failures import (
+    FAILED_NOTIFICATION_CALLBACK_PREFIX,
+    BotFailedDeliveryReply,
+    build_failed_client_message_prompt_reply,
+    build_failed_client_summary_reply,
+    cancel_failed_client_message_reply,
+    parse_failed_notification_id,
+    queue_failed_client_message_reply,
+    retry_failed_client_reminder_reply,
 )
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
@@ -138,6 +149,12 @@ class MasterMessageFlowState(StatesGroup):
     waiting_for_text = State()
 
 
+class FailedNotificationMessageFlowState(StatesGroup):
+    """Ephemeral master input for a client whose reminder failed."""
+
+    waiting_for_text = State()
+
+
 @dataclass(frozen=True, slots=True)
 class BookingCallbackResult:
     """Booking adapter response plus the next ephemeral FSM state."""
@@ -190,6 +207,16 @@ class MasterMessageCallbackResult:
     wait_for_text: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class FailedNotificationCallbackResult:
+    """Failed-reminder response plus its next Telegram presentation mode."""
+
+    reply: BotFailedDeliveryReply
+    source_notification_id: UUID | None = None
+    wait_for_text: bool = False
+    send_new_message: bool = False
+
+
 BOOKING_SERVICE_IDS_STATE_KEY = "booking_service_ids"
 BOOKING_SUMMARY_SIGNATURE_STATE_KEY = "booking_summary_signature"
 BOOKING_COMMENT_STATE_KEY = "booking_comment"
@@ -200,6 +227,7 @@ BOOKING_INPUT_PHONE = "phone"
 MASTER_PROPOSAL_APPOINTMENT_STATE_KEY = "master_proposal_appointment_id"
 MASTER_PROPOSAL_STARTS_STATE_KEY = "master_proposal_start_ats"
 MASTER_MESSAGE_SOURCE_STATE_KEY = "master_message_source_id"
+FAILED_NOTIFICATION_SOURCE_STATE_KEY = "failed_notification_source_id"
 
 
 def build_partner_router() -> Router:
@@ -460,6 +488,49 @@ def build_partner_router() -> Router:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(FailedNotificationMessageFlowState.waiting_for_text)
+    async def failed_notification_message_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        source_notification_id = _failed_notification_state_id(await state.get_data())
+        if contact is None or contact.user is None or source_notification_id is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_failed_notification_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        try:
+            if message.text is None:
+                reply = await sync_to_async(build_failed_client_message_prompt_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    source_notification_id=source_notification_id,
+                    invalid_message=True,
+                )
+            else:
+                reply = await sync_to_async(queue_failed_client_message_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    source_notification_id=source_notification_id,
+                    text=message.text,
+                )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_failed_notification_action_reply)(partner=partner)
+        else:
+            if message.text is not None or not reply.wait_for_text:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.callback_query(F.data.startswith(f"{BOOKING_CALLBACK_PREFIX}:"))
     async def booking_callback_handler(
         callback: CallbackQuery,
@@ -579,6 +650,68 @@ def build_partner_router() -> Router:
                 state=state,
                 source_message_id=result.source_message_id,
             )
+            await callback.message.answer(
+                result.reply.text,
+                reply_markup=result.reply.reply_markup,
+            )
+        else:
+            await state.clear()
+            await callback.message.edit_text(
+                result.reply.text,
+                reply_markup=result.reply.reply_markup,
+            )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith(f"{FAILED_NOTIFICATION_CALLBACK_PREFIX}:"))
+    async def failed_notification_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        try:
+            result = await sync_to_async(_failed_notification_result_from_callback_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+                deliver=deliver_scheduled_notification,
+            )
+        except ValidationError:
+            await state.clear()
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+
+        if result.wait_for_text and result.source_notification_id is not None:
+            await _store_failed_notification_state(
+                state=state,
+                source_notification_id=result.source_notification_id,
+            )
+            await callback.message.answer(
+                result.reply.text,
+                reply_markup=result.reply.reply_markup,
+            )
+        elif result.send_new_message:
+            await state.clear()
             await callback.message.answer(
                 result.reply.text,
                 reply_markup=result.reply.reply_markup,
@@ -1377,6 +1510,61 @@ def _master_message_result_from_callback_data(
     raise ValidationError({"callback": "Unsupported callback."})
 
 
+def _failed_notification_result_from_callback_data(
+    *,
+    partner: Partner,
+    actor,
+    data: str,
+    deliver=deliver_scheduled_notification,
+) -> FailedNotificationCallbackResult:
+    """Resolve one failed-reminder action inside trusted partner scope."""
+
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != FAILED_NOTIFICATION_CALLBACK_PREFIX:
+        raise ValidationError({"callback": "Unsupported callback."})
+    source_notification_id = parse_failed_notification_id(parts[2])
+    action = parts[1]
+    if action == "retry":
+        return FailedNotificationCallbackResult(
+            reply=retry_failed_client_reminder_reply(
+                partner=partner,
+                actor=actor,
+                source_notification_id=source_notification_id,
+                deliver=deliver,
+            )
+        )
+    if action == "client":
+        return FailedNotificationCallbackResult(
+            reply=build_failed_client_summary_reply(
+                partner=partner,
+                actor=actor,
+                source_notification_id=source_notification_id,
+            ),
+            send_new_message=True,
+        )
+    if action == "message":
+        reply = build_failed_client_message_prompt_reply(
+            partner=partner,
+            actor=actor,
+            source_notification_id=source_notification_id,
+        )
+        return FailedNotificationCallbackResult(
+            reply=reply,
+            source_notification_id=(source_notification_id if reply.wait_for_text else None),
+            wait_for_text=reply.wait_for_text,
+            send_new_message=True,
+        )
+    if action == "cancel":
+        return FailedNotificationCallbackResult(
+            reply=cancel_failed_client_message_reply(
+                partner=partner,
+                actor=actor,
+                source_notification_id=source_notification_id,
+            )
+        )
+    raise ValidationError({"callback": "Unsupported callback."})
+
+
 def _master_request_id_from_callback(data: str) -> UUID | None:
     parts = data.split(":")
     if len(parts) < 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
@@ -1518,12 +1706,31 @@ async def _store_master_message_state(
     await state.set_data({MASTER_MESSAGE_SOURCE_STATE_KEY: source_message_id.hex})
 
 
+async def _store_failed_notification_state(
+    *,
+    state: FSMContext,
+    source_notification_id: UUID,
+) -> None:
+    await state.set_state(FailedNotificationMessageFlowState.waiting_for_text)
+    await state.set_data({FAILED_NOTIFICATION_SOURCE_STATE_KEY: source_notification_id.hex})
+
+
 def _master_message_state_id(data: dict) -> UUID | None:
     raw_message_id = data.get(MASTER_MESSAGE_SOURCE_STATE_KEY)
     if not raw_message_id:
         return None
     try:
         return parse_master_message_id(str(raw_message_id))
+    except ValidationError:
+        return None
+
+
+def _failed_notification_state_id(data: dict) -> UUID | None:
+    raw_notification_id = data.get(FAILED_NOTIFICATION_SOURCE_STATE_KEY)
+    if not raw_notification_id:
+        return None
+    try:
+        return parse_failed_notification_id(str(raw_notification_id))
     except ValidationError:
         return None
 
@@ -1535,6 +1742,15 @@ def _invalid_master_message_action_reply(*, partner: Partner) -> BotConversation
         language=partner.default_language,
     )
     return BotConversationReply(text=rendered.body)
+
+
+def _invalid_failed_notification_action_reply(*, partner: Partner) -> BotFailedDeliveryReply:
+    rendered = render_content_template(
+        partner=partner,
+        key="error.invalid_action",
+        language=partner.default_language,
+    )
+    return BotFailedDeliveryReply(text=rendered.body)
 
 
 def _master_proposal_state_values(data: dict) -> MasterProposalStateValues:

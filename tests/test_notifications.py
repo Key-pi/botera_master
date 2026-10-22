@@ -35,6 +35,8 @@ from apps.notifications.services import (
     apply_quiet_hours,
     dispatch_notification,
     get_or_create_notification_settings,
+    retry_failed_notification,
+    schedule_failed_delivery_to_master,
 )
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
@@ -415,6 +417,108 @@ def test_transient_delivery_failure_retries_then_becomes_partner_visible(
     assert status_3 == ScheduledNotification.Status.FAILED
     assert notification.attempt_count == 3
     assert notification.failed_visible_to_partner is True
+
+
+@pytest.mark.django_db
+def test_exhausted_client_reminder_creates_one_durable_master_marker(
+    notification_context,
+    future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    PartnerNotificationSettings.objects.filter(partner=context["partner"]).update(
+        quiet_hours_enabled=False,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_confirmed_appointment(
+            actor=context["owner"],
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["telegram_client"],
+            start_at=future_start,
+            service_items=[_service_input(context["service"])],
+        )
+    source = ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER,
+    ).first()
+    now = timezone.now()
+    source.due_at = now
+    source.max_attempts = 1
+    source.save(update_fields=["due_at", "max_attempts", "updated_at"])
+
+    with django_capture_on_commit_callbacks(execute=True):
+        status = dispatch_notification(
+            notification=source,
+            deliver=lambda _notification: DeliveryResult(
+                success=False,
+                failure_code="telegram_timeout",
+            ),
+            now=now,
+        )
+
+    source.refresh_from_db()
+    marker = ScheduledNotification.objects.get(
+        type=ScheduledNotification.Type.FAILED_DELIVERY_TO_MASTER,
+        source_notification=source,
+    )
+    duplicate = schedule_failed_delivery_to_master(source_notification=source, now=now)
+
+    assert status == ScheduledNotification.Status.FAILED
+    assert source.failed_visible_to_partner is True
+    assert marker.partner == context["partner"]
+    assert marker.appointment == appointment
+    assert marker.client_profile == context["telegram_client"]
+    assert marker.status == ScheduledNotification.Status.QUEUED
+    assert duplicate.id == marker.id
+
+
+@pytest.mark.django_db
+def test_successful_manual_retry_makes_queued_failure_marker_stale(
+    notification_context,
+    future_start,
+):
+    context = notification_context
+    PartnerNotificationSettings.objects.filter(partner=context["partner"]).update(
+        quiet_hours_enabled=False,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["telegram_client"],
+        start_at=future_start,
+        service_items=[_service_input(context["service"])],
+    )
+    now = timezone.now()
+    source = ScheduledNotification.objects.create(
+        partner=context["partner"],
+        appointment=appointment,
+        client_profile=context["telegram_client"],
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER,
+        due_at=now,
+        status=ScheduledNotification.Status.FAILED,
+        failed_visible_to_partner=True,
+        idempotency_key="manual-retry-source",
+    )
+    marker = schedule_failed_delivery_to_master(source_notification=source, now=now)
+
+    retried = retry_failed_notification(
+        notification=source,
+        deliver=lambda _notification: DeliveryResult(success=True),
+        now=now,
+    )
+    marker_status = dispatch_notification(
+        notification=marker,
+        deliver=lambda _notification: pytest.fail("stale marker must not be delivered"),
+        now=now,
+    )
+
+    marker.refresh_from_db()
+    assert retried.status == ScheduledNotification.Status.SENT
+    assert retried.failed_visible_to_partner is False
+    assert marker_status == ScheduledNotification.Status.SKIPPED
+    assert marker.status == ScheduledNotification.Status.STALE
 
 
 @pytest.mark.django_db

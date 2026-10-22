@@ -4,7 +4,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from datetime import timezone as datetime_timezone
+from functools import partial
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -53,6 +55,9 @@ CLIENT_TARGET_NOTIFICATION_TYPES = frozenset(
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_DECLINED,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_EXPIRED,
     }
+)
+MASTER_FAILURE_MARKER_SOURCE_TYPES = frozenset(
+    {ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER}
 )
 
 
@@ -729,7 +734,47 @@ def retry_failed_notification(
     if deliver is not None:
         dispatch_notification(notification=locked, deliver=deliver, now=current_time)
         locked.refresh_from_db()
+        if (
+            locked.status == ScheduledNotification.Status.SKIPPED
+            and locked.failed_visible_to_partner
+        ):
+            locked.failed_visible_to_partner = False
+            locked.save(update_fields=["failed_visible_to_partner", "updated_at"])
     return locked
+
+
+def schedule_failed_delivery_to_master(
+    *,
+    source_notification: ScheduledNotification,
+    now: datetime | None = None,
+) -> ScheduledNotification:
+    """Create one durable master marker for an exhausted client reminder."""
+
+    current_time = now or timezone.now()
+    if source_notification.type not in MASTER_FAILURE_MARKER_SOURCE_TYPES:
+        raise ValidationError({"source_notification": "Unsupported failed notification type."})
+    if source_notification.status != ScheduledNotification.Status.FAILED:
+        raise ValidationError({"source_notification": "Source notification is not failed."})
+    if source_notification.appointment_id is None or source_notification.client_profile_id is None:
+        raise ValidationError(
+            {"source_notification": "Failed reminder requires appointment and client."}
+        )
+
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=source_notification.partner,
+    )
+    return _upsert_scheduled_notification(
+        partner=source_notification.partner,
+        appointment=source_notification.appointment,
+        client_profile=source_notification.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.FAILED_DELIVERY_TO_MASTER,
+        due_at=due_at,
+        idempotency_key=f"failed-delivery-to-master:{source_notification.id}",
+        now=current_time,
+        source_notification=source_notification,
+    )
 
 
 def apply_quiet_hours(
@@ -785,6 +830,7 @@ def _prepare_notification_for_delivery(
                 "appointment_proposal",
                 "client_profile",
                 "reminder_rule",
+                "source_notification",
             )
             .get(id=notification.id)
         )
@@ -894,6 +940,18 @@ def _apply_delivery_failure(
     if terminal or notification.attempt_count >= notification.max_attempts:
         notification.status = ScheduledNotification.Status.FAILED
         notification.failed_visible_to_partner = True
+        if (
+            notification.type in MASTER_FAILURE_MARKER_SOURCE_TYPES
+            and notification.appointment_id
+            and notification.client_profile_id
+        ):
+            transaction.on_commit(
+                partial(
+                    _schedule_failed_delivery_to_master_after_commit,
+                    source_notification_id=notification.id,
+                    now=now,
+                )
+            )
         return
 
     backoff = AUTOMATIC_RETRY_BACKOFFS[
@@ -925,6 +983,25 @@ def _record_delivery_attempt(
     )
 
 
+def _schedule_failed_delivery_to_master_after_commit(
+    *,
+    source_notification_id: UUID,
+    now: datetime,
+) -> None:
+    source = (
+        ScheduledNotification.objects.select_related(
+            "partner",
+            "appointment",
+            "client_profile",
+        )
+        .filter(id=source_notification_id)
+        .first()
+    )
+    if source is None or source.status != ScheduledNotification.Status.FAILED:
+        return
+    schedule_failed_delivery_to_master(source_notification=source, now=now)
+
+
 def _upsert_scheduled_notification(
     *,
     partner: Partner,
@@ -937,6 +1014,7 @@ def _upsert_scheduled_notification(
     idempotency_key: str,
     now: datetime,
     stale_sequence: int = 0,
+    source_notification: ScheduledNotification | None = None,
 ) -> ScheduledNotification:
     if timezone.is_naive(due_at):
         raise ValidationError({"due_at": "Datetime must be timezone-aware."})
@@ -953,6 +1031,7 @@ def _upsert_scheduled_notification(
             "status": ScheduledNotification.Status.QUEUED,
             "max_attempts": DEFAULT_NOTIFICATION_MAX_ATTEMPTS,
             "stale_sequence": stale_sequence,
+            "source_notification": source_notification,
             "retain_until": now + timedelta(days=NOTIFICATION_RETAIN_DAYS),
         },
     )
@@ -982,6 +1061,16 @@ def _obsolete_status_for_notification(
     notification: ScheduledNotification,
     now: datetime,
 ) -> str | None:
+    if notification.type == ScheduledNotification.Type.FAILED_DELIVERY_TO_MASTER:
+        source = notification.source_notification
+        if (
+            source is None
+            or source.status != ScheduledNotification.Status.FAILED
+            or not source.failed_visible_to_partner
+        ):
+            return ScheduledNotification.Status.STALE
+        return None
+
     appointment = notification.appointment
     proposal = notification.appointment_proposal
     if notification.type == ScheduledNotification.Type.MASTER_MORNING_DIGEST:

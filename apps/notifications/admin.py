@@ -55,6 +55,7 @@ class ScheduledNotificationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     ]
     readonly_fields = [
         "idempotency_key",
+        "source_notification",
         "attempt_count",
         "last_failure_code",
         "last_failure_message_masked",

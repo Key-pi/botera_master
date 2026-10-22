@@ -613,6 +613,8 @@ Key fields:
 - `appointment`
 - `appointment_proposal`
 - `client_profile`
+- `source_notification`: set only for a `failed_delivery_to_master` marker and points to the
+  exhausted client reminder it represents
 - `type`
 - `due_at`
 - `status`: queued, sent, failed, skipped, cancelled, stale
@@ -630,6 +632,10 @@ Rules:
 - if appointment is moved/cancelled/completed/no_show, old pending reminders become cancelled/stale.
 - if quiet hours delay makes a reminder useless because appointment already passed, skip it.
 - failed reminder becomes visible to master only after configured retry exhaustion.
+- each failed-reminder marker references exactly one still-failed source reminder; the source
+  remains authoritative for retry state, failure code, appointment, and client context.
+- if the source reminder is sent, skipped, cancelled, or otherwise stops being partner-visible,
+  a queued marker becomes stale instead of delivering an obsolete alert.
 - manual retry is allowed from master UI/bot actions.
 
 ### DeliveryAttempt

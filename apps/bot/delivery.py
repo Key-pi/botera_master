@@ -26,6 +26,10 @@ from apps.bot.master import (
     master_booking_request_markup,
 )
 from apps.bot.messaging import master_client_message_markup
+from apps.bot.notification_failures import (
+    business_delivery_failure_reason,
+    failed_delivery_to_master_markup,
+)
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     decrypt_bot_token,
@@ -207,6 +211,44 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             token=token,
             chat_id=notification.client_profile.telegram_identity.telegram_user_id,
             text=template.body,
+        )
+
+    if notification.type == ScheduledNotification.Type.FAILED_DELIVERY_TO_MASTER:
+        source = notification.source_notification
+        if (
+            source is None
+            or source.status != ScheduledNotification.Status.FAILED
+            or not source.failed_visible_to_partner
+            or notification.appointment is None
+        ):
+            return None
+        contact = primary_master_telegram_contact(notification.partner)
+        if contact is None:
+            return None
+        context = _appointment_template_context(notification.appointment) | {
+            "failure_reason": business_delivery_failure_reason(
+                failure_code=source.last_failure_code,
+                language=notification.partner.default_language,
+            )
+        }
+        template = render_content_template(
+            partner=notification.partner,
+            key="reminder.failed_delivery_to_master",
+            language=notification.partner.default_language,
+            context=context,
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=contact.telegram_identity.telegram_user_id,
+            text=template.body,
+            reply_markup=(
+                failed_delivery_to_master_markup(
+                    source_notification_id=source.id,
+                    language=notification.partner.default_language,
+                )
+                if contact.user_id
+                else None
+            ),
         )
 
     if notification.type == ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER:

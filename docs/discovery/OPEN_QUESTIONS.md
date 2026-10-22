@@ -20,7 +20,6 @@ These are important for quality, but they should not block the high-level final 
 - What exact default localized wording should be seeded for the approved multilingual content registry in `uk`, `ru`, and `en`?
 - What exact visual/copy treatment should the partner onboarding checklist/setup guide use in admin?
 - What exact broadcast backoff intervals, global broadcast safety limits, worker thresholds, and alert thresholds should be used beyond the approved 0.5 seconds per bot minimum pacing?
-- What business-friendly failure reason labels should be shown for Telegram delivery failures without exposing raw technical payloads?
 - What confirmed MVP features can be delayed if implementation gets too large, and what is the minimum pilot path for the first real partner?
 
 ## Resolved During Later Consistency Passes
@@ -29,6 +28,7 @@ These are important for quality, but they should not block the high-level final 
 - Exact min/max values for slot step, booking horizon, reminders, quiet hours, cancellation deadline, near-fit tolerance, stale requested reminders, and morning digest are approved and belong in settings validation.
 - Multilingual content registry is approved at key group/editable-vs-system-only/placeholder-validation level. Exact localized default wording remains an implementation/copy task.
 - `ClientProfile` communication flags stay on the partner-scoped client profile in MVP; no separate communication-state model is required.
+- Telegram delivery failures shown to partners use localized business-friendly labels derived from stable failure codes. Raw Telegram payloads and exception text remain masked diagnostics only.
 - Confirmed appointment overlap protection is scoped to `BookingResource`, not directly to whole partner. Solo-master MVP has one default booking resource per partner.
 - `docs/spec/SCHEMA_DRAFT.md` is approved as the implementation-planning data map. Exact Django model/field names and migration details can still be adjusted during implementation, but entity boundaries and approved invariants should not drift without an explicit decision.
 - Booking-resource advisory-lock helper is approved: immutable unique `BookingResource.advisory_lock_key`, fixed PostgreSQL advisory-lock namespace, and `pg_advisory_xact_lock(namespace, advisory_lock_key)` inside the same transaction as the fresh overlap check and appointment write.
