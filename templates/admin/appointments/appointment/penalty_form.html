@@ -1,0 +1,145 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls client_admin i18n tz %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; <a href="{{ change_url }}">{{ appointment }}</a>
+    &rsaquo; {% translate "Manage penalties" %}
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .appointment-penalty-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0 0 24px;
+    }
+    .appointment-penalty-summary > div {
+      border-bottom: 1px solid var(--hairline-color);
+      min-width: 0;
+      padding: 12px 16px;
+    }
+    .appointment-penalty-summary dt {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .appointment-penalty-summary dd {
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .appointment-penalty-form .form-row {
+      border-bottom: 1px solid var(--hairline-color);
+      padding: 12px 16px;
+    }
+    .appointment-penalty-form .selector-list {
+      margin: 0;
+      padding: 0;
+    }
+    .appointment-penalty-form .selector-list li {
+      list-style: none;
+      margin: 8px 0;
+    }
+    .appointment-penalty-form .help {
+      color: var(--body-quiet-color);
+      margin: 6px 0 0;
+    }
+    .appointment-penalty-table {
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .appointment-penalty-table table {
+      width: 100%;
+    }
+    .appointment-penalty-empty {
+      color: var(--body-quiet-color);
+      padding: 12px 16px;
+    }
+    @media (max-width: 767px) {
+      .appointment-penalty-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {% timezone appointment.partner.timezone %}
+    <fieldset class="module">
+      <h2>{% translate "Appointment" %}</h2>
+      <dl class="appointment-penalty-summary">
+        <div>
+          <dt>{% translate "Client" %}</dt>
+          <dd>{{ appointment.client_profile }}</dd>
+        </div>
+        <div>
+          <dt>{% translate "Starts" %}</dt>
+          <dd>{{ appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}</dd>
+        </div>
+        <div>
+          <dt>{% translate "Status" %}</dt>
+          <dd>{{ appointment.get_status_display }}</dd>
+        </div>
+        <div>
+          <dt>{% translate "Current total" %}</dt>
+          <dd>{{ appointment.total_amount|money_amount }} {{ appointment.currency }}</dd>
+        </div>
+      </dl>
+    </fieldset>
+  {% endtimezone %}
+
+  <fieldset class="module appointment-penalty-table">
+    <h2>{% translate "Application history" %}</h2>
+    {% if applications %}
+      <table>
+        <thead>
+          <tr>
+            <th>{% translate "Reason" %}</th>
+            <th>{% translate "Amount" %}</th>
+            <th>{% translate "Status" %}</th>
+            <th>{% translate "Created" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for application in applications %}
+            <tr>
+              <td>{{ application.penalty.get_reason_display }}</td>
+              <td>{{ application.amount_snapshot|money_amount }} {{ application.currency }}</td>
+              <td>{{ application.get_status_display }}</td>
+              <td>{{ application.created_at|date:"SHORT_DATETIME_FORMAT" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="appointment-penalty-empty">{% translate "No penalties have been applied." %}</p>
+    {% endif %}
+  </fieldset>
+
+  <form method="post" class="appointment-penalty-form" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <fieldset class="module">
+      <h2>{% translate "Apply unpaid penalties" %}</h2>
+      {% for field in form %}
+        <div class="form-row{% if field.errors %} errors{% endif %}">
+          {{ field.errors }}
+          {{ field.label_tag }}
+          <div class="selector-list">{{ field }}</div>
+          {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+        </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="{% translate 'Apply selected penalties' %}" class="default">
+      <a href="{{ change_url }}">{% translate "Cancel" %}</a>
+    </div>
+  </form>
+{% endblock %}

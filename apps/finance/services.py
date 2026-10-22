@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.accounts.services import ensure_partner_access
 from apps.appointments.models import Appointment
+from apps.audit.services import record_audit_event
 from apps.catalog.models import DEFAULT_CURRENCY
 from apps.finance.models import Expense, PartnerPenaltySettings, Penalty, PenaltyApplication
 from apps.schedule.models import PartnerScheduleSettings
@@ -50,26 +51,47 @@ def update_penalty_settings(
     """Update partner penalty behavior through explicit validation."""
 
     ensure_partner_access(actor, partner)
-    settings = get_or_create_penalty_settings(partner=partner)
-    if penalties_enabled is not None:
-        settings.penalties_enabled = bool(penalties_enabled)
-    if late_cancel_penalty_amount is not None:
-        _validate_non_negative_money(late_cancel_penalty_amount, "late_cancel_penalty_amount")
-        settings.late_cancel_penalty_amount = late_cancel_penalty_amount
-    if no_show_penalty_amount is not None:
-        _validate_non_negative_money(no_show_penalty_amount, "no_show_penalty_amount")
-        settings.no_show_penalty_amount = no_show_penalty_amount
-    if late_arrival_threshold_minutes is not None:
-        if late_arrival_threshold_minutes <= 0:
-            raise ValidationError(
-                {"late_arrival_threshold_minutes": "Late-arrival threshold must be positive."}
+    with transaction.atomic():
+        settings, _created = PartnerPenaltySettings.objects.select_for_update().get_or_create(
+            partner=partner
+        )
+        if penalties_enabled is not None:
+            settings.penalties_enabled = bool(penalties_enabled)
+        if late_cancel_penalty_amount is not None:
+            _validate_non_negative_money(late_cancel_penalty_amount, "late_cancel_penalty_amount")
+            settings.late_cancel_penalty_amount = late_cancel_penalty_amount
+        if no_show_penalty_amount is not None:
+            _validate_non_negative_money(no_show_penalty_amount, "no_show_penalty_amount")
+            settings.no_show_penalty_amount = no_show_penalty_amount
+        if late_arrival_threshold_minutes is not None:
+            if late_arrival_threshold_minutes <= 0:
+                raise ValidationError(
+                    {"late_arrival_threshold_minutes": "Late-arrival threshold must be positive."}
+                )
+            settings.late_arrival_threshold_minutes = late_arrival_threshold_minutes
+        if late_arrival_penalty_amount is not None:
+            _validate_non_negative_money(
+                late_arrival_penalty_amount,
+                "late_arrival_penalty_amount",
             )
-        settings.late_arrival_threshold_minutes = late_arrival_threshold_minutes
-    if late_arrival_penalty_amount is not None:
-        _validate_non_negative_money(late_arrival_penalty_amount, "late_arrival_penalty_amount")
-        settings.late_arrival_penalty_amount = late_arrival_penalty_amount
-    settings.currency = DEFAULT_CURRENCY
-    settings.save()
+            settings.late_arrival_penalty_amount = late_arrival_penalty_amount
+        settings.currency = DEFAULT_CURRENCY
+        settings.save()
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="penalty.settings_updated",
+            target=settings,
+            message="Penalty settings updated.",
+            payload={
+                "penalties_enabled": settings.penalties_enabled,
+                "late_cancel_penalty_amount": settings.late_cancel_penalty_amount,
+                "no_show_penalty_amount": settings.no_show_penalty_amount,
+                "late_arrival_threshold_minutes": settings.late_arrival_threshold_minutes,
+                "late_arrival_penalty_amount": settings.late_arrival_penalty_amount,
+                "currency": settings.currency,
+            },
+        )
     return settings
 
 
@@ -118,6 +140,12 @@ def create_penalty(
             late_by_minutes=late_by_minutes,
             note=note,
             created_by=actor,
+        )
+        _record_penalty_audit(
+            penalty=penalty,
+            actor=actor,
+            event_type="penalty.created",
+            message="Penalty created.",
         )
         _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="created")
     return penalty
@@ -262,6 +290,13 @@ def apply_penalties_to_appointment(
             )
             penalty.status = Penalty.Status.APPLIED_TO_APPOINTMENT
             penalty.save(update_fields=["status", "updated_at"])
+            _record_penalty_audit(
+                penalty=penalty,
+                actor=actor,
+                event_type="penalty.applied",
+                message="Penalty applied to appointment.",
+                extra_payload={"appointment_id": str(appointment.id)},
+            )
 
         _recalculate_appointment_penalty_total(appointment=appointment)
     return tuple(applications)
@@ -285,7 +320,12 @@ def settle_penalty_application(
         if application.status != PenaltyApplication.Status.ACTIVE:
             raise ValidationError({"application": "Only active applications can be settled."})
         penalty = Penalty.objects.select_for_update().get(id=application.penalty_id)
-        _settle_locked_application(application=application, penalty=penalty, settled_at=now)
+        _settle_locked_application(
+            application=application,
+            penalty=penalty,
+            settled_at=now,
+            actor=actor,
+        )
     return application
 
 
@@ -297,7 +337,11 @@ def release_penalty_application(
     """Release an active application and return the penalty to unpaid."""
 
     ensure_partner_access(actor, application.partner)
-    return _release_penalty_application(application_id=application.id, released_at=timezone.now())
+    return _release_penalty_application(
+        application_id=application.id,
+        released_at=timezone.now(),
+        actor=actor,
+    )
 
 
 def release_active_penalty_applications_for_appointment(
@@ -342,12 +386,19 @@ def mark_penalty_paid(*, actor: User, penalty: Penalty) -> Penalty:
                 application=active_application,
                 penalty=penalty,
                 settled_at=timezone.now(),
+                actor=actor,
             )
             return penalty
 
         penalty.status = Penalty.Status.PAID
         penalty.paid_at = timezone.now()
         penalty.save(update_fields=["status", "paid_at", "updated_at"])
+        _record_penalty_audit(
+            penalty=penalty,
+            actor=actor,
+            event_type="penalty.paid",
+            message="Penalty marked as paid.",
+        )
         _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="paid")
     return penalty
 
@@ -370,7 +421,11 @@ def waive_penalty(*, actor: User, penalty: Penalty, note: str = "") -> Penalty:
             ).values_list("id", flat=True)
         )
         for application_id in active_application_ids:
-            _release_penalty_application(application_id=application_id, released_at=now)
+            _release_penalty_application(
+                application_id=application_id,
+                released_at=now,
+                actor=actor,
+            )
         penalty.status = Penalty.Status.WAIVED
         penalty.waived_at = now
         if note:
@@ -379,6 +434,13 @@ def waive_penalty(*, actor: User, penalty: Penalty, note: str = "") -> Penalty:
         else:
             update_fields = ["status", "waived_at", "updated_at"]
         penalty.save(update_fields=update_fields)
+        _record_penalty_audit(
+            penalty=penalty,
+            actor=actor,
+            event_type="penalty.waived",
+            message="Penalty waived.",
+            reason=note,
+        )
         _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="waived")
     return penalty
 
@@ -414,6 +476,7 @@ def _release_penalty_application(
     *,
     application_id,
     released_at: datetime,
+    actor: User | None = None,
 ) -> PenaltyApplication:
     with transaction.atomic():
         application = (
@@ -430,6 +493,13 @@ def _release_penalty_application(
         penalty.status = Penalty.Status.UNPAID
         penalty.save(update_fields=["status", "updated_at"])
         _recalculate_appointment_penalty_total(appointment=application.appointment)
+        _record_penalty_audit(
+            penalty=penalty,
+            actor=actor,
+            event_type="penalty.released",
+            message="Penalty removed from appointment and returned to unpaid.",
+            extra_payload={"appointment_id": str(application.appointment_id)},
+        )
         return application
 
 
@@ -438,6 +508,7 @@ def _settle_locked_application(
     application: PenaltyApplication,
     penalty: Penalty,
     settled_at: datetime,
+    actor: User,
 ) -> None:
     application.status = PenaltyApplication.Status.SETTLED
     application.settled_at = settled_at
@@ -446,7 +517,42 @@ def _settle_locked_application(
     penalty.paid_at = settled_at
     penalty.save(update_fields=["status", "paid_at", "updated_at"])
     _recalculate_appointment_penalty_total(appointment=application.appointment)
+    _record_penalty_audit(
+        penalty=penalty,
+        actor=actor,
+        event_type="penalty.paid",
+        message="Applied penalty marked as paid.",
+        extra_payload={"appointment_id": str(application.appointment_id)},
+    )
     _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="paid")
+
+
+def _record_penalty_audit(
+    *,
+    penalty: Penalty,
+    actor: User | None,
+    event_type: str,
+    message: str,
+    reason: str = "",
+    extra_payload: dict[str, str] | None = None,
+) -> None:
+    payload = {
+        "client_profile_id": str(penalty.client_profile_id),
+        "reason": penalty.reason,
+        "status": penalty.status,
+        "amount": penalty.amount,
+        "currency": penalty.currency,
+        **(extra_payload or {}),
+    }
+    record_audit_event(
+        partner=penalty.partner,
+        actor=actor,
+        event_type=event_type,
+        target=penalty,
+        message=message,
+        payload=payload,
+        reason=reason,
+    )
 
 
 def _on_commit_schedule_penalty_notification(*, penalty_id, event: str) -> None:

@@ -233,6 +233,7 @@
                     <th>{% translate "Reason" %}</th>
                     <th>{% translate "Status" %}</th>
                     <th>{% translate "Amount" %}</th>
+                    {% if has_change_permission %}<th>{% translate "Action" %}</th>{% endif %}
                   </tr>
                 </thead>
                 <tbody>
@@ -242,6 +243,13 @@
                       <td>{{ penalty.get_reason_display }}</td>
                       <td>{{ penalty.get_status_display }}</td>
                       <td>{{ penalty.amount|money_amount }} {{ penalty.currency }}</td>
+                      {% if has_change_permission %}
+                        <td>
+                          <a href="{% url 'admin:clients_clientprofile_penalty_action' original.pk penalty.pk %}">
+                            {% translate "Manage" %}
+                          </a>
+                        </td>
+                      {% endif %}
                     </tr>
                   {% endfor %}
                 </tbody>

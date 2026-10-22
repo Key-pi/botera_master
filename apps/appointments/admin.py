@@ -34,6 +34,9 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.clients.models import ClientProfile
+from apps.finance.forms import AppointmentPenaltyAdminForm, add_domain_errors_to_form
+from apps.finance.selectors import penalty_applications_for_appointment
+from apps.finance.services import apply_penalties_to_appointment
 from apps.schedule.models import BookingResource
 from core.admin import PartnerScopedAdminMixin
 from core.timezones import to_partner_time
@@ -179,6 +182,11 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.propose_time_view),
                 name="appointments_appointment_propose_time",
             ),
+            path(
+                "<path:object_id>/penalties/",
+                self.admin_site.admin_view(self.penalty_application_view),
+                name="appointments_appointment_penalties",
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -302,6 +310,10 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 args=[object_id],
             ),
             "proposal_action_url": proposal_action_url,
+            "penalty_action_url": reverse(
+                "admin:appointments_appointment_penalties",
+                args=[object_id],
+            ),
         }
         return super().change_view(
             request,
@@ -461,6 +473,66 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         return TemplateResponse(
             request,
             "admin/appointments/appointment/proposal_form.html",
+            context,
+        )
+
+    def penalty_application_view(self, request, object_id):
+        """Apply selected client debt through the finance owner service."""
+
+        appointment = self.get_object(request, object_id)
+        if appointment is None:
+            raise Http404("Appointment not found.")
+        if not self.has_change_permission(request, appointment):
+            raise PermissionDenied
+
+        form = AppointmentPenaltyAdminForm(
+            request.POST or None,
+            appointment=appointment,
+        )
+        if request.method == "POST" and form.is_valid():
+            try:
+                applications = apply_penalties_to_appointment(
+                    actor=request.user,
+                    appointment=appointment,
+                    penalties=tuple(form.cleaned_data["penalties"]),
+                )
+            except ValidationError as exc:
+                add_domain_errors_to_form(form, exc)
+            else:
+                self.log_change(
+                    request,
+                    appointment,
+                    f"Applied {len(applications)} client penalty record(s).",
+                )
+                self.message_user(
+                    request,
+                    f"Applied {len(applications)} penalty record(s) to the appointment.",
+                )
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:appointments_appointment_change",
+                        args=[appointment.id],
+                    )
+                )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Manage appointment penalties",
+            "subtitle": _appointment_partner_summary(appointment),
+            "opts": self.model._meta,
+            "appointment": appointment,
+            "form": form,
+            "applications": penalty_applications_for_appointment(
+                appointment=appointment,
+            ),
+            "change_url": reverse(
+                "admin:appointments_appointment_change",
+                args=[appointment.id],
+            ),
+        }
+        return TemplateResponse(
+            request,
+            "admin/appointments/appointment/penalty_form.html",
             context,
         )
 

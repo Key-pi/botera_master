@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from django.contrib import admin
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.urls import reverse
+from django.http import Http404, HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.urls import path, reverse
 
 from apps.appointments.selectors import (
     appointment_history_for_client,
@@ -13,7 +15,9 @@ from apps.clients.forms import ClientProfileAdminForm
 from apps.clients.models import ClientProfile, TelegramIdentity
 from apps.clients.selectors import client_operational_summary
 from apps.clients.services import update_client_profile
+from apps.finance.forms import ClientPenaltyActionAdminForm, add_domain_errors_to_form
 from apps.finance.selectors import outstanding_penalties_for_client
+from apps.finance.services import mark_penalty_paid, waive_penalty
 from core.admin import PartnerScopedAdminMixin
 from core.security.masking import mask_phone
 
@@ -91,6 +95,16 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "updated_at",
     ]
 
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "<path:object_id>/penalties/<uuid:penalty_id>/action/",
+                self.admin_site.admin_view(self.penalty_action_view),
+                name="clients_clientprofile_penalty_action",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
     @admin.display(description="Phone")
     def masked_phone(self, obj: ClientProfile) -> str:
         return mask_phone(obj.phone) if obj.phone else ""
@@ -155,6 +169,66 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             object_id,
             form_url=form_url,
             extra_context=extra_context,
+        )
+
+    def penalty_action_view(self, request, object_id, penalty_id):
+        """Run one explicit debt action through the finance owner service."""
+
+        client_profile = self.get_object(request, object_id)
+        if client_profile is None:
+            raise Http404("Client not found.")
+        if not self.has_change_permission(request, client_profile):
+            raise PermissionDenied
+
+        penalty = outstanding_penalties_for_client(client_profile).filter(id=penalty_id).first()
+        if penalty is None:
+            raise Http404("Outstanding penalty not found.")
+
+        form = ClientPenaltyActionAdminForm(request.POST or None)
+        if request.method == "POST" and form.is_valid():
+            action = form.cleaned_data["action"]
+            try:
+                if action == ClientPenaltyActionAdminForm.Action.MARK_PAID:
+                    stored = mark_penalty_paid(actor=request.user, penalty=penalty)
+                    action_label = "marked as paid"
+                else:
+                    stored = waive_penalty(
+                        actor=request.user,
+                        penalty=penalty,
+                        note=form.cleaned_data["note"],
+                    )
+                    action_label = "waived"
+            except ValidationError as exc:
+                add_domain_errors_to_form(form, exc)
+            else:
+                self.log_change(
+                    request,
+                    client_profile,
+                    f"Penalty {stored.id} {action_label}.",
+                )
+                self.message_user(request, f"Penalty {action_label}.")
+                return HttpResponseRedirect(
+                    f"{reverse('admin:clients_clientprofile_change', args=[client_profile.id])}"
+                    "#outstanding-penalties"
+                )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Manage penalty",
+            "subtitle": str(client_profile),
+            "opts": self.model._meta,
+            "client_profile": client_profile,
+            "penalty": penalty,
+            "form": form,
+            "change_url": reverse(
+                "admin:clients_clientprofile_change",
+                args=[client_profile.id],
+            ),
+        }
+        return TemplateResponse(
+            request,
+            "admin/clients/clientprofile/penalty_action_form.html",
+            context,
         )
 
 

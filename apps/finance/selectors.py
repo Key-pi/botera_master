@@ -58,6 +58,22 @@ def outstanding_penalties_for_client(client_profile: ClientProfile) -> QuerySet[
     )
 
 
+def penalty_applications_for_appointment(
+    *,
+    appointment: Appointment,
+) -> QuerySet[PenaltyApplication]:
+    """Return application history for one partner-scoped appointment."""
+
+    return (
+        PenaltyApplication.objects.filter(
+            partner=appointment.partner,
+            appointment=appointment,
+        )
+        .select_related("penalty", "penalty__client_profile")
+        .order_by("-created_at")
+    )
+
+
 def expenses_for_partner(
     *,
     partner: Partner,

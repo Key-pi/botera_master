@@ -2,6 +2,11 @@
 {% load i18n %}
 
 {% block object-tools-items %}
+  {% if penalty_action_url and change %}
+    <li>
+      <a href="{{ penalty_action_url }}">{% translate "Manage penalties" %}</a>
+    </li>
+  {% endif %}
   {% if proposal_action_url and change %}
     <li>
       <a href="{{ proposal_action_url }}">{% translate "Propose another time" %}</a>
