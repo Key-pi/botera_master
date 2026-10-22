@@ -202,6 +202,8 @@ def create_confirmed_appointment(
             snapshot_items=snapshot_items,
         )
         _on_commit_schedule_confirmed_notifications(appointment.id)
+        if actor is None and source == Appointment.Source.CLIENT_BOT:
+            _on_commit_schedule_master_client_booked_notification(appointment.id)
     return appointment
 
 
@@ -646,6 +648,10 @@ def _on_commit_schedule_confirmed_notifications(appointment_id) -> None:
     transaction.on_commit(lambda: _schedule_confirmed_notifications(appointment_id))
 
 
+def _on_commit_schedule_master_client_booked_notification(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_master_client_booked_notification(appointment_id))
+
+
 def _on_commit_refresh_confirmed_notifications(appointment_id) -> None:
     transaction.on_commit(lambda: _refresh_confirmed_notifications(appointment_id))
 
@@ -711,6 +717,15 @@ def _schedule_confirmed_notifications(appointment_id) -> None:
         id=appointment_id
     )
     schedule_reminders_for_confirmed_appointment(appointment=appointment)
+
+
+def _schedule_master_client_booked_notification(appointment_id) -> None:
+    from apps.notifications.services import schedule_master_client_booked_notification
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_master_client_booked_notification(appointment=appointment)
 
 
 def _refresh_confirmed_notifications(appointment_id) -> None:

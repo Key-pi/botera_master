@@ -260,6 +260,37 @@ def schedule_master_booking_request_notification(
     )
 
 
+def schedule_master_client_booked_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the master notice for a client-created auto-confirmed booking."""
+
+    if (
+        appointment.status != Appointment.Status.CONFIRMED
+        or appointment.source != Appointment.Source.CLIENT_BOT
+        or appointment.created_by_id is not None
+    ):
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=appointment.partner,
+    )
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.MASTER_CLIENT_BOOKED_APPOINTMENT,
+        due_at=due_at,
+        idempotency_key=f"appointment:{appointment.id}:master:client_booked",
+        now=current_time,
+    )
+
+
 def schedule_client_booking_request_confirmed_notification(
     *,
     appointment: Appointment,

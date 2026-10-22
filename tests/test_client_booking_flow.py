@@ -187,6 +187,7 @@ def test_year_horizon_date_search_uses_bounded_schedule_queries(
 def test_auto_confirm_booking_creates_confirmed_and_blocks_same_slot(
     booking_context,
     rounded_future_start,
+    django_capture_on_commit_callbacks,
 ):
     context = booking_context
     update_schedule_settings(
@@ -196,16 +197,22 @@ def test_auto_confirm_booking_creates_confirmed_and_blocks_same_slot(
     )
     _open_window(context, rounded_future_start)
 
-    result = confirm_client_booking(
-        partner=context["partner"],
-        client_profile=context["client"],
-        selected_service_ids=[context["service"].id],
-        start_at=rounded_future_start,
-        now=rounded_future_start - timedelta(hours=1),
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        result = confirm_client_booking(
+            partner=context["partner"],
+            client_profile=context["client"],
+            selected_service_ids=[context["service"].id],
+            start_at=rounded_future_start,
+            now=rounded_future_start - timedelta(hours=1),
+        )
 
     assert result.appointment.status == Appointment.Status.CONFIRMED
     assert result.requires_master_confirmation is False
+    assert ScheduledNotification.objects.filter(
+        appointment=result.appointment,
+        type=ScheduledNotification.Type.MASTER_CLIENT_BOOKED_APPOINTMENT,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
 
     with pytest.raises(ValidationError):
         confirm_client_booking(

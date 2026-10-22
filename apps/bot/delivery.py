@@ -194,6 +194,18 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             reply_markup=reply.reply_markup,
         )
 
+    if notification.type == ScheduledNotification.Type.MASTER_CLIENT_BOOKED_APPOINTMENT:
+        if notification.appointment is None:
+            return None
+        context = _appointment_template_context(notification.appointment)
+        context["comment"] = _appointment_comment_block(notification.appointment)
+        return _master_notification_payload(
+            token=token,
+            notification=notification,
+            key="master.client_booked_appointment",
+            context=context,
+        )
+
     if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER:
         if (
             notification.client_profile is None
@@ -626,6 +638,19 @@ def _appointment_services_label(appointment: Appointment) -> str:
     return ", ".join(item.service_name_snapshot for item in items)
 
 
+def _appointment_comment_block(appointment: Appointment) -> str:
+    comment = appointment.client_comment.strip()
+    if not comment:
+        return ""
+    labels = {
+        "uk": "Коментар",
+        "ru": "Комментарий",
+        "en": "Comment",
+    }
+    label = labels.get(appointment.partner.default_language, labels["uk"])
+    return f"\n{label}: {comment}"
+
+
 def _proposal_template_context(
     *,
     proposal: AppointmentProposal,
@@ -743,6 +768,7 @@ def _bad_request_failure_code(exc: TelegramBadRequest) -> str:
 def _is_master_notification(notification: ScheduledNotification) -> bool:
     return notification.type in {
         ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+        ScheduledNotification.Type.MASTER_CLIENT_BOOKED_APPOINTMENT,
         ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER,
         ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
         ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,

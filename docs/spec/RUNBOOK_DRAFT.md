@@ -166,9 +166,11 @@ flow.
 3. Restart the polling runner so it loads the current eligible bot set.
 4. Send `/start`, then `/book`, from a client Telegram account.
 5. Select a category, service, date, and time; confirm the booking.
-6. For manual confirmation, verify the master receives the immediate request with
-   **Confirm**, **Decline**, and **Propose another time** actions. Exercise the needed
-   action in Telegram and verify the appointment/proposal state in partner admin.
+6. For auto-confirmation, verify the master receives the durable new confirmed
+   booking notice. For manual confirmation, verify the master receives the
+   immediate request with **Confirm**, **Decline**, and **Propose another time**
+   actions. Exercise the needed action in Telegram and verify the
+   appointment/proposal state in partner admin.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
    receives the queued reply through the partner bot.

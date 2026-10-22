@@ -347,6 +347,20 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         ),
     ),
     _definition(
+        "master.client_booked_appointment",
+        uk="Новий підтверджений запис: {client_name} {client_phone}\n{date} о {time}\n{services}{comment}",
+        ru="Новая подтверждённая запись: {client_name} {client_phone}\n{date} в {time}\n{services}{comment}",
+        en="New confirmed booking: {client_name} {client_phone}\n{date} at {time}\n{services}{comment}",
+        placeholders=(
+            "client_name",
+            "client_phone",
+            "date",
+            "time",
+            "services",
+            "comment",
+        ),
+    ),
+    _definition(
         "master.booking_request_decline_confirm",
         uk="Відхилити заявку {client_name} на {date} о {time}?",
         ru="Отклонить заявку {client_name} на {date} в {time}?",

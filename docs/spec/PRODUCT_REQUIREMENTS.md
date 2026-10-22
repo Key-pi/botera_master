@@ -549,7 +549,8 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   - `appointment.reschedule_proposal_declined` with `{date}`, `{time}`, `{services}`.
   - `appointment.reschedule_proposal_expired` with `{date}`, `{time}`, `{services}`.
 - `appointment.late_cancel_blocked` remains system-only localized in MVP.
-- Master notifications for cancellation/reschedule events are partner-editable in MVP:
+- Master booking and cancellation/reschedule notifications are partner-editable in MVP:
+  - `master.client_booked_appointment` with `{client_name}`, `{client_phone}`, `{date}`, `{time}`, `{services}`, `{comment}`.
   - `master.client_cancelled_appointment`.
   - `master.client_requested_reschedule`.
   - `master.client_accepted_reschedule`.
