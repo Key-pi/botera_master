@@ -8,6 +8,8 @@ from apps.accounts.models import User
 from apps.appointments.client_booking import (
     available_booking_dates,
     available_booking_slots,
+    available_client_requested_alternative_dates,
+    available_client_requested_alternative_slots,
     available_client_reschedule_slots,
     booking_category_page,
     booking_services_page,
@@ -17,13 +19,19 @@ from apps.appointments.client_booking import (
     client_profile_overview,
     confirm_client_booking,
     reschedule_client_appointment,
+    select_client_requested_alternative_time,
 )
 from apps.appointments.models import Appointment, AppointmentProposal
+from apps.appointments.proposals import (
+    AppointmentProposalOptionInput,
+    create_appointment_proposal,
+)
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     cancel_appointment_by_client,
     client_cancellation_policy,
     create_confirmed_appointment,
+    create_requested_appointment,
     transition_appointment_status,
 )
 from apps.bot.pagination import MAX_TELEGRAM_ENTITY_PAGE_SIZE, paginate_telegram_entities
@@ -418,6 +426,302 @@ def test_near_fit_client_reschedule_requires_master_even_in_auto_mode(
     assert result.is_near_fit is True
     assert appointment.start_at == rounded_future_start
     assert result.proposal.options.get().is_near_fit is True
+
+
+@pytest.mark.django_db
+def test_client_own_requested_alternative_auto_confirms_after_fresh_slot_check(
+    booking_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+    )
+    _open_window(context, rounded_future_start, hours=3)
+    requested = create_requested_appointment(
+        actor=None,
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=requested,
+        proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+        options=[
+            AppointmentProposalOptionInput(
+                start_at=rounded_future_start + timedelta(hours=2),
+            )
+        ],
+    )
+    new_start = rounded_future_start + timedelta(hours=1)
+
+    dates = available_client_requested_alternative_dates(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal=proposal,
+        start_date=rounded_future_start.date(),
+        days=1,
+        now=timezone.now(),
+    )
+    slots = available_client_requested_alternative_slots(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal=proposal,
+        local_date=rounded_future_start.date(),
+        now=timezone.now(),
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        result = select_client_requested_alternative_time(
+            partner=context["partner"],
+            client_profile=context["client"],
+            proposal=proposal,
+            start_at=new_start,
+            now=timezone.now(),
+        )
+
+    requested.refresh_from_db()
+    proposal.refresh_from_db()
+    assert dates.items[0].local_date == rounded_future_start.date()
+    assert new_start in {slot.start_at for slot in slots.items}
+    assert result.requires_master_confirmation is False
+    assert requested.status == Appointment.Status.CONFIRMED
+    assert requested.start_at == new_start
+    assert proposal.status == AppointmentProposal.Status.SUPERSEDED
+    assert ScheduledNotification.objects.filter(
+        appointment=requested,
+        type=ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_client_own_requested_alternative_manual_mode_requeues_master_request(
+    booking_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.MANUAL,
+        slot_step_minutes=30,
+    )
+    _open_window(context, rounded_future_start, hours=3)
+    with django_capture_on_commit_callbacks(execute=True):
+        requested = create_requested_appointment(
+            actor=None,
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["client"],
+            start_at=rounded_future_start,
+            service_items=[AppointmentServiceItemInput(service=context["service"])],
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        proposal = create_appointment_proposal(
+            actor=context["owner"],
+            appointment=requested,
+            proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+            options=[
+                AppointmentProposalOptionInput(
+                    start_at=rounded_future_start + timedelta(hours=2),
+                )
+            ],
+        )
+    new_start = rounded_future_start + timedelta(hours=1)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = select_client_requested_alternative_time(
+            partner=context["partner"],
+            client_profile=context["client"],
+            proposal=proposal,
+            start_at=new_start,
+            now=timezone.now(),
+        )
+
+    requested.refresh_from_db()
+    proposal.refresh_from_db()
+    request_notices = ScheduledNotification.objects.filter(
+        appointment=requested,
+        type=ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+    )
+    assert result.requires_master_confirmation is True
+    assert requested.status == Appointment.Status.REQUESTED
+    assert requested.start_at == new_start
+    assert proposal.status == AppointmentProposal.Status.SUPERSEDED
+    assert request_notices.filter(status=ScheduledNotification.Status.STALE).count() == 1
+    assert request_notices.filter(status=ScheduledNotification.Status.QUEUED).count() == 1
+    assert request_notices.get(status=ScheduledNotification.Status.QUEUED).idempotency_key.endswith(
+        proposal.id.hex
+    )
+    assert ScheduledNotification.objects.filter(
+        appointment=requested,
+        type=ScheduledNotification.Type.STALE_REQUESTED,
+        stale_sequence=1,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_client_own_requested_alternative_near_fit_stays_requested_in_auto_mode(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+        near_fit_tolerance_minutes=10,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=rounded_future_start,
+        end_at=rounded_future_start + timedelta(minutes=50),
+    )
+    original_start = rounded_future_start + timedelta(days=1)
+    requested = create_requested_appointment(
+        actor=None,
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=original_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=requested,
+        proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+        options=[AppointmentProposalOptionInput(start_at=original_start + timedelta(hours=2))],
+    )
+
+    result = select_client_requested_alternative_time(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal=proposal,
+        start_at=rounded_future_start,
+        now=timezone.now(),
+    )
+
+    requested.refresh_from_db()
+    assert result.requires_master_confirmation is True
+    assert result.is_near_fit is True
+    assert requested.status == Appointment.Status.REQUESTED
+    assert requested.start_at == rounded_future_start
+    assert requested.is_near_fit is True
+    assert requested.confirmation_mode_snapshot == PartnerScheduleSettings.ConfirmationMode.AUTO
+
+
+@pytest.mark.django_db
+def test_client_own_requested_alternative_rejects_a_now_occupied_auto_slot(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+    )
+    _open_window(context, rounded_future_start, hours=3)
+    requested = create_requested_appointment(
+        actor=None,
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=requested,
+        proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+        options=[
+            AppointmentProposalOptionInput(
+                start_at=rounded_future_start + timedelta(hours=2),
+            )
+        ],
+    )
+    occupied_start = rounded_future_start + timedelta(hours=1)
+    create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=occupied_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    with pytest.raises(ValidationError, match="no longer available"):
+        select_client_requested_alternative_time(
+            partner=context["partner"],
+            client_profile=context["client"],
+            proposal=proposal,
+            start_at=occupied_start,
+            now=timezone.now(),
+        )
+
+    requested.refresh_from_db()
+    proposal.refresh_from_db()
+    assert requested.status == Appointment.Status.REQUESTED
+    assert requested.start_at == rounded_future_start
+    assert proposal.status == AppointmentProposal.Status.PENDING
+
+
+@pytest.mark.django_db
+def test_client_own_requested_alternative_rejects_another_client(
+    booking_context,
+    rounded_future_start,
+):
+    context = booking_context
+    _open_window(context, rounded_future_start, hours=3)
+    requested = create_requested_appointment(
+        actor=None,
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=requested,
+        proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+        options=[
+            AppointmentProposalOptionInput(
+                start_at=rounded_future_start + timedelta(hours=2),
+            )
+        ],
+    )
+    other_client = create_manual_client_profile(
+        actor=context["owner"],
+        partner=context["partner"],
+        name="Other client",
+    )
+
+    with pytest.raises(ValidationError, match="not available to this client"):
+        select_client_requested_alternative_time(
+            partner=context["partner"],
+            client_profile=other_client,
+            proposal=proposal,
+            start_at=rounded_future_start + timedelta(hours=1),
+            now=timezone.now(),
+        )
+
+    requested.refresh_from_db()
+    proposal.refresh_from_db()
+    assert requested.start_at == rounded_future_start
+    assert proposal.status == AppointmentProposal.Status.PENDING
 
 
 @pytest.mark.django_db

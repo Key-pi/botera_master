@@ -13,6 +13,7 @@ from apps.appointments.proposals import (
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
+    create_requested_appointment,
     transition_appointment_status,
 )
 from apps.audit.models import AuditEvent
@@ -26,10 +27,14 @@ from apps.bot.profile import (
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_requested_alternative_dates_reply,
+    build_requested_alternative_final_confirm_reply,
+    build_requested_alternative_slots_reply,
     build_reschedule_dates_reply,
     build_reschedule_final_confirm_reply,
     build_reschedule_slots_reply,
     confirm_cancel_appointment_reply,
+    confirm_requested_alternative_reply,
     confirm_reschedule_reply,
     decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
@@ -433,6 +438,94 @@ def test_profile_declines_master_proposal_without_changing_appointment(
         appointment_proposal=proposal,
         type=ScheduledNotification.Type.MASTER_CLIENT_DECLINED_PROPOSAL,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_profile_client_can_choose_own_time_for_requested_alternatives(
+    bot_profile_context,
+    profile_start,
+    django_capture_on_commit_callbacks,
+):
+    context = bot_profile_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        slot_step_minutes=30,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=profile_start,
+        end_at=profile_start + timedelta(hours=3),
+    )
+    appointment = create_requested_appointment(
+        actor=None,
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=profile_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    proposal = create_appointment_proposal(
+        actor=context["owner"],
+        appointment=appointment,
+        proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+        options=[AppointmentProposalOptionInput(start_at=profile_start + timedelta(hours=2))],
+    )
+    new_start = profile_start + timedelta(hours=1)
+    current_time = timezone.now()
+
+    offered = build_appointment_proposal_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+    )
+    dates = build_requested_alternative_dates_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+        now=current_time,
+    )
+    slots = build_requested_alternative_slots_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+        local_date=profile_start.date(),
+        now=current_time,
+    )
+    final = build_requested_alternative_final_confirm_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+        start_at=new_start,
+        now=current_time,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        confirmed = confirm_requested_alternative_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            proposal_id=proposal.id,
+            start_at=new_start,
+            now=current_time,
+        )
+
+    callbacks = [
+        *_button_callbacks(offered),
+        *_button_callbacks(dates),
+        *_button_callbacks(slots),
+        *_button_callbacks(final),
+    ]
+    assert f"pf:pad:{proposal.id.hex}:f:1:1" in callbacks
+    assert f"pf:pas:{proposal.id.hex}:{profile_start:%Y%m%d}:f:1:1" in callbacks
+    assert f"pf:paf:{proposal.id.hex}:{int(new_start.timestamp())}:f:1" in callbacks
+    assert f"pf:pag:{proposal.id.hex}:{int(new_start.timestamp())}:f:1" in callbacks
+    assert max(len(callback.encode()) for callback in callbacks) <= 64
+    assert "Booking moved" in confirmed.text
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.CONFIRMED
+    assert appointment.start_at == new_start
 
 
 @pytest.mark.django_db

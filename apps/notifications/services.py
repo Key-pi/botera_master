@@ -227,6 +227,7 @@ def schedule_manual_appointment_created_notification(
 def schedule_master_booking_request_notification(
     *,
     appointment: Appointment,
+    request_revision: str = "",
     now: datetime | None = None,
 ) -> ScheduledNotification | None:
     """Queue the initial actionable master notice for a client booking request."""
@@ -239,6 +240,9 @@ def schedule_master_booking_request_notification(
         due_at=current_time,
         partner=appointment.partner,
     )
+    idempotency_key = f"appointment:{appointment.id}:master:booking_request"
+    if request_revision:
+        idempotency_key = f"{idempotency_key}:{request_revision}"
     return _upsert_scheduled_notification(
         partner=appointment.partner,
         appointment=appointment,
@@ -246,7 +250,7 @@ def schedule_master_booking_request_notification(
         reminder_rule=None,
         type=ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
         due_at=due_at,
-        idempotency_key=f"appointment:{appointment.id}:master:booking_request",
+        idempotency_key=idempotency_key,
         now=current_time,
     )
 

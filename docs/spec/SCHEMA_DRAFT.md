@@ -472,6 +472,7 @@ Rules:
 - if proposal expires, both sides are notified when relevant.
 - requested alternatives expire by automatically cancelling the requested appointment.
 - a pending `requested_alternatives` proposal suppresses queued initial/stale master request notices; declining or cancelling it resumes the stale sequence with a new idempotency key.
+- if the client selects a different available time instead of an offered option, the proposal becomes `superseded`; auto-confirm may confirm the same appointment under the booking-resource lock, while manual-confirm/near-fit keeps it `requested` and creates a revision-specific master request notification.
 
 ### AppointmentProposalOption
 

@@ -511,6 +511,7 @@ Post-create booking messages/actions:
 - While such a proposal is pending, stale-request reminders are paused because the next action belongs to the client; decline/cancel resumes the reminder sequence.
 - If the client chooses one of the master-proposed slots, the system re-checks availability, then the appointment becomes `confirmed` and reminders are created.
 - If none of the proposed slots works for the client, the client may choose another available time; that choice follows the partner's normal auto-confirm/manual-confirm mode.
+- A client-selected replacement time supersedes the pending master proposal. Auto-confirm uses the booking-resource lock before confirming; manual-confirm or near-fit updates the same request and starts a fresh actionable request/reminder cycle for the master.
 - Requested appointment alternative proposals expire after 48 hours.
 - If a requested appointment alternative proposal expires, the appointment is automatically cancelled and both client and master are notified.
 - If client cancels a `requested` appointment, master receives a notification that the request was cancelled by the client.

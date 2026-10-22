@@ -287,6 +287,7 @@ Superuser can:
 - Stale-request reminders pause while a requested-alternatives proposal is pending and resume on the next sequence if the client declines it or the master cancels it.
 - If the client chooses one of the master-proposed slots, the system re-checks availability, then the appointment becomes `confirmed` and reminders are created.
 - If none of the proposed slots works for the client, the client may choose another available time; that choice follows the partner's normal auto-confirm/manual-confirm mode.
+- Choosing another time supersedes the pending master proposal. A normal slot in auto-confirm mode becomes `confirmed` after a lock-protected availability re-check; manual-confirm and near-fit choices remain `requested` and create a fresh actionable master notification.
 - Requested appointment alternative proposals expire after 48 hours.
 - If a requested appointment alternative proposal expires, the appointment is automatically cancelled and both client and master are notified.
 - If client cancels a `requested` appointment, master receives a notification that the request was cancelled by the client.

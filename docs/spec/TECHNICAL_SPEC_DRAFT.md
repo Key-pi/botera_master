@@ -599,6 +599,11 @@ Rules:
 - Pending requested alternatives stale queued master request notices. If the client declines or the
   master cancels the proposal, stale reminders resume at the next sequence instead of reusing an
   already-staled idempotency key.
+- The client proposal view also supports choosing a different generated slot. Final confirmation
+  re-resolves the partner/client/proposal, revalidates the slot, and supersedes the old proposal.
+  Auto-confirm runs under the booking-resource advisory lock; manual-confirm and near-fit choices
+  retain `requested` status and enqueue a revision-specific actionable master request plus the next
+  stale-reminder sequence.
 - Old pending reminders are cancelled/staled on reschedule, cancellation, completion, or no-show.
 - The pilot admin exposes a service-backed time-proposal action for requested and confirmed appointments; proposal and option records remain read-only operational history.
 - A time proposal may contain multiple alternatives. Client callbacks carry only opaque record identifiers and re-resolve partner/client ownership before calling the proposal owner service.

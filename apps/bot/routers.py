@@ -69,12 +69,17 @@ from apps.bot.profile import (
     build_future_appointments_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_requested_alternative_dates_reply,
+    build_requested_alternative_final_confirm_reply,
+    build_requested_alternative_slots_reply,
     build_reschedule_dates_reply,
     build_reschedule_final_confirm_reply,
     build_reschedule_slots_reply,
     confirm_cancel_appointment_reply,
+    confirm_requested_alternative_reply,
     confirm_reschedule_reply,
     decline_appointment_proposal_reply,
+    parse_return_action_token,
     send_client_message_to_master_reply,
     set_profile_language_reply,
 )
@@ -1004,6 +1009,43 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             appointment_id=parse_profile_uuid_token(parts[2]),
             start_at=parse_timestamp_token(parts[3]),
             return_page=parse_profile_page_token(parts[4]),
+        )
+    if action == "pad" and len(parts) == 6:
+        return build_requested_alternative_dates_reply(
+            partner=partner,
+            client_profile=client_profile,
+            proposal_id=parse_profile_uuid_token(parts[2]),
+            return_action=parse_return_action_token(parts[3]),
+            return_page=parse_profile_page_token(parts[4]),
+            page=parse_profile_page_token(parts[5]),
+        )
+    if action == "pas" and len(parts) == 7:
+        return build_requested_alternative_slots_reply(
+            partner=partner,
+            client_profile=client_profile,
+            proposal_id=parse_profile_uuid_token(parts[2]),
+            local_date=parse_date_token(parts[3]),
+            return_action=parse_return_action_token(parts[4]),
+            return_page=parse_profile_page_token(parts[5]),
+            page=parse_profile_page_token(parts[6]),
+        )
+    if action == "paf" and len(parts) == 6:
+        return build_requested_alternative_final_confirm_reply(
+            partner=partner,
+            client_profile=client_profile,
+            proposal_id=parse_profile_uuid_token(parts[2]),
+            start_at=parse_timestamp_token(parts[3]),
+            return_action=parse_return_action_token(parts[4]),
+            return_page=parse_profile_page_token(parts[5]),
+        )
+    if action == "pag" and len(parts) == 6:
+        return confirm_requested_alternative_reply(
+            partner=partner,
+            client_profile=client_profile,
+            proposal_id=parse_profile_uuid_token(parts[2]),
+            start_at=parse_timestamp_token(parts[3]),
+            return_action=parse_return_action_token(parts[4]),
+            return_page=parse_profile_page_token(parts[5]),
         )
     if action == "proposal" and len(parts) == 5:
         return_action = parts[3]

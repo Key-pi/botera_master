@@ -136,6 +136,17 @@ class ClientRescheduleResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ClientRequestedAlternativeResult:
+    """Result of replacing offered request alternatives with the client's own time."""
+
+    appointment: Appointment
+    proposal: AppointmentProposal
+    previous_start_at: datetime
+    requires_master_confirmation: bool
+    is_near_fit: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ClientProfileOverview:
     """Small client personal-area summary."""
 
@@ -517,6 +528,184 @@ def create_requested_alternative_proposal(
             proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
             options=option_inputs,
         )
+
+
+def available_client_requested_alternative_dates(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal: AppointmentProposal,
+    start_date: date,
+    days: int,
+    page: int = 1,
+    per_page: int = BOOKING_DATES_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingDateOption]:
+    """Return dates for a client's own choice after master alternatives do not fit."""
+
+    if days <= 0:
+        raise ValidationError({"days": "Search window must be positive."})
+    current_time = now or timezone.now()
+    appointment = proposal.appointment
+    _validate_client_requested_alternative_selection(
+        partner=partner,
+        client_profile=client_profile,
+        proposal=proposal,
+        appointment=appointment,
+        now=current_time,
+    )
+    options = _available_date_options_for_duration(
+        partner=partner,
+        booking_resource=appointment.booking_resource,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        start_date=start_date,
+        days=days,
+        excluded_start_ats=frozenset({appointment.start_at}),
+        now=current_time,
+    )
+    return paginate_telegram_entities(options, page=page, per_page=per_page)
+
+
+def available_client_requested_alternative_slots(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal: AppointmentProposal,
+    local_date: date,
+    page: int = 1,
+    per_page: int = BOOKING_SLOTS_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingSlotOption]:
+    """Return slots a client may choose instead of the master's offered options."""
+
+    current_time = now or timezone.now()
+    appointment = proposal.appointment
+    _validate_client_requested_alternative_selection(
+        partner=partner,
+        client_profile=client_profile,
+        proposal=proposal,
+        appointment=appointment,
+        now=current_time,
+    )
+    slots = _requested_alternative_slot_options_for_local_date(
+        appointment=appointment,
+        local_date=local_date,
+        now=current_time,
+    )
+    return paginate_telegram_entities(slots, page=page, per_page=per_page)
+
+
+def select_client_requested_alternative_time(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal: AppointmentProposal,
+    start_at: datetime,
+    now: datetime | None = None,
+) -> ClientRequestedAlternativeResult:
+    """Apply a client's own time using the partner's current confirmation mode."""
+
+    _validate_aware_datetime(start_at, "start_at")
+    current_time = now or timezone.now()
+
+    with transaction.atomic():
+        proposal = (
+            AppointmentProposal.objects.select_for_update()
+            .select_related("partner", "appointment", "created_by")
+            .get(id=proposal.id)
+        )
+        appointment = (
+            Appointment.objects.select_for_update()
+            .select_related("partner", "booking_resource", "client_profile")
+            .prefetch_related("service_items")
+            .get(id=proposal.appointment_id)
+        )
+        _validate_client_requested_alternative_selection(
+            partner=partner,
+            client_profile=client_profile,
+            proposal=proposal,
+            appointment=appointment,
+            now=current_time,
+        )
+        schedule_settings = _schedule_settings_for_booking(partner)
+
+        # Only a path that may create a confirmed appointment needs serialization.
+        if schedule_settings.confirmation_mode == PartnerScheduleSettings.ConfirmationMode.AUTO:
+            acquire_booking_resource_advisory_lock_if_supported(appointment.booking_resource)
+        matching_slot = _find_matching_requested_alternative_slot(
+            appointment=appointment,
+            start_at=start_at,
+            now=current_time,
+        )
+        should_confirm = (
+            schedule_settings.confirmation_mode
+            == PartnerScheduleSettings.ConfirmationMode.AUTO
+            and not matching_slot.is_near_fit
+        )
+        previous_start_at = appointment.start_at
+
+        proposal.status = AppointmentProposal.Status.SUPERSEDED
+        proposal.responded_at = current_time
+        proposal.save(update_fields=["status", "responded_at", "updated_at"])
+
+        appointment.start_at = matching_slot.start_at
+        appointment.end_at = matching_slot.end_at
+        appointment.source = Appointment.Source.CLIENT_BOT
+        appointment.confirmation_mode_snapshot = schedule_settings.confirmation_mode
+        appointment.is_near_fit = matching_slot.is_near_fit
+        update_fields = [
+            "start_at",
+            "end_at",
+            "source",
+            "confirmation_mode_snapshot",
+            "is_near_fit",
+            "updated_at",
+        ]
+        if should_confirm:
+            appointment.status = Appointment.Status.CONFIRMED
+            appointment.confirmed_at = current_time
+            appointment.status_changed_at = current_time
+            update_fields.extend(["status", "confirmed_at", "status_changed_at"])
+        else:
+            # This is a fresh actionable request, so reminder timing starts again here.
+            appointment.requested_at = current_time
+            update_fields.append("requested_at")
+        appointment.save(update_fields=update_fields)
+
+        record_audit_event(
+            partner=partner,
+            actor=None,
+            event_type="appointment.client_selected_alternative_time",
+            target=appointment,
+            message="Client selected a different time after receiving alternatives.",
+            payload={
+                "proposal_id": str(proposal.id),
+                "previous_start_at": previous_start_at.isoformat(),
+                "new_start_at": appointment.start_at.isoformat(),
+                "result_status": appointment.status,
+                "is_near_fit": appointment.is_near_fit,
+            },
+        )
+        if should_confirm:
+            refresh_confirmed_notifications_after_commit(appointment.id)
+            transaction.on_commit(
+                lambda: _schedule_master_client_reschedule_notification(appointment.id)
+            )
+        else:
+            transaction.on_commit(
+                lambda: _schedule_client_selected_requested_notifications(
+                    appointment.id,
+                    proposal.id,
+                )
+            )
+
+    return ClientRequestedAlternativeResult(
+        appointment=appointment,
+        proposal=proposal,
+        previous_start_at=previous_start_at,
+        requires_master_confirmation=not should_confirm,
+        is_near_fit=matching_slot.is_near_fit,
+    )
 
 
 def reschedule_client_appointment(
@@ -968,6 +1157,25 @@ def _schedule_master_client_reschedule_notification(appointment_id) -> None:
     schedule_master_client_reschedule_notification(appointment=appointment)
 
 
+def _schedule_client_selected_requested_notifications(appointment_id, proposal_id) -> None:
+    from apps.notifications.services import (
+        resume_stale_requested_notification,
+        schedule_master_booking_request_notification,
+    )
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    initial_notice = schedule_master_booking_request_notification(
+        appointment=appointment,
+        request_revision=proposal_id.hex,
+    )
+    resume_stale_requested_notification(
+        appointment=appointment,
+        anchor_at=initial_notice.due_at if initial_notice is not None else None,
+    )
+
+
 def _appointment_duration_minutes(appointment: Appointment) -> int:
     duration_minutes = sum(item.duration_minutes for item in appointment.service_items.all())
     if duration_minutes <= 0:
@@ -1001,6 +1209,33 @@ def _validate_requested_alternative_access(
     ensure_partner_access(actor, partner)
     if appointment.partner_id != partner.id:
         raise ValidationError({"appointment": "Appointment is not available to this partner."})
+    if appointment.status != Appointment.Status.REQUESTED:
+        raise ValidationError({"appointment": "Appointment is no longer requested."})
+
+
+def _validate_client_requested_alternative_selection(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal: AppointmentProposal,
+    appointment: Appointment,
+    now: datetime,
+) -> None:
+    if client_profile.partner_id != partner.id:
+        raise ValidationError({"client_profile": "Client profile must belong to this partner."})
+    if proposal.partner_id != partner.id or appointment.partner_id != partner.id:
+        raise ValidationError({"proposal": "Proposal is not available to this client."})
+    if (
+        proposal.appointment_id != appointment.id
+        or appointment.client_profile_id != client_profile.id
+    ):
+        raise ValidationError({"proposal": "Proposal is not available to this client."})
+    if proposal.created_by_id is None:
+        raise ValidationError({"proposal": "Only a master-created proposal can be replaced."})
+    if proposal.type != AppointmentProposal.Type.REQUESTED_ALTERNATIVES:
+        raise ValidationError({"proposal": "This proposal does not offer request alternatives."})
+    if proposal.status != AppointmentProposal.Status.PENDING or proposal.expires_at <= now:
+        raise ValidationError({"proposal": "Proposal is no longer available."})
     if appointment.status != Appointment.Status.REQUESTED:
         raise ValidationError({"appointment": "Appointment is no longer requested."})
 

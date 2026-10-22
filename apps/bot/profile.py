@@ -10,12 +10,15 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.appointments.client_booking import (
+    available_client_requested_alternative_dates,
+    available_client_requested_alternative_slots,
     available_client_reschedule_dates,
     available_client_reschedule_slots,
     client_appointment_history_page,
     client_future_appointments_page,
     client_profile_overview,
     reschedule_client_appointment,
+    select_client_requested_alternative_time,
 )
 from apps.appointments.models import Appointment, AppointmentProposal, AppointmentProposalOption
 from apps.appointments.proposals import (
@@ -691,6 +694,21 @@ def build_appointment_proposal_reply(
         ]
         for index, option in enumerate(options, start=1)
     ]
+    if proposal.type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("choose_another_time", language),
+                    callback_data=_callback(
+                        "pad",
+                        proposal.id.hex,
+                        _return_action_token(return_action),
+                        return_page,
+                        1,
+                    ),
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(
@@ -718,6 +736,330 @@ def build_appointment_proposal_reply(
         ]
     )
     return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def build_requested_alternative_dates_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    return_action: str = "future",
+    return_page: int = 1,
+    page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Render dates for a client's own choice after offered times do not fit."""
+
+    current_time = now or timezone.now()
+    proposal = _proposal_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        proposal_id=proposal_id,
+        now=current_time,
+    )
+    settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
+    start_date = to_partner_time(current_time, partner.timezone).date()
+    dates_page = available_client_requested_alternative_dates(
+        partner=partner,
+        client_profile=client_profile,
+        proposal=proposal,
+        start_date=start_date,
+        days=settings.booking_horizon_days,
+        page=page,
+        now=current_time,
+    )
+    language = client_profile.language
+    back_callback = _callback(
+        "proposal",
+        proposal.id.hex,
+        return_action,
+        return_page,
+    )
+    if not dates_page.items:
+        return BotProfileReply(
+            text=_render(partner=partner, key="booking.no_dates", language=language),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[_back_button(back_callback, language)]]
+            ),
+        )
+
+    return_token = _return_action_token(return_action)
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_reschedule_date_label(option.local_date, option.slot_count, language),
+                callback_data=_callback(
+                    "pas",
+                    proposal.id.hex,
+                    option.local_date.strftime("%Y%m%d"),
+                    return_token,
+                    return_page,
+                    1,
+                ),
+            )
+        ]
+        for option in dates_page.items
+    ]
+    rows.extend(
+        _requested_alternative_pagination_rows(
+            action="pad",
+            proposal=proposal,
+            return_action=return_action,
+            return_page=return_page,
+            page=dates_page,
+        )
+    )
+    rows.append([_back_button(back_callback, language)])
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key="appointment.reschedule_start",
+            language=language,
+            context=_appointment_action_context(
+                partner=partner,
+                appointment=proposal.appointment,
+            ),
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def build_requested_alternative_slots_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    local_date: date,
+    return_action: str = "future",
+    return_page: int = 1,
+    page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Render slots for a client's own replacement request time."""
+
+    proposal = _proposal_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        proposal_id=proposal_id,
+        now=now or timezone.now(),
+    )
+    slots_page = available_client_requested_alternative_slots(
+        partner=partner,
+        client_profile=client_profile,
+        proposal=proposal,
+        local_date=local_date,
+        page=page,
+        now=now,
+    )
+    language = client_profile.language
+    return_token = _return_action_token(return_action)
+    dates_callback = _callback(
+        "pad",
+        proposal.id.hex,
+        return_token,
+        return_page,
+        1,
+    )
+    if not slots_page.items:
+        return BotProfileReply(
+            text=_render(partner=partner, key="booking.no_slots", language=language),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[_back_button(dates_callback, language)]]
+            ),
+        )
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_reschedule_slot_label(
+                    start_at=slot.start_at,
+                    timezone_name=partner.timezone,
+                    is_near_fit=slot.is_near_fit,
+                    language=language,
+                ),
+                callback_data=_callback(
+                    "paf",
+                    proposal.id.hex,
+                    _timestamp_token(slot.start_at),
+                    return_token,
+                    return_page,
+                ),
+            )
+        ]
+        for slot in slots_page.items
+    ]
+    rows.extend(
+        _requested_alternative_pagination_rows(
+            action="pas",
+            proposal=proposal,
+            return_action=return_action,
+            return_page=return_page,
+            page=slots_page,
+            local_date=local_date,
+        )
+    )
+    rows.append([_back_button(dates_callback, language)])
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key="appointment.reschedule_start",
+            language=language,
+            context=_appointment_action_context(
+                partner=partner,
+                appointment=proposal.appointment,
+            ),
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def build_requested_alternative_final_confirm_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    start_at: datetime,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Freshly validate the client's own slot and ask for final confirmation."""
+
+    proposal = _proposal_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        proposal_id=proposal_id,
+        now=now or timezone.now(),
+    )
+    slot = _find_client_requested_alternative_slot(
+        partner=partner,
+        client_profile=client_profile,
+        proposal=proposal,
+        start_at=start_at,
+        now=now,
+    )
+    if slot is None:
+        return BotProfileReply(
+            text=_render(
+                partner=partner,
+                key="booking.slot_taken",
+                language=client_profile.language,
+            )
+        )
+
+    language = client_profile.language
+    text = _render(
+        partner=partner,
+        key="appointment.reschedule_requested",
+        language=language,
+        context=_reschedule_context(
+            partner=partner,
+            appointment=proposal.appointment,
+            old_start_at=proposal.appointment.start_at,
+            new_start_at=start_at,
+        ),
+    )
+    if slot.is_near_fit:
+        settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
+        notice = _render(
+            partner=partner,
+            key="booking.near_fit_notice",
+            language=language,
+            context={"tolerance_minutes": str(settings.near_fit_tolerance_minutes)},
+        )
+        text = f"{text}\n\n{notice}"
+
+    return_token = _return_action_token(return_action)
+    local_date = to_partner_time(start_at, partner.timezone).date()
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_label("confirm_reschedule", language),
+                callback_data=_callback(
+                    "pag",
+                    proposal.id.hex,
+                    _timestamp_token(start_at),
+                    return_token,
+                    return_page,
+                ),
+            )
+        ],
+        [
+            _back_button(
+                _callback(
+                    "pas",
+                    proposal.id.hex,
+                    local_date.strftime("%Y%m%d"),
+                    return_token,
+                    return_page,
+                    1,
+                ),
+                language,
+            )
+        ],
+    ]
+    return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def confirm_requested_alternative_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal_id: UUID,
+    start_at: datetime,
+    return_action: str = "future",
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotProfileReply:
+    """Persist the client's own requested time through the owner service."""
+
+    proposal = _proposal_for_client(
+        partner=partner,
+        client_profile=client_profile,
+        proposal_id=proposal_id,
+        now=now or timezone.now(),
+    )
+    result = select_client_requested_alternative_time(
+        partner=partner,
+        client_profile=client_profile,
+        proposal=proposal,
+        start_at=start_at,
+        now=now,
+    )
+    key = (
+        "appointment.reschedule_requested"
+        if result.requires_master_confirmation
+        else "appointment.reschedule_auto_confirmed"
+    )
+    language = client_profile.language
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key=key,
+            language=language,
+            context=_reschedule_context(
+                partner=partner,
+                appointment=result.appointment,
+                old_start_at=result.previous_start_at,
+                new_start_at=result.appointment.start_at,
+            ),
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    _back_button(
+                        _callback(
+                            "details",
+                            result.appointment.id.hex,
+                            return_action,
+                            return_page,
+                        ),
+                        language,
+                    )
+                ]
+            ]
+        ),
+    )
 
 
 def accept_appointment_proposal_reply(
@@ -1010,6 +1352,15 @@ def parse_integer_token(value: str) -> int:
     return parsed
 
 
+def parse_return_action_token(value: str) -> str:
+    """Expand a compact profile return target from Telegram callback data."""
+
+    try:
+        return {"f": "future", "h": "history"}[value]
+    except KeyError as exc:
+        raise ValidationError({"callback": "Unsupported return target."}) from exc
+
+
 def _appointment_list_reply(
     *,
     partner: Partner,
@@ -1167,6 +1518,33 @@ def _find_client_reschedule_slot(
         page_number += 1
 
 
+def _find_client_requested_alternative_slot(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    proposal: AppointmentProposal,
+    start_at: datetime,
+    now: datetime | None,
+):
+    local_date = to_partner_time(start_at, partner.timezone).date()
+    page_number = 1
+    while True:
+        slots_page = available_client_requested_alternative_slots(
+            partner=partner,
+            client_profile=client_profile,
+            proposal=proposal,
+            local_date=local_date,
+            page=page_number,
+            now=now,
+        )
+        for slot in slots_page.items:
+            if slot.start_at == start_at:
+                return slot
+        if not slots_page.has_next:
+            return None
+        page_number += 1
+
+
 def _reschedule_pagination_rows(
     *,
     action: str,
@@ -1185,6 +1563,47 @@ def _reschedule_pagination_rows(
             action,
             appointment.id.hex,
             local_date.strftime("%Y%m%d"),
+            return_page,
+            page_number,
+        )
+
+    row: list[InlineKeyboardButton] = []
+    if page.has_previous:
+        row.append(InlineKeyboardButton(text="<", callback_data=callback(page.page - 1)))
+    row.append(InlineKeyboardButton(text=page.indicator, callback_data=_callback("noop")))
+    if page.has_next:
+        row.append(InlineKeyboardButton(text=">", callback_data=callback(page.page + 1)))
+    return [row]
+
+
+def _requested_alternative_pagination_rows(
+    *,
+    action: str,
+    proposal: AppointmentProposal,
+    return_action: str,
+    return_page: int,
+    page,
+    local_date: date | None = None,
+) -> list[list[InlineKeyboardButton]]:
+    if not page.has_previous and not page.has_next:
+        return []
+
+    return_token = _return_action_token(return_action)
+
+    def callback(page_number: int) -> str:
+        if local_date is None:
+            return _callback(
+                action,
+                proposal.id.hex,
+                return_token,
+                return_page,
+                page_number,
+            )
+        return _callback(
+            action,
+            proposal.id.hex,
+            local_date.strftime("%Y%m%d"),
+            return_token,
             return_page,
             page_number,
         )
@@ -1370,6 +1789,13 @@ def _timestamp_token(value: datetime) -> int:
     return int(value.astimezone(datetime_timezone.utc).timestamp())
 
 
+def _return_action_token(return_action: str) -> str:
+    try:
+        return {"future": "f", "history": "h"}[return_action]
+    except KeyError as exc:
+        raise ValidationError({"callback": "Unsupported return target."}) from exc
+
+
 def _optional_line(key: str, value: str, language: str) -> str:
     cleaned_value = value.strip()
     if not cleaned_value:
@@ -1451,6 +1877,11 @@ def _label(key: str, language: str) -> str:
             "uk": "Підтвердити перенесення",
             "ru": "Подтвердить перенос",
             "en": "Confirm reschedule",
+        },
+        "choose_another_time": {
+            "uk": "Обрати інший час",
+            "ru": "Выбрать другое время",
+            "en": "Choose another time",
         },
         "details": {"uk": "Деталі", "ru": "Детали", "en": "Details"},
         "future": {"uk": "Мої записи", "ru": "Мои записи", "en": "My bookings"},
