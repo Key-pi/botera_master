@@ -172,12 +172,15 @@ flow.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
    receives the queued reply through the partner bot.
-8. Verify the client notification becomes `sent`, or has a durable masked
+8. Send a test broadcast with **Book** and **My appointments** actions. Verify
+   each action opens its existing partner-scoped bot flow in a new message; this
+   must also work when the broadcast itself contains a photo.
+9. Verify the client notification becomes `sent`, or has a durable masked
    failure/retry state. When client-reminder retries are exhausted, verify the
    linked master receives a business-friendly alert with **Retry**, **Message
    client**, and **View client** actions; raw Telegram errors must not appear in
    the message.
-9. Verify the master receives partner-facing notifications, or readiness clearly
+10. Verify the master receives partner-facing notifications, or readiness clearly
    reports the missing master contact.
 
 ```bash

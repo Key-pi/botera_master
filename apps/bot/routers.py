@@ -39,6 +39,7 @@ from apps.bot.booking import (
     toggle_booking_service_selection,
     validate_date_source_token,
 )
+from apps.bot.broadcasts import BROADCAST_CALLBACK_PREFIX, build_broadcast_action_reply
 from apps.bot.delivery import deliver_scheduled_notification
 from apps.bot.master import (
     MASTER_REQUEST_CALLBACK_PREFIX,
@@ -530,6 +531,45 @@ def build_partner_router() -> Router:
             if message.text is not None or not reply.wait_for_text:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.callback_query(F.data.startswith(f"{BROADCAST_CALLBACK_PREFIX}:"))
+    async def broadcast_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        profile = await _client_profile_for_callback(callback=callback, partner=partner)
+        if profile is None or callback.message is None or callback.data is None:
+            return
+
+        try:
+            reply = await sync_to_async(build_broadcast_action_reply)(
+                partner=partner,
+                client_profile=profile,
+                callback_data=callback.data,
+            )
+        except ValidationError:
+            await state.clear()
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=profile.language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+
+        if reply.starts_booking_flow:
+            await _store_booking_state(
+                state=state,
+                selected_service_ids=(),
+                summary_signature="",
+            )
+        else:
+            await state.clear()
+        # Broadcasts may contain a photo, so their original message is not a
+        # reliable edit target. Open the selected flow in a fresh bot message.
+        await callback.message.answer(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
 
     @router.callback_query(F.data.startswith(f"{BOOKING_CALLBACK_PREFIX}:"))
     async def booking_callback_handler(
