@@ -38,6 +38,18 @@ QUEUED_OR_SENDING_STATUSES = (
     ScheduledNotification.Status.QUEUED,
     ScheduledNotification.Status.SENDING,
 )
+CLIENT_TARGET_NOTIFICATION_TYPES = frozenset(
+    {
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
+        ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED,
+        ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_DECLINED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_EXPIRED,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +216,87 @@ def schedule_manual_appointment_created_notification(
         type=ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
         due_at=due_at,
         idempotency_key=f"appointment:{appointment.id}:client_created",
+        now=current_time,
+    )
+
+
+def schedule_master_booking_request_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the initial actionable master notice for a client booking request."""
+
+    if appointment.status != Appointment.Status.REQUESTED:
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(
+        due_at=current_time,
+        partner=appointment.partner,
+    )
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+        due_at=due_at,
+        idempotency_key=f"appointment:{appointment.id}:master:booking_request",
+        now=current_time,
+    )
+
+
+def schedule_client_booking_request_confirmed_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the client notice produced when a master confirms a request."""
+
+    if (
+        appointment.status != Appointment.Status.CONFIRMED
+        or not appointment.client_profile.telegram_identity_id
+    ):
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(due_at=current_time, partner=appointment.partner)
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED,
+        due_at=due_at,
+        idempotency_key=f"appointment:{appointment.id}:client:request_confirmed",
+        now=current_time,
+    )
+
+
+def schedule_client_booking_request_declined_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue the client notice produced when a master declines a request."""
+
+    if (
+        appointment.status != Appointment.Status.CANCELLED_BY_MASTER
+        or not appointment.client_profile.telegram_identity_id
+    ):
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(due_at=current_time, partner=appointment.partner)
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
+        due_at=due_at,
+        idempotency_key=f"appointment:{appointment.id}:client:request_declined",
         now=current_time,
     )
 
@@ -745,7 +838,11 @@ def _apply_delivery_failure(
         failure_message_masked=notification.last_failure_message_masked,
     )
 
-    if terminal and notification.client_profile_id:
+    if (
+        terminal
+        and notification.client_profile_id
+        and notification.type in CLIENT_TARGET_NOTIFICATION_TYPES
+    ):
         mark_client_unreachable(
             client_profile=notification.client_profile,
             failure_code=notification.last_failure_code or "terminal_delivery_failure",
@@ -893,6 +990,16 @@ def _obsolete_status_for_notification(
         return None
     if notification.type == ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT:
         if appointment.status != Appointment.Status.CANCELLED_BY_CLIENT:
+            return ScheduledNotification.Status.STALE
+        return None
+    if notification.type == ScheduledNotification.Type.MASTER_BOOKING_REQUEST:
+        if appointment.status != Appointment.Status.REQUESTED:
+            return ScheduledNotification.Status.STALE
+        if appointment.start_at <= now:
+            return ScheduledNotification.Status.SKIPPED
+        return None
+    if notification.type == ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED:
+        if appointment.status != Appointment.Status.CANCELLED_BY_MASTER:
             return ScheduledNotification.Status.STALE
         return None
     if notification.type == ScheduledNotification.Type.STALE_REQUESTED:

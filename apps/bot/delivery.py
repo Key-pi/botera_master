@@ -17,9 +17,14 @@ from aiogram.exceptions import (
 )
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asgiref.sync import async_to_sync
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.appointments.models import Appointment, AppointmentProposal, AppointmentProposalOption
+from apps.bot.master import (
+    build_master_booking_request_reply,
+    master_booking_request_markup,
+)
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     decrypt_bot_token,
@@ -133,6 +138,55 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             token=token,
             chat_id=notification.client_profile.telegram_identity.telegram_user_id,
             text=template.body,
+        )
+
+    if notification.type in {
+        ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED,
+        ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
+    }:
+        if (
+            notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+            or notification.appointment is None
+        ):
+            return None
+        key = (
+            "booking.request_confirmed_by_master"
+            if notification.type == ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED
+            else "booking.request_declined_by_master"
+        )
+        template = render_content_template(
+            partner=notification.partner,
+            key=key,
+            language=notification.client_profile.language,
+            context=_appointment_template_context(notification.appointment),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+        )
+
+    if notification.type == ScheduledNotification.Type.MASTER_BOOKING_REQUEST:
+        if notification.appointment is None:
+            return None
+        contact = primary_master_telegram_contact(notification.partner)
+        if contact is None:
+            return None
+        try:
+            reply = build_master_booking_request_reply(
+                partner=notification.partner,
+                appointment_id=notification.appointment.id,
+            )
+        except ValidationError:
+            # Appointment state may change after dispatch preparation but before
+            # Telegram I/O. Treat the now-obsolete request as a skipped send.
+            return None
+        return TelegramPayload(
+            token=token,
+            chat_id=contact.telegram_identity.telegram_user_id,
+            text=reply.text,
+            reply_markup=reply.reply_markup,
         )
 
     if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER:
@@ -323,6 +377,10 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             key="reminder.stale_requested",
             context=_appointment_template_context(notification.appointment)
             | {"request_age": _request_age_label(notification.appointment)},
+            reply_markup=master_booking_request_markup(
+                appointment_id=notification.appointment.id,
+                language=notification.partner.default_language,
+            ),
         )
 
     if notification.type == ScheduledNotification.Type.MASTER_MORNING_DIGEST:
@@ -393,6 +451,7 @@ def _master_notification_payload(
     notification: ScheduledNotification,
     key: str,
     context: dict,
+    reply_markup: InlineKeyboardMarkup | None = None,
 ) -> TelegramPayload | None:
     contact = primary_master_telegram_contact(notification.partner)
     if contact is None:
@@ -407,6 +466,7 @@ def _master_notification_payload(
         token=token,
         chat_id=contact.telegram_identity.telegram_user_id,
         text=template.body,
+        reply_markup=reply_markup,
     )
 
 
@@ -504,6 +564,7 @@ def _appointment_template_context(appointment: Appointment) -> dict[str, str]:
         "date": partner_time.date().isoformat(),
         "time": _format_local_time(partner_time),
         "services": _appointment_services_label(appointment),
+        "reason": appointment.client_visible_reason.strip(),
     }
 
 
@@ -630,6 +691,7 @@ def _bad_request_failure_code(exc: TelegramBadRequest) -> str:
 
 def _is_master_notification(notification: ScheduledNotification) -> bool:
     return notification.type in {
+        ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
         ScheduledNotification.Type.MASTER_APPOINTMENT_REMINDER,
         ScheduledNotification.Type.MASTER_CLIENT_CANCELLED_APPOINTMENT,
         ScheduledNotification.Type.MASTER_CLIENT_REQUESTED_RESCHEDULE,

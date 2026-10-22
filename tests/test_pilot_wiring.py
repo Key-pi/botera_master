@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.models import AppointmentProposal
+from apps.appointments.models import Appointment, AppointmentProposal
 from apps.appointments.proposals import (
     AppointmentProposalOptionInput,
     accept_appointment_proposal_option_as_partner,
@@ -15,8 +15,11 @@ from apps.appointments.proposals import (
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     cancel_appointment_by_client,
+    confirm_requested_appointment,
     create_confirmed_appointment,
     create_manual_appointment,
+    create_requested_appointment,
+    transition_appointment_status,
 )
 from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTelegramContactLink
 from apps.bot.selectors import primary_master_telegram_contact
@@ -330,6 +333,192 @@ def test_manual_appointment_notice_dispatches_to_linked_client(
     assert sent_payloads[0]["token"] == VALID_TOKEN
     assert sent_payloads[0]["chat_id"] == 555050
     assert "Запис до Pilot Partner підтверджено" in sent_payloads[0]["text"]
+
+
+@pytest.mark.django_db
+def test_booking_request_dispatches_actionable_notice_to_primary_master(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    master_identity = upsert_telegram_identity(
+        telegram_user_id=555055,
+        username="request-master",
+    )
+    PartnerTelegramContact.objects.create(
+        partner=created.partner,
+        telegram_identity=master_identity,
+        user=created.owner,
+        is_primary=True,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555056,
+        username="request-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_requested_appointment(
+            actor=None,
+            partner=created.partner,
+            booking_resource=default_booking_resource_for_partner(created.partner),
+            client_profile=client_profile,
+            start_at=timezone.now() + timedelta(days=2),
+            service_items=[AppointmentServiceItemInput(service=service)],
+        )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append(
+            {
+                "token": token,
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": reply_markup,
+            }
+        )
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    processed = dispatch_due_notifications_task()
+
+    notice = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+    )
+    callbacks = [
+        button.callback_data
+        for row in sent_payloads[0]["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert processed == 1
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads[0]["token"] == VALID_TOKEN
+    assert sent_payloads[0]["chat_id"] == 555055
+    assert "Нова заявка" in sent_payloads[0]["text"]
+    assert callbacks == [
+        f"mr:confirm:{appointment.id.hex}",
+        f"mr:decline:{appointment.id.hex}",
+    ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("result", "notification_type", "expected_text"),
+    [
+        (
+            Appointment.Status.CONFIRMED,
+            ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED,
+            "підтвердив запис",
+        ),
+        (
+            Appointment.Status.CANCELLED_BY_MASTER,
+            ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
+            "відхилив заявку",
+        ),
+    ],
+)
+def test_booking_request_resolution_dispatches_to_client(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+    result,
+    notification_type,
+    expected_text,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555057,
+        username="request-resolution-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_requested_appointment(
+            actor=None,
+            partner=created.partner,
+            booking_resource=default_booking_resource_for_partner(created.partner),
+            client_profile=client_profile,
+            start_at=timezone.now() + timedelta(days=2),
+            service_items=[AppointmentServiceItemInput(service=service)],
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        if result == Appointment.Status.CONFIRMED:
+            confirm_requested_appointment(actor=created.owner, appointment=appointment)
+        else:
+            transition_appointment_status(
+                actor=created.owner,
+                appointment=appointment,
+                new_status=result,
+            )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    processed = dispatch_due_notifications_task()
+
+    notice = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=notification_type,
+    )
+    assert processed == 1
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads[0]["chat_id"] == 555057
+    assert expected_text in sent_payloads[0]["text"]
 
 
 @pytest.mark.django_db

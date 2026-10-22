@@ -609,6 +609,7 @@ Durable record for service notification/reminder jobs.
 Key fields:
 - `partner`
 - `appointment`
+- `appointment_proposal`
 - `client_profile`
 - `type`
 - `due_at`
@@ -620,6 +621,10 @@ Key fields:
 - `retain_until`
 
 Rules:
+- booking-request lifecycle uses explicit durable types for the initial master request and the
+  client confirmation/decline result; these are not inferred from reminder records.
+- actionable master request and stale-request messages may carry the same compact confirm/decline
+  callback controls, while appointment state remains authoritative.
 - if appointment is moved/cancelled/completed/no_show, old pending reminders become cancelled/stale.
 - if quiet hours delay makes a reminder useless because appointment already passed, skip it.
 - failed reminder becomes visible to master only after configured retry exhaustion.

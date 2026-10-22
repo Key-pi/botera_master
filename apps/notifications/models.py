@@ -94,10 +94,19 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             "client_appointment_created",
             "Client appointment created",
         )
+        CLIENT_BOOKING_REQUEST_CONFIRMED = (
+            "client_booking_request_confirmed",
+            "Client booking request confirmed",
+        )
+        CLIENT_BOOKING_REQUEST_DECLINED = (
+            "client_booking_request_declined",
+            "Client booking request declined",
+        )
         CLIENT_APPOINTMENT_REMINDER = (
             "client_appointment_reminder",
             "Client appointment reminder",
         )
+        MASTER_BOOKING_REQUEST = "master_booking_request", "Master booking request"
         MASTER_APPOINTMENT_REMINDER = (
             "master_appointment_reminder",
             "Master appointment reminder",

@@ -324,6 +324,7 @@ def confirm_requested_appointment(*, actor: User, appointment: Appointment) -> A
             new_status=Appointment.Status.CONFIRMED,
         )
         _on_commit_refresh_confirmed_notifications(appointment.id)
+        _on_commit_schedule_client_request_confirmed_notification(appointment.id)
     return appointment
 
 
@@ -375,6 +376,11 @@ def transition_appointment_status(
         )
         _release_active_penalties_if_cancelled(appointment)
         _on_commit_stale_appointment_notifications(appointment.id)
+        if (
+            old_status == Appointment.Status.REQUESTED
+            and new_status == Appointment.Status.CANCELLED_BY_MASTER
+        ):
+            _on_commit_schedule_client_request_declined_notification(appointment.id)
     return appointment
 
 
@@ -648,17 +654,54 @@ def _on_commit_stale_appointment_notifications(appointment_id) -> None:
     transaction.on_commit(lambda: _stale_appointment_notifications(appointment_id))
 
 
+def _on_commit_schedule_client_request_confirmed_notification(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_client_request_confirmed_notification(appointment_id))
+
+
+def _on_commit_schedule_client_request_declined_notification(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_client_request_declined_notification(appointment_id))
+
+
 def _on_commit_schedule_master_client_cancelled_notification(appointment_id) -> None:
     transaction.on_commit(lambda: _schedule_master_client_cancelled_notification(appointment_id))
 
 
 def _schedule_requested_notifications(appointment_id) -> None:
-    from apps.notifications.services import schedule_stale_requested_notification
+    from apps.notifications.services import (
+        schedule_master_booking_request_notification,
+        schedule_stale_requested_notification,
+    )
 
     appointment = Appointment.objects.select_related("partner", "client_profile").get(
         id=appointment_id
     )
-    schedule_stale_requested_notification(appointment=appointment)
+    initial_notice = schedule_master_booking_request_notification(appointment=appointment)
+    schedule_stale_requested_notification(
+        appointment=appointment,
+        anchor_at=initial_notice.due_at if initial_notice is not None else None,
+    )
+
+
+def _schedule_client_request_confirmed_notification(appointment_id) -> None:
+    from apps.notifications.services import (
+        schedule_client_booking_request_confirmed_notification,
+    )
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_client_booking_request_confirmed_notification(appointment=appointment)
+
+
+def _schedule_client_request_declined_notification(appointment_id) -> None:
+    from apps.notifications.services import (
+        schedule_client_booking_request_declined_notification,
+    )
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_client_booking_request_declined_notification(appointment=appointment)
 
 
 def _schedule_confirmed_notifications(appointment_id) -> None:

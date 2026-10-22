@@ -166,7 +166,9 @@ flow.
 3. Restart the polling runner so it loads the current eligible bot set.
 4. Send `/start`, then `/book`, from a client Telegram account.
 5. Select a category, service, date, and time; confirm the booking.
-6. For manual confirmation, confirm the request in partner admin.
+6. For manual confirmation, verify the master receives the immediate request with
+   **Confirm** and **Decline** actions. Confirm it in Telegram; partner admin remains the
+   operational fallback and currently owns proposing alternative times.
 7. Verify the client notification becomes `sent`, or has a durable masked
    failure/retry state.
 8. Verify the master receives partner-facing notifications, or readiness clearly

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
@@ -26,6 +27,21 @@ def appointments_for_partner(partner: Partner) -> QuerySet[Appointment]:
         "booking_resource",
         "client_profile",
         "created_by",
+    )
+
+
+def appointment_for_partner_by_id(
+    *,
+    partner: Partner,
+    appointment_id: UUID,
+) -> Appointment | None:
+    """Return one partner-scoped appointment with bot/admin detail relations."""
+
+    return (
+        appointments_for_partner(partner)
+        .prefetch_related("service_items")
+        .filter(id=appointment_id)
+        .first()
     )
 
 

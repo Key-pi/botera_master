@@ -12,6 +12,7 @@ from apps.appointments.proposals import (
 )
 from apps.appointments.services import (
     AppointmentServiceItemInput,
+    confirm_requested_appointment,
     create_confirmed_appointment,
     create_manual_appointment,
     create_requested_appointment,
@@ -197,7 +198,7 @@ def test_manual_appointment_queues_immediate_notice_for_linked_client(
 
 
 @pytest.mark.django_db
-def test_requested_appointment_schedules_only_stale_requested_reminder(
+def test_requested_appointment_schedules_initial_master_notice_and_stale_reminder(
     notification_context,
     future_start,
     django_capture_on_commit_callbacks,
@@ -214,10 +215,92 @@ def test_requested_appointment_schedules_only_stale_requested_reminder(
             service_items=[_service_input(context["service"])],
         )
 
-    notification = ScheduledNotification.objects.get(appointment=appointment)
+    notifications = ScheduledNotification.objects.filter(appointment=appointment)
 
-    assert notification.type == ScheduledNotification.Type.STALE_REQUESTED
-    assert notification.status == ScheduledNotification.Status.QUEUED
+    assert set(notifications.values_list("type", flat=True)) == {
+        ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+        ScheduledNotification.Type.STALE_REQUESTED,
+    }
+    assert set(notifications.values_list("status", flat=True)) == {
+        ScheduledNotification.Status.QUEUED
+    }
+    initial = notifications.get(type=ScheduledNotification.Type.MASTER_BOOKING_REQUEST)
+    stale = notifications.get(type=ScheduledNotification.Type.STALE_REQUESTED)
+    assert stale.due_at > initial.due_at
+
+
+@pytest.mark.django_db
+def test_confirming_request_stales_master_actions_and_notifies_client(
+    notification_context,
+    future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_requested_appointment(
+            actor=None,
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["telegram_client"],
+            start_at=future_start,
+            service_items=[_service_input(context["service"])],
+        )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        confirm_requested_appointment(actor=context["owner"], appointment=appointment)
+
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
+    assert not ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type__in=(
+            ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+            ScheduledNotification.Type.STALE_REQUESTED,
+        ),
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_declining_request_stales_master_actions_and_notifies_client(
+    notification_context,
+    future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_requested_appointment(
+            actor=None,
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["telegram_client"],
+            start_at=future_start,
+            service_items=[_service_input(context["service"])],
+        )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        transition_appointment_status(
+            actor=context["owner"],
+            appointment=appointment,
+            new_status=Appointment.Status.CANCELLED_BY_MASTER,
+        )
+
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
+    assert not ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type__in=(
+            ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+            ScheduledNotification.Type.STALE_REQUESTED,
+        ),
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
 
 
 @pytest.mark.django_db
@@ -362,6 +445,47 @@ def test_terminal_delivery_failure_marks_client_unreachable(notification_context
 
 
 @pytest.mark.django_db
+def test_terminal_master_delivery_failure_does_not_mark_client_unreachable(
+    notification_context,
+    future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_requested_appointment(
+            actor=None,
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["telegram_client"],
+            start_at=future_start,
+            service_items=[_service_input(context["service"])],
+        )
+    notification = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+    )
+
+    def blocked(_notification):
+        return DeliveryResult(
+            success=False,
+            failure_code="bot_blocked",
+            failure_message="Forbidden: bot was blocked by the user",
+            terminal=True,
+        )
+
+    status = dispatch_notification(
+        notification=notification,
+        deliver=blocked,
+        now=notification.due_at,
+    )
+    context["telegram_client"].refresh_from_db()
+
+    assert status == ScheduledNotification.Status.FAILED
+    assert context["telegram_client"].bot_unreachable is False
+    assert context["telegram_client"].last_delivery_failure_code == ""
+
+
+@pytest.mark.django_db
 def test_obsolete_reminder_is_skipped_without_delivery(
     notification_context,
     future_start,
@@ -462,7 +586,10 @@ def test_sent_stale_requested_reminder_schedules_next_repeat(
             start_at=future_start,
             service_items=[_service_input(context["service"])],
         )
-    first = ScheduledNotification.objects.get(appointment=appointment)
+    first = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=ScheduledNotification.Type.STALE_REQUESTED,
+    )
     first.due_at = timezone.now() - timedelta(minutes=1)
     first.save(update_fields=["due_at", "updated_at"])
 

@@ -39,6 +39,16 @@ from apps.bot.booking import (
     toggle_booking_service_selection,
     validate_date_source_token,
 )
+from apps.bot.master import (
+    MASTER_REQUEST_CALLBACK_PREFIX,
+    BotMasterReply,
+    build_master_booking_request_action_failed_reply,
+    build_master_booking_request_decline_reply,
+    build_master_booking_request_reply,
+    confirm_master_booking_request_reply,
+    decline_master_booking_request_reply,
+    parse_master_request_appointment_id,
+)
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
     BotProfileReply,
@@ -69,6 +79,7 @@ from apps.bot.profile import (
 from apps.bot.profile import (
     parse_uuid_token as parse_profile_uuid_token,
 )
+from apps.bot.selectors import master_telegram_contact_for_user
 from apps.bot.services import (
     handle_start_command,
     render_content_template,
@@ -415,6 +426,44 @@ def build_partner_router() -> Router:
                 await state.set_state(ClientMessageState.waiting_for_text)
             else:
                 await state.clear()
+
+        await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith(f"{MASTER_REQUEST_CALLBACK_PREFIX}:"))
+    async def master_request_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        await state.clear()
+        try:
+            reply = await sync_to_async(_master_reply_from_callback_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+            )
+        except ValidationError:
+            reply = await sync_to_async(build_master_booking_request_action_failed_reply)(
+                partner=partner,
+                appointment_id=_master_request_id_from_callback(callback.data),
+            )
 
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
@@ -946,6 +995,47 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
         )
 
     raise ValidationError({"callback": "Unsupported callback."})
+
+
+def _master_reply_from_callback_data(*, partner: Partner, actor, data: str) -> BotMasterReply:
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
+        raise ValidationError({"callback": "Unsupported callback."})
+
+    appointment_id = parse_master_request_appointment_id(parts[2])
+    if parts[1] == "view":
+        return build_master_booking_request_reply(
+            partner=partner,
+            appointment_id=appointment_id,
+        )
+    if parts[1] == "confirm":
+        return confirm_master_booking_request_reply(
+            partner=partner,
+            actor=actor,
+            appointment_id=appointment_id,
+        )
+    if parts[1] == "decline":
+        return build_master_booking_request_decline_reply(
+            partner=partner,
+            appointment_id=appointment_id,
+        )
+    if parts[1] == "declinego":
+        return decline_master_booking_request_reply(
+            partner=partner,
+            actor=actor,
+            appointment_id=appointment_id,
+        )
+    raise ValidationError({"callback": "Unsupported callback."})
+
+
+def _master_request_id_from_callback(data: str) -> UUID | None:
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
+        return None
+    try:
+        return parse_master_request_appointment_id(parts[2])
+    except ValidationError:
+        return None
 
 
 def _invalid_profile_action_reply(*, partner: Partner, language: str):

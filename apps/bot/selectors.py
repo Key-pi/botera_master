@@ -29,3 +29,20 @@ def primary_master_telegram_contact(partner: Partner) -> PartnerTelegramContact 
     """Return the primary active master Telegram contact, if configured."""
 
     return active_master_telegram_contacts(partner).filter(is_primary=True).first()
+
+
+def master_telegram_contact_for_user(
+    *,
+    partner: Partner,
+    telegram_user_id: int,
+) -> PartnerTelegramContact | None:
+    """Resolve an active master contact from trusted bot and Telegram contexts."""
+
+    return (
+        active_master_telegram_contacts(partner)
+        .filter(
+            telegram_identity__telegram_user_id=telegram_user_id,
+            user__isnull=False,
+        )
+        .first()
+    )

@@ -581,8 +581,17 @@ Rules:
 - Client business event notifications are required for appointment created/confirmed, appointment change proposed, change accepted/declined/expired, appointment cancelled, appointment completed, no-show marked, and penalty created/paid/waived.
 - For manual clients without Telegram identity, Telegram notifications are not created; admin should show that no Telegram connection exists.
 - If Telegram reports that the client blocked the partner bot, the event is logged, the client is marked unavailable for that partner bot, and partner-visible delivery failure is shown where action is useful.
+- Terminal delivery state is applied to the actual recipient class: a master-facing failure may update the master contact, but must never mark the appointment client unreachable merely because the notification also references that client for rendering context.
 - Failed appointment change proposal delivery should expose a manual notify/resend action for the master.
 - Reminder scheduling happens when appointment becomes confirmed.
+- Creating a manual-confirmation `requested` appointment creates two independent durable
+  master-facing records: an immediate actionable booking-request notification and the first
+  delayed stale-request reminder. Both become stale when the request is resolved.
+- Master confirm/decline Telegram callbacks resolve the active partner contact from trusted bot
+  and Telegram context, then call the appointment owner service. Confirm still acquires the
+  booking-resource advisory lock and runs a fresh overlap check.
+- Confirming or declining a request creates a separate durable client notification after commit;
+  Telegram delivery never runs inside the appointment transaction.
 - Old pending reminders are cancelled/staled on reschedule, cancellation, completion, or no-show.
 - The pilot admin exposes a service-backed time-proposal action for requested and confirmed appointments; proposal and option records remain read-only operational history.
 - A time proposal may contain multiple alternatives. Client callbacks carry only opaque record identifiers and re-resolve partner/client ownership before calling the proposal owner service.
