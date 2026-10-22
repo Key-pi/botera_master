@@ -98,6 +98,7 @@ def test_partner_owner_updates_schedule_settings_through_admin(
             "booking_horizon_days": "90",
             "near_fit_tolerance_minutes": "10",
             "cancellation_deadline_hours": "12",
+            "require_phone_for_booking": "on",
             "_save": "Save",
         },
     )
@@ -108,6 +109,7 @@ def test_partner_owner_updates_schedule_settings_through_admin(
     assert settings.slot_step_minutes == 30
     assert settings.booking_horizon_days == 90
     assert settings.cancellation_deadline_hours == 12
+    assert settings.require_phone_for_booking is True
 
 
 @pytest.mark.django_db

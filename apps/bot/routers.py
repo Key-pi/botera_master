@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from aiogram import F, Router
@@ -14,17 +15,21 @@ from django.core.exceptions import ValidationError
 from apps.bot.booking import (
     BOOKING_CALLBACK_PREFIX,
     BotBookingReply,
+    booking_requires_phone,
     booking_selection_signature,
     build_booking_categories_reply,
+    build_booking_comment_prompt_reply,
     build_booking_dates_reply,
     build_booking_final_confirm_reply,
     build_booking_month_dates_reply,
     build_booking_months_reply,
+    build_booking_required_phone_reply,
     build_booking_services_reply,
     build_booking_slot_taken_reply,
     build_booking_slots_reply,
     build_booking_summary_reply,
     confirm_booking_reply,
+    normalize_booking_comment,
     parse_date_token,
     parse_month_token,
     parse_page_token,
@@ -70,6 +75,7 @@ from apps.bot.services import (
     render_invalid_master_contact_link_message,
     resolve_client_profile_from_telegram_user,
 )
+from apps.clients.services import update_client_profile_phone_from_telegram
 from apps.partners.models import Partner
 from core.timezones import to_partner_time
 
@@ -84,6 +90,8 @@ class BookingFlowState(StatesGroup):
     """Ephemeral multi-service selection for one active booking conversation."""
 
     active = State()
+    waiting_for_comment = State()
+    waiting_for_phone = State()
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,11 +101,31 @@ class BookingCallbackResult:
     reply: BotBookingReply
     selected_service_ids: tuple[UUID, ...]
     summary_signature: str = ""
+    client_comment: str | None = None
+    input_mode: str = ""
+    pending_start_at: datetime | None = None
+    date_source: str = ""
     complete: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class BookingStateValues:
+    """Validated values restored from one Telegram FSM booking conversation."""
+
+    selected_service_ids: tuple[UUID, ...] = ()
+    summary_signature: str = ""
+    client_comment: str = ""
+    pending_start_at: datetime | None = None
+    date_source: str = ""
 
 
 BOOKING_SERVICE_IDS_STATE_KEY = "booking_service_ids"
 BOOKING_SUMMARY_SIGNATURE_STATE_KEY = "booking_summary_signature"
+BOOKING_COMMENT_STATE_KEY = "booking_comment"
+BOOKING_PENDING_START_STATE_KEY = "booking_pending_start"
+BOOKING_DATE_SOURCE_STATE_KEY = "booking_date_source"
+BOOKING_INPUT_COMMENT = "comment"
+BOOKING_INPUT_PHONE = "phone"
 
 
 def build_partner_router() -> Router:
@@ -187,6 +215,100 @@ def build_partner_router() -> Router:
         )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(BookingFlowState.waiting_for_comment)
+    async def booking_comment_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        booking_state = _booking_state_values(await state.get_data())
+        if profile is None:
+            await state.clear()
+            return
+
+        try:
+            if message.text is None:
+                raise ValidationError({"client_comment": "Booking comment must be text."})
+            result = await sync_to_async(_booking_reply_from_comment_input)(
+                partner=partner,
+                client_profile=profile,
+                booking_state=booking_state,
+                text=message.text,
+            )
+        except ValidationError:
+            if booking_state.pending_start_at is None or not booking_state.date_source:
+                await state.clear()
+                reply = await sync_to_async(_invalid_booking_action_reply)(
+                    partner=partner,
+                    language=profile.language,
+                )
+            else:
+                reply = await sync_to_async(build_booking_comment_prompt_reply)(
+                    partner=partner,
+                    start_at=booking_state.pending_start_at,
+                    language=profile.language,
+                    date_source=booking_state.date_source,
+                    client_comment=booking_state.client_comment,
+                )
+        else:
+            reply = result.reply
+            await _apply_booking_result_to_state(
+                state=state,
+                previous=booking_state,
+                result=result,
+            )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(BookingFlowState.waiting_for_phone)
+    async def booking_phone_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        booking_state = _booking_state_values(await state.get_data())
+        if profile is None:
+            await state.clear()
+            return
+
+        phone = _phone_from_message(message)
+        try:
+            if phone is None:
+                raise ValidationError({"phone": "Phone must be sent as text or own contact."})
+            result = await sync_to_async(_booking_reply_from_phone_input)(
+                partner=partner,
+                client_profile=profile,
+                booking_state=booking_state,
+                phone=phone,
+            )
+        except ValidationError as exc:
+            if (
+                "phone" not in getattr(exc, "message_dict", {})
+                or booking_state.pending_start_at is None
+                or not booking_state.date_source
+            ):
+                await state.clear()
+                reply = await sync_to_async(_invalid_booking_action_reply)(
+                    partner=partner,
+                    language=profile.language,
+                )
+            else:
+                reply = await sync_to_async(build_booking_required_phone_reply)(
+                    partner=partner,
+                    start_at=booking_state.pending_start_at,
+                    language=profile.language,
+                    date_source=booking_state.date_source,
+                )
+        else:
+            reply = result.reply
+            await _apply_booking_result_to_state(
+                state=state,
+                previous=booking_state,
+                result=result,
+            )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.message(ClientMessageState.waiting_for_text)
     async def contact_master_message_handler(
         message: Message,
@@ -235,14 +357,15 @@ def build_partner_router() -> Router:
         if profile is None or callback.message is None or callback.data is None:
             return
 
-        selected_service_ids, summary_signature = _booking_state_values(await state.get_data())
+        booking_state = _booking_state_values(await state.get_data())
         try:
             result = await sync_to_async(_booking_reply_from_callback_data)(
                 partner=partner,
                 client_profile=profile,
                 data=callback.data,
-                selected_service_ids=selected_service_ids,
-                summary_signature=summary_signature,
+                selected_service_ids=booking_state.selected_service_ids,
+                summary_signature=booking_state.summary_signature,
+                client_comment=booking_state.client_comment,
             )
         except ValidationError:
             await state.clear()
@@ -252,14 +375,11 @@ def build_partner_router() -> Router:
             )
         else:
             reply = result.reply
-            if result.complete:
-                await state.clear()
-            else:
-                await _store_booking_state(
-                    state=state,
-                    selected_service_ids=result.selected_service_ids,
-                    summary_signature=result.summary_signature,
-                )
+            await _apply_booking_result_to_state(
+                state=state,
+                previous=booking_state,
+                result=result,
+            )
 
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
@@ -309,6 +429,7 @@ def _booking_reply_from_callback_data(
     data: str,
     selected_service_ids: tuple[UUID, ...] = (),
     summary_signature: str = "",
+    client_comment: str = "",
 ) -> BookingCallbackResult:
     parts = data.split(":")
     if len(parts) < 2 or parts[0] != BOOKING_CALLBACK_PREFIX:
@@ -365,6 +486,7 @@ def _booking_reply_from_callback_data(
                 page=parse_page_token(parts[3]),
             ),
             selected_service_ids=(),
+            client_comment="",
         )
     if action == "clearcat" and len(parts) == 3:
         return BookingCallbackResult(
@@ -374,6 +496,7 @@ def _booking_reply_from_callback_data(
                 page=parse_page_token(parts[2]),
             ),
             selected_service_ids=(),
+            client_comment="",
         )
     if action == "restart" and len(parts) == 3:
         return BookingCallbackResult(
@@ -383,6 +506,7 @@ def _booking_reply_from_callback_data(
                 page=parse_page_token(parts[2]),
             ),
             selected_service_ids=(),
+            client_comment="",
         )
     if action == "sum" and len(parts) == 3:
         current_signature = booking_selection_signature(
@@ -419,6 +543,7 @@ def _booking_reply_from_callback_data(
             return BookingCallbackResult(
                 reply=build_booking_categories_reply(partner=partner, language=language),
                 selected_service_ids=(),
+                client_comment="",
             )
         current_signature = booking_selection_signature(
             partner=partner,
@@ -436,7 +561,16 @@ def _booking_reply_from_callback_data(
             summary_signature=current_signature,
         )
 
-    if action in {"dates", "months", "month", "slots", "final", "create"}:
+    if action in {
+        "dates",
+        "months",
+        "month",
+        "slots",
+        "final",
+        "comment",
+        "uncomment",
+        "create",
+    }:
         review_result = _booking_selection_review_result(
             partner=partner,
             language=language,
@@ -501,9 +635,43 @@ def _booking_reply_from_callback_data(
                 start_at=parse_timestamp_token(parts[2]),
                 language=language,
                 date_source=parts[3],
+                client_comment=client_comment,
             ),
             selected_service_ids=selected_service_ids,
             summary_signature=summary_signature,
+            client_comment=client_comment,
+        )
+    if action == "comment" and len(parts) == 4:
+        start_at = parse_timestamp_token(parts[2])
+        date_source = parts[3]
+        return BookingCallbackResult(
+            reply=build_booking_comment_prompt_reply(
+                partner=partner,
+                start_at=start_at,
+                language=language,
+                date_source=date_source,
+                client_comment=client_comment,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+            input_mode=BOOKING_INPUT_COMMENT,
+            pending_start_at=start_at,
+            date_source=date_source,
+        )
+    if action == "uncomment" and len(parts) == 4:
+        start_at = parse_timestamp_token(parts[2])
+        date_source = parts[3]
+        return BookingCallbackResult(
+            reply=build_booking_final_confirm_reply(
+                partner=partner,
+                selected_service_ids=selected_service_ids,
+                start_at=start_at,
+                language=language,
+                date_source=date_source,
+            ),
+            selected_service_ids=selected_service_ids,
+            summary_signature=summary_signature,
+            client_comment="",
         )
     if action == "create" and len(parts) == 4:
         start_at = parse_timestamp_token(parts[2])
@@ -512,6 +680,20 @@ def _booking_reply_from_callback_data(
             date_source=date_source,
             local_date=to_partner_time(start_at, partner.timezone).date(),
         )
+        if booking_requires_phone(partner=partner, client_profile=client_profile):
+            return BookingCallbackResult(
+                reply=build_booking_required_phone_reply(
+                    partner=partner,
+                    start_at=start_at,
+                    language=language,
+                    date_source=date_source,
+                ),
+                selected_service_ids=selected_service_ids,
+                summary_signature=summary_signature,
+                input_mode=BOOKING_INPUT_PHONE,
+                pending_start_at=start_at,
+                date_source=date_source,
+            )
         try:
             reply = confirm_booking_reply(
                 partner=partner,
@@ -519,6 +701,7 @@ def _booking_reply_from_callback_data(
                 selected_service_ids=selected_service_ids,
                 start_at=start_at,
                 language=language,
+                client_comment=client_comment,
             )
         except ValidationError as exc:
             if "start_at" not in getattr(exc, "message_dict", {}):
@@ -566,6 +749,57 @@ def _booking_selection_review_result(
         selected_service_ids=selected_service_ids,
         summary_signature=current_signature,
     )
+
+
+def _booking_reply_from_comment_input(
+    *,
+    partner: Partner,
+    client_profile,
+    booking_state: BookingStateValues,
+    text: str,
+) -> BookingCallbackResult:
+    """Return the refreshed final confirmation after validating a comment message."""
+
+    comment = normalize_booking_comment(text)
+    result = _booking_reply_from_callback_data(
+        partner=partner,
+        client_profile=client_profile,
+        data=_pending_booking_callback("final", booking_state),
+        selected_service_ids=booking_state.selected_service_ids,
+        summary_signature=booking_state.summary_signature,
+        client_comment=comment,
+    )
+    return result
+
+
+def _booking_reply_from_phone_input(
+    *,
+    partner: Partner,
+    client_profile,
+    booking_state: BookingStateValues,
+    phone: str,
+) -> BookingCallbackResult:
+    """Save a client-supplied phone, then resume the already-confirmed booking."""
+
+    updated_profile = update_client_profile_phone_from_telegram(
+        client_profile=client_profile,
+        phone=phone,
+    )
+    return _booking_reply_from_callback_data(
+        partner=partner,
+        client_profile=updated_profile,
+        data=_pending_booking_callback("create", booking_state),
+        selected_service_ids=booking_state.selected_service_ids,
+        summary_signature=booking_state.summary_signature,
+        client_comment=booking_state.client_comment,
+    )
+
+
+def _pending_booking_callback(action: str, booking_state: BookingStateValues) -> str:
+    if booking_state.pending_start_at is None or not booking_state.date_source:
+        raise ValidationError({"callback": "Pending booking input has expired."})
+    timestamp = int(booking_state.pending_start_at.timestamp())
+    return f"{BOOKING_CALLBACK_PREFIX}:{action}:{timestamp}:{booking_state.date_source}"
 
 
 def _invalid_booking_action_reply(*, partner: Partner, language: str):
@@ -733,28 +967,101 @@ async def _store_booking_state(
     state: FSMContext,
     selected_service_ids: tuple[UUID, ...],
     summary_signature: str,
+    client_comment: str = "",
+    pending_start_at: datetime | None = None,
+    date_source: str = "",
+    next_state: State = BookingFlowState.active,
 ) -> None:
-    await state.set_state(BookingFlowState.active)
+    await state.set_state(next_state)
     await state.set_data(
         {
             BOOKING_SERVICE_IDS_STATE_KEY: [service_id.hex for service_id in selected_service_ids],
             BOOKING_SUMMARY_SIGNATURE_STATE_KEY: summary_signature,
+            BOOKING_COMMENT_STATE_KEY: client_comment,
+            BOOKING_PENDING_START_STATE_KEY: (
+                int(pending_start_at.timestamp()) if pending_start_at is not None else ""
+            ),
+            BOOKING_DATE_SOURCE_STATE_KEY: date_source,
         }
     )
 
 
-def _booking_state_values(data: dict) -> tuple[tuple[UUID, ...], str]:
+async def _apply_booking_result_to_state(
+    *,
+    state: FSMContext,
+    previous: BookingStateValues,
+    result: BookingCallbackResult,
+) -> None:
+    if result.complete:
+        await state.clear()
+        return
+
+    next_state = BookingFlowState.active
+    if result.input_mode == BOOKING_INPUT_COMMENT:
+        next_state = BookingFlowState.waiting_for_comment
+    elif result.input_mode == BOOKING_INPUT_PHONE:
+        next_state = BookingFlowState.waiting_for_phone
+
+    client_comment = (
+        previous.client_comment if result.client_comment is None else result.client_comment
+    )
+    await _store_booking_state(
+        state=state,
+        selected_service_ids=result.selected_service_ids,
+        summary_signature=result.summary_signature,
+        client_comment=client_comment,
+        pending_start_at=result.pending_start_at,
+        date_source=result.date_source,
+        next_state=next_state,
+    )
+
+
+def _booking_state_values(data: dict) -> BookingStateValues:
     raw_ids = data.get(BOOKING_SERVICE_IDS_STATE_KEY, ())
     if not isinstance(raw_ids, (list, tuple)):
-        return (), ""
+        return BookingStateValues()
     try:
         service_ids = tuple(UUID(str(value)) for value in raw_ids)
     except (TypeError, ValueError):
-        return (), ""
+        return BookingStateValues()
     summary_signature = data.get(BOOKING_SUMMARY_SIGNATURE_STATE_KEY, "")
     if not isinstance(summary_signature, str):
         summary_signature = ""
-    return service_ids, summary_signature
+    raw_comment = data.get(BOOKING_COMMENT_STATE_KEY, "")
+    try:
+        client_comment = normalize_booking_comment(raw_comment)
+    except ValidationError:
+        client_comment = ""
+
+    pending_start_at = None
+    raw_start = data.get(BOOKING_PENDING_START_STATE_KEY)
+    if raw_start not in (None, ""):
+        try:
+            pending_start_at = parse_timestamp_token(str(raw_start))
+        except ValidationError:
+            pending_start_at = None
+
+    date_source = data.get(BOOKING_DATE_SOURCE_STATE_KEY, "")
+    if not isinstance(date_source, str):
+        date_source = ""
+    return BookingStateValues(
+        selected_service_ids=service_ids,
+        summary_signature=summary_signature,
+        client_comment=client_comment,
+        pending_start_at=pending_start_at,
+        date_source=date_source,
+    )
+
+
+def _phone_from_message(message: Message) -> str | None:
+    contact = message.contact
+    if contact is not None:
+        if contact.user_id is not None and (
+            message.from_user is None or contact.user_id != message.from_user.id
+        ):
+            return None
+        return contact.phone_number
+    return message.text
 
 
 async def _client_profile_for_message(*, message: Message, partner: Partner):

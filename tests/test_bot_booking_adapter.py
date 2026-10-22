@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.appointments.models import Appointment
 from apps.bot.booking import (
+    MAX_BOOKING_COMMENT_LENGTH,
     booking_selection_signature,
     build_booking_categories_reply,
     build_booking_dates_reply,
@@ -17,8 +18,16 @@ from apps.bot.booking import (
     build_booking_slots_reply,
     build_booking_summary_reply,
     confirm_booking_reply,
+    normalize_booking_comment,
 )
-from apps.bot.routers import _booking_reply_from_callback_data
+from apps.bot.routers import (
+    BOOKING_INPUT_COMMENT,
+    BOOKING_INPUT_PHONE,
+    BookingStateValues,
+    _booking_reply_from_callback_data,
+    _booking_reply_from_comment_input,
+    _booking_reply_from_phone_input,
+)
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
@@ -475,3 +484,152 @@ def test_final_booking_race_returns_to_slots_without_clearing_selection(
     assert result.reply.reply_markup.inline_keyboard[0][0].callback_data == (
         f"bk:slots:{bot_booking_start.strftime('%Y%m%d')}:1:n"
     )
+
+
+@pytest.mark.django_db
+def test_booking_comment_is_collected_before_final_creation(
+    bot_booking_context,
+    bot_booking_start,
+):
+    context = bot_booking_context
+    selected_ids = (context["service"].id, context["second_service"].id)
+    signature = booking_selection_signature(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+    )
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+    )
+    _open_window(context, bot_booking_start)
+    final = build_booking_final_confirm_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        start_at=bot_booking_start,
+        language="en",
+        now=bot_booking_start - timedelta(hours=1),
+    )
+
+    prompt = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=final.reply_markup.inline_keyboard[1][0].callback_data,
+        selected_service_ids=selected_ids,
+        summary_signature=signature,
+    )
+
+    assert prompt.input_mode == BOOKING_INPUT_COMMENT
+    assert prompt.pending_start_at == bot_booking_start
+    assert "one text message" in prompt.reply.text
+
+    reviewed = _booking_reply_from_comment_input(
+        partner=context["partner"],
+        client_profile=context["client"],
+        booking_state=BookingStateValues(
+            selected_service_ids=selected_ids,
+            summary_signature=signature,
+            pending_start_at=prompt.pending_start_at,
+            date_source=prompt.date_source,
+        ),
+        text="  Please use a neutral color.  ",
+    )
+
+    assert reviewed.client_comment == "Please use a neutral color."
+    assert "Comment: Please use a neutral color." in reviewed.reply.text
+
+    created = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=reviewed.reply.reply_markup.inline_keyboard[0][0].callback_data,
+        selected_service_ids=selected_ids,
+        summary_signature=signature,
+        client_comment=reviewed.client_comment,
+    )
+
+    assert created.complete is True
+    assert Appointment.objects.get(partner=context["partner"]).client_comment == (
+        "Please use a neutral color."
+    )
+
+    with pytest.raises(ValidationError):
+        normalize_booking_comment("x" * (MAX_BOOKING_COMMENT_LENGTH + 1))
+
+
+@pytest.mark.django_db
+def test_required_phone_pauses_and_resumes_booking(
+    bot_booking_context,
+    bot_booking_start,
+):
+    context = bot_booking_context
+    selected_ids = (context["service"].id,)
+    signature = booking_selection_signature(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+    )
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.AUTO,
+        require_phone_for_booking=True,
+    )
+    _open_window(context, bot_booking_start)
+    final = build_booking_final_confirm_reply(
+        partner=context["partner"],
+        selected_service_ids=selected_ids,
+        start_at=bot_booking_start,
+        language="en",
+        client_comment="First visit",
+        now=bot_booking_start - timedelta(hours=1),
+    )
+
+    with pytest.raises(ValidationError, match="Phone is required"):
+        confirm_booking_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            selected_service_ids=selected_ids,
+            start_at=bot_booking_start,
+            language="en",
+            now=bot_booking_start - timedelta(hours=1),
+        )
+
+    prompt = _booking_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data=final.reply_markup.inline_keyboard[0][0].callback_data,
+        selected_service_ids=selected_ids,
+        summary_signature=signature,
+        client_comment="First visit",
+    )
+
+    assert prompt.input_mode == BOOKING_INPUT_PHONE
+    assert "phone number" in prompt.reply.text
+    assert Appointment.objects.filter(partner=context["partner"]).exists() is False
+
+    pending_state = BookingStateValues(
+        selected_service_ids=selected_ids,
+        summary_signature=signature,
+        client_comment="First visit",
+        pending_start_at=prompt.pending_start_at,
+        date_source=prompt.date_source,
+    )
+    with pytest.raises(ValidationError):
+        _booking_reply_from_phone_input(
+            partner=context["partner"],
+            client_profile=context["client"],
+            booking_state=pending_state,
+            phone="not a phone",
+        )
+
+    created = _booking_reply_from_phone_input(
+        partner=context["partner"],
+        client_profile=context["client"],
+        booking_state=pending_state,
+        phone="+38 (050) 123-45-67",
+    )
+
+    context["client"].refresh_from_db()
+    appointment = Appointment.objects.get(partner=context["partner"])
+    assert created.complete is True
+    assert context["client"].phone == "+380501234567"
+    assert appointment.client_comment == "First visit"

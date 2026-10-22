@@ -246,7 +246,8 @@ Content shape:
   - `booking.date_select`: `{booking_horizon_days}`.
   - `booking.time_select`: `{date}`, `{services}`, `{duration}`.
   - `booking.near_fit_notice`: `{tolerance_minutes}`.
-  - `booking.final_confirm`: `{services}`, `{date}`, `{time}`, `{duration}`, `{service_total}`, `{currency}`.
+  - `booking.comment_prompt`: `{max_length}`.
+  - `booking.final_confirm`: `{services}`, `{date}`, `{time}`, `{duration}`, `{service_total}`, `{currency}`, `{comment}`.
   - `booking.requested_created`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.confirmed_created`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.request_cancelled_by_client`: `{date}`, `{time}`.
@@ -442,6 +443,7 @@ Partner setting bounds:
 - Master reminder offset: min 5 minutes, max 7 days, default 45 minutes, can be disabled.
 - `near_fit_tolerance_minutes`: min 0, max 30, default 10.
 - `cancellation_deadline_hours`: min 0, max 168, default 6. `0` means clients may cancel until appointment start without late-cancel penalty.
+- `require_phone_for_booking`: boolean, default false. When enabled, client booking pauses until the partner-scoped client profile has a valid normalized phone.
 - Quiet hours: local start/end times in partner timezone, default 22:00-08:00, can be disabled, and overnight quiet hours are supported.
 - Morning digest time: local time in partner timezone, any time from 00:00 to 23:59, default 08:00, can be disabled. If it falls inside quiet hours, still send at the configured digest time.
 - Stale requested reminder base interval: min 10 minutes, max 72 hours, default 3 hours. Repeated reminders halve the interval down to a 5-minute floor.

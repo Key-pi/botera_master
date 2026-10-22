@@ -35,6 +35,7 @@ from .services import render_content_template
 
 BOOKING_CALLBACK_PREFIX = "bk"
 BOOKING_SUMMARY_PAGE_SIZE = 5
+MAX_BOOKING_COMMENT_LENGTH = 1000
 NEAREST_DATE_SOURCE = "n"
 
 
@@ -498,6 +499,7 @@ def build_booking_final_confirm_reply(
     start_at: datetime,
     language: str,
     date_source: str = NEAREST_DATE_SOURCE,
+    client_comment: str = "",
     now: datetime | None = None,
 ) -> BotBookingReply:
     """Render final confirmation for a selected slot after fresh slot validation."""
@@ -523,12 +525,14 @@ def build_booking_final_confirm_reply(
             date_source=date_source,
         )
 
+    cleaned_comment = normalize_booking_comment(client_comment)
     text = _render(
         partner=partner,
         key="booking.final_confirm",
         language=language,
         context=_summary_context(summary=summary, language=language)
-        | _datetime_context(partner=partner, start_at=start_at),
+        | _datetime_context(partner=partner, start_at=start_at)
+        | {"comment": _booking_comment_line(cleaned_comment, language)},
     )
     if selected_slot.is_near_fit:
         settings = _schedule_settings(partner)
@@ -552,6 +556,31 @@ def build_booking_final_confirm_reply(
             )
         ],
         [
+            InlineKeyboardButton(
+                text=_label("change_comment" if cleaned_comment else "add_comment", language),
+                callback_data=_callback(
+                    "comment",
+                    _timestamp_token(start_at),
+                    date_source,
+                ),
+            )
+        ],
+    ]
+    if cleaned_comment:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("remove_comment", language),
+                    callback_data=_callback(
+                        "uncomment",
+                        _timestamp_token(start_at),
+                        date_source,
+                    ),
+                )
+            ]
+        )
+    rows.append(
+        [
             _back_button(
                 _callback(
                     "slots",
@@ -561,9 +590,82 @@ def build_booking_final_confirm_reply(
                 ),
                 language,
             )
-        ],
-    ]
+        ]
+    )
     return BotBookingReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def build_booking_comment_prompt_reply(
+    *,
+    partner: Partner,
+    start_at: datetime,
+    language: str,
+    date_source: str,
+    client_comment: str = "",
+) -> BotBookingReply:
+    """Ask for an optional booking comment while preserving the chosen slot."""
+
+    local_date = to_partner_time(start_at, partner.timezone).date()
+    validate_date_source_token(date_source=date_source, local_date=local_date)
+    cleaned_comment = normalize_booking_comment(client_comment)
+    rows: list[list[InlineKeyboardButton]] = []
+    if cleaned_comment:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("remove_comment", language),
+                    callback_data=_callback(
+                        "uncomment",
+                        _timestamp_token(start_at),
+                        date_source,
+                    ),
+                )
+            ]
+        )
+    rows.append(
+        [
+            _back_button(
+                _callback("final", _timestamp_token(start_at), date_source),
+                language,
+            )
+        ]
+    )
+    return _reply(
+        partner=partner,
+        key="booking.comment_prompt",
+        language=language,
+        context={"max_length": str(MAX_BOOKING_COMMENT_LENGTH)},
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def build_booking_required_phone_reply(
+    *,
+    partner: Partner,
+    start_at: datetime,
+    language: str,
+    date_source: str,
+) -> BotBookingReply:
+    """Ask for a missing partner-required phone before creating the booking."""
+
+    local_date = to_partner_time(start_at, partner.timezone).date()
+    validate_date_source_token(date_source=date_source, local_date=local_date)
+    return _reply(
+        partner=partner,
+        key="error.required_field_missing",
+        language=language,
+        context={"missing_fields": _label("phone_number", language)},
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    _back_button(
+                        _callback("final", _timestamp_token(start_at), date_source),
+                        language,
+                    )
+                ]
+            ]
+        ),
+    )
 
 
 def build_booking_slot_taken_reply(
@@ -606,6 +708,7 @@ def confirm_booking_reply(
     selected_service_ids: Iterable[UUID | str],
     start_at: datetime,
     language: str,
+    client_comment: str = "",
     now: datetime | None = None,
 ) -> BotBookingReply:
     """Create a booking from Telegram final confirmation and render result text."""
@@ -615,6 +718,7 @@ def confirm_booking_reply(
         client_profile=client_profile,
         selected_service_ids=selected_service_ids,
         start_at=start_at,
+        client_comment=normalize_booking_comment(client_comment),
         now=now,
     )
     key = (
@@ -632,6 +736,31 @@ def confirm_booking_reply(
         }
         | _datetime_context(partner=partner, start_at=result.appointment.start_at),
     )
+
+
+def booking_requires_phone(*, partner: Partner, client_profile: ClientProfile) -> bool:
+    """Return whether this client is missing the partner-required booking phone."""
+
+    return (
+        _schedule_settings(partner).require_phone_for_booking and not client_profile.phone.strip()
+    )
+
+
+def normalize_booking_comment(value: str) -> str:
+    """Normalize one optional bot comment and keep final messages Telegram-safe."""
+
+    if not isinstance(value, str):
+        raise ValidationError({"client_comment": "Booking comment must be text."})
+    cleaned = value.strip()
+    if len(cleaned) > MAX_BOOKING_COMMENT_LENGTH:
+        raise ValidationError(
+            {
+                "client_comment": (
+                    f"Booking comment must be {MAX_BOOKING_COMMENT_LENGTH} characters or shorter."
+                )
+            }
+        )
+    return cleaned
 
 
 def parse_uuid_token(value: str) -> UUID:
@@ -1025,6 +1154,16 @@ def _label(key: str, language: str) -> str:
             "en": "Change services",
         },
         "clear": {"uk": "Очистити вибір", "ru": "Очистить выбор", "en": "Clear selection"},
+        "add_comment": {
+            "uk": "Додати коментар",
+            "ru": "Добавить комментарий",
+            "en": "Add comment",
+        },
+        "change_comment": {
+            "uk": "Змінити коментар",
+            "ru": "Изменить комментарий",
+            "en": "Change comment",
+        },
         "confirm": {"uk": "Підтвердити", "ru": "Подтвердить", "en": "Confirm"},
         "contact_master": {
             "uk": "Написати майстру",
@@ -1033,6 +1172,16 @@ def _label(key: str, language: str) -> str:
         },
         "done": {"uk": "Готово", "ru": "Готово", "en": "Done"},
         "remove": {"uk": "Прибрати", "ru": "Убрать", "en": "Remove"},
+        "remove_comment": {
+            "uk": "Прибрати коментар",
+            "ru": "Убрать комментарий",
+            "en": "Remove comment",
+        },
+        "phone_number": {
+            "uk": "номер телефону одним текстовим повідомленням",
+            "ru": "номер телефона одним текстовым сообщением",
+            "en": "your phone number as one text message",
+        },
         "slots": {"uk": "слотів", "ru": "слотов", "en": "slots"},
         "minutes": {"uk": "хв", "ru": "мин", "en": "min"},
         "needs_confirmation": {
@@ -1043,6 +1192,13 @@ def _label(key: str, language: str) -> str:
     }
     translations = labels[key]
     return translations.get(language, translations["uk"])
+
+
+def _booking_comment_line(comment: str, language: str) -> str:
+    if not comment:
+        return ""
+    labels = {"uk": "Коментар", "ru": "Комментарий", "en": "Comment"}
+    return f"\n{labels.get(language, labels['uk'])}: {comment}"
 
 
 def _available_dates_label(count: int, language: str) -> str:

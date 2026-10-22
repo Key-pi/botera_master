@@ -113,6 +113,7 @@ Key fields:
 - `booking_horizon_days`: min 1, max 365; default 30
 - `near_fit_tolerance_minutes`: min 0, max 30; default 10
 - `cancellation_deadline_hours`: min 0, max 168; default 6
+- `require_phone_for_booking`: default false
 - `quiet_hours_enabled`
 - `quiet_hours_start_local`: default 22:00
 - `quiet_hours_end_local`: default 08:00
@@ -288,9 +289,12 @@ Implemented fields:
 - `slot_step_minutes`: allowed 5, 10, 15, 20, 30, 60; default 15
 - `booking_horizon_days`: min 1, max 365; default 30
 - `near_fit_tolerance_minutes`: min 0, max 30; default 10
+- `cancellation_deadline_hours`: min 0, max 168; default 6
+- `require_phone_for_booking`: default false
 
 Rules:
 - `confirmation_mode` completes the booking confirmation setup step only when set to auto or manual.
+- when `require_phone_for_booking` is enabled, client booking cannot be created until the partner-scoped client profile has a phone.
 - schedule settings may be shown in a Bot settings UI later, but persistence and validation belong to the schedule module.
 
 ### AvailabilityWindow

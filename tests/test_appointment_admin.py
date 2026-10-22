@@ -650,6 +650,7 @@ def _future_hour(*, days: int):
         timezone.now() + timedelta(days=days),
         get_zone("Europe/Kiev"),
     ).replace(
+        hour=12,
         minute=0,
         second=0,
         microsecond=0,

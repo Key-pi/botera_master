@@ -273,6 +273,30 @@ def update_client_profile_language(
     return client_profile
 
 
+def update_client_profile_phone_from_telegram(
+    *,
+    client_profile: ClientProfile,
+    phone: str,
+) -> ClientProfile:
+    """Store a phone supplied by the client in this partner bot.
+
+    The caller must resolve ``client_profile`` from trusted partner/runtime
+    context first. This narrow service deliberately cannot edit any private
+    master-owned profile data.
+    """
+
+    raw_phone = (phone or "").strip()
+    normalized_phone = normalize_phone(raw_phone)
+    if not raw_phone or not normalized_phone:
+        raise ValidationError({"phone": "Phone must contain at least one digit."})
+
+    with transaction.atomic():
+        profile = ClientProfile.objects.select_for_update().get(id=client_profile.id)
+        profile.phone = normalized_phone
+        profile.save(update_fields=["phone", "updated_at"])
+        return profile
+
+
 def mark_client_unreachable(
     *,
     client_profile: ClientProfile,

@@ -87,6 +87,7 @@ def update_schedule_settings(
     booking_horizon_days: int | None = None,
     near_fit_tolerance_minutes: int | None = None,
     cancellation_deadline_hours: int | None = None,
+    require_phone_for_booking: bool | None = None,
 ) -> PartnerScheduleSettings:
     """Update partner-owned schedule settings through explicit validation."""
 
@@ -107,6 +108,9 @@ def update_schedule_settings(
     if cancellation_deadline_hours is not None:
         _validate_cancellation_deadline(cancellation_deadline_hours)
         schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
+    if require_phone_for_booking is not None:
+        _validate_require_phone_for_booking(require_phone_for_booking)
+        schedule_settings.require_phone_for_booking = require_phone_for_booking
     schedule_settings.save()
     return schedule_settings
 
@@ -118,6 +122,7 @@ def validate_schedule_settings_input(
     booking_horizon_days: int,
     near_fit_tolerance_minutes: int,
     cancellation_deadline_hours: int,
+    require_phone_for_booking: bool,
 ) -> None:
     """Validate a complete partner schedule settings form without writing it."""
 
@@ -126,11 +131,19 @@ def validate_schedule_settings_input(
     _validate_booking_horizon(booking_horizon_days)
     _validate_near_fit_tolerance(near_fit_tolerance_minutes)
     _validate_cancellation_deadline(cancellation_deadline_hours)
+    _validate_require_phone_for_booking(require_phone_for_booking)
 
 
 def validate_confirmation_mode(value: str) -> None:
     if value not in PartnerScheduleSettings.ConfirmationMode.values:
         raise ValidationError({"confirmation_mode": "Unknown confirmation mode."})
+
+
+def _validate_require_phone_for_booking(value: bool) -> None:
+    if not isinstance(value, bool):
+        raise ValidationError(
+            {"require_phone_for_booking": "Require phone for booking must be true or false."}
+        )
 
 
 def create_availability_window(

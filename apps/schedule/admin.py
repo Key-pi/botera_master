@@ -61,6 +61,7 @@ class PartnerScheduleSettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "slot_step_minutes",
         "booking_horizon_days",
         "near_fit_tolerance_minutes",
+        "require_phone_for_booking",
     ]
     list_filter = ["confirmation_mode", "slot_step_minutes"]
     readonly_fields = ["partner", "created_at", "updated_at"]
@@ -74,6 +75,7 @@ class PartnerScheduleSettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             booking_horizon_days=form.cleaned_data["booking_horizon_days"],
             near_fit_tolerance_minutes=form.cleaned_data["near_fit_tolerance_minutes"],
             cancellation_deadline_hours=form.cleaned_data["cancellation_deadline_hours"],
+            require_phone_for_booking=form.cleaned_data["require_phone_for_booking"],
         )
         _copy_model_state(target=obj, source=stored)
 

@@ -301,6 +301,8 @@ def confirm_client_booking(
     booking_resource = booking_resource or get_or_create_default_booking_resource(partner=partner)
     summary = build_booking_summary(partner=partner, selected_service_ids=selected_service_ids)
     schedule_settings = _schedule_settings_for_booking(partner)
+    if schedule_settings.require_phone_for_booking and not client_profile.phone.strip():
+        raise ValidationError({"phone": "Phone is required before booking."})
     local_date = to_partner_time(start_at, partner.timezone).date()
     matching_slot = _find_matching_slot(
         partner=partner,

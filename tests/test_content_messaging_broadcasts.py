@@ -92,6 +92,17 @@ def test_content_template_override_validation_and_language_fallback(content_cont
     seed_system_templates()
 
     assert SystemTemplate.objects.filter(key="start.welcome", language="uk").exists()
+    required_field_template = SystemTemplate.objects.get(
+        key="error.required_field_missing",
+        language="en",
+    )
+    final_confirm_template = SystemTemplate.objects.get(
+        key="booking.final_confirm",
+        language="en",
+    )
+    assert required_field_template.editable is False
+    assert required_field_template.placeholder_allowlist == ["missing_fields"]
+    assert "comment" in final_confirm_template.placeholder_allowlist
 
     override = set_partner_template_override(
         actor=created.owner,

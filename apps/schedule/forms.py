@@ -67,6 +67,7 @@ class PartnerScheduleSettingsAdminForm(forms.ModelForm):
             "booking_horizon_days",
             "near_fit_tolerance_minutes",
             "cancellation_deadline_hours",
+            "require_phone_for_booking",
         )
 
     def clean(self):
@@ -77,6 +78,7 @@ class PartnerScheduleSettingsAdminForm(forms.ModelForm):
             "booking_horizon_days",
             "near_fit_tolerance_minutes",
             "cancellation_deadline_hours",
+            "require_phone_for_booking",
         )
         if any(cleaned_data.get(field_name) is None for field_name in field_names):
             return cleaned_data
@@ -87,6 +89,7 @@ class PartnerScheduleSettingsAdminForm(forms.ModelForm):
                 booking_horizon_days=cleaned_data["booking_horizon_days"],
                 near_fit_tolerance_minutes=cleaned_data["near_fit_tolerance_minutes"],
                 cancellation_deadline_hours=cleaned_data["cancellation_deadline_hours"],
+                require_phone_for_booking=cleaned_data["require_phone_for_booking"],
             )
         except DjangoValidationError as exc:
             _add_domain_errors(self, exc)

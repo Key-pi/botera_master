@@ -99,6 +99,7 @@ class PartnerScheduleSettings(PartnerBoundModel):
     cancellation_deadline_hours = models.PositiveIntegerField(
         default=DEFAULT_CANCELLATION_DEADLINE_HOURS,
     )
+    require_phone_for_booking = models.BooleanField(default=False)
 
     class Meta:
         indexes = [
