@@ -592,6 +592,13 @@ Rules:
   booking-resource advisory lock and runs a fresh overlap check.
 - Confirming or declining a request creates a separate durable client notification after commit;
   Telegram delivery never runs inside the appointment transaction.
+- The actionable master request also exposes a Telegram proposal flow backed by FSM-only selection
+  state. Dates and slots come from current appointment snapshots, availability, blocks, booking
+  horizon, and confirmed busy intervals; final send freshly validates every selected slot before
+  creating one durable `requested_alternatives` proposal with up to five options.
+- Pending requested alternatives stale queued master request notices. If the client declines or the
+  master cancels the proposal, stale reminders resume at the next sequence instead of reusing an
+  already-staled idempotency key.
 - Old pending reminders are cancelled/staled on reschedule, cancellation, completion, or no-show.
 - The pilot admin exposes a service-backed time-proposal action for requested and confirmed appointments; proposal and option records remain read-only operational history.
 - A time proposal may contain multiple alternatives. Client callbacks carry only opaque record identifiers and re-resolve partner/client ownership before calling the proposal owner service.

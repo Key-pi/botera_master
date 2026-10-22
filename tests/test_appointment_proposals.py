@@ -13,6 +13,7 @@ from apps.appointments.proposals import (
     AppointmentProposalOptionInput,
     accept_appointment_proposal_option,
     create_appointment_proposal,
+    decline_appointment_proposal,
     expire_pending_appointment_proposals,
 )
 from apps.appointments.services import (
@@ -189,6 +190,52 @@ def test_accepting_requested_alternative_confirms_appointment_after_recheck(
     assert accepted.start_at == _option_start(rounded_future_start)
     assert proposal.status == AppointmentProposal.Status.ACCEPTED
     assert proposal.selected_option_id == option.id
+
+
+@pytest.mark.django_db
+def test_requested_alternatives_pause_and_resume_stale_master_reminders(
+    proposal_context,
+    rounded_future_start,
+    django_capture_on_commit_callbacks,
+):
+    context = proposal_context
+    with django_capture_on_commit_callbacks(execute=True):
+        requested = create_requested_appointment(
+            actor=None,
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["client"],
+            start_at=rounded_future_start,
+            service_items=[_service_input(context["service"])],
+        )
+    initial_stale = ScheduledNotification.objects.get(
+        appointment=requested,
+        type=ScheduledNotification.Type.STALE_REQUESTED,
+        stale_sequence=0,
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        proposal = create_appointment_proposal(
+            actor=context["owner"],
+            appointment=requested,
+            proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+            options=[AppointmentProposalOptionInput(start_at=_option_start(rounded_future_start))],
+        )
+    initial_stale.refresh_from_db()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        decline_appointment_proposal(
+            client_profile=context["client"],
+            proposal=proposal,
+        )
+
+    resumed = ScheduledNotification.objects.get(
+        appointment=requested,
+        type=ScheduledNotification.Type.STALE_REQUESTED,
+        stale_sequence=1,
+    )
+    assert initial_stale.status == ScheduledNotification.Status.STALE
+    assert resumed.status == ScheduledNotification.Status.QUEUED
 
 
 @pytest.mark.django_db

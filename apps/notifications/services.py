@@ -38,6 +38,10 @@ QUEUED_OR_SENDING_STATUSES = (
     ScheduledNotification.Status.QUEUED,
     ScheduledNotification.Status.SENDING,
 )
+REQUEST_ACTION_NOTIFICATION_TYPES = (
+    ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
+    ScheduledNotification.Type.STALE_REQUESTED,
+)
 CLIENT_TARGET_NOTIFICATION_TYPES = frozenset(
     {
         ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
@@ -529,7 +533,9 @@ def schedule_stale_requested_notification(
 ) -> ScheduledNotification | None:
     """Schedule the next stale requested reminder for the master."""
 
-    if appointment.status != Appointment.Status.REQUESTED:
+    if appointment.status != Appointment.Status.REQUESTED or _has_pending_requested_alternatives(
+        appointment
+    ):
         return None
 
     settings = get_or_create_notification_settings(partner=appointment.partner)
@@ -553,6 +559,29 @@ def schedule_stale_requested_notification(
         idempotency_key=f"appointment:{appointment.id}:stale_requested:{sequence}",
         stale_sequence=sequence,
         now=timezone.now(),
+    )
+
+
+def resume_stale_requested_notification(
+    *,
+    appointment: Appointment,
+    anchor_at: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Continue the reminder sequence after a client declines/cancels alternatives."""
+
+    last_sequence = (
+        ScheduledNotification.objects.filter(
+            appointment=appointment,
+            type=ScheduledNotification.Type.STALE_REQUESTED,
+        )
+        .order_by("-stale_sequence")
+        .values_list("stale_sequence", flat=True)
+        .first()
+    )
+    return schedule_stale_requested_notification(
+        appointment=appointment,
+        sequence=(last_sequence + 1 if last_sequence is not None else 0),
+        anchor_at=anchor_at,
     )
 
 
@@ -604,6 +633,16 @@ def cancel_pending_notifications_for_appointment(
         appointment=appointment,
         status__in=QUEUED_OR_SENDING_STATUSES,
     ).update(status=status, updated_at=timezone.now())
+
+
+def stale_pending_request_notifications(*, appointment: Appointment) -> int:
+    """Stop request-action notices while the client considers offered alternatives."""
+
+    return ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type__in=REQUEST_ACTION_NOTIFICATION_TYPES,
+        status__in=QUEUED_OR_SENDING_STATUSES,
+    ).update(status=ScheduledNotification.Status.STALE, updated_at=timezone.now())
 
 
 def dispatch_due_notifications(
@@ -995,6 +1034,8 @@ def _obsolete_status_for_notification(
     if notification.type == ScheduledNotification.Type.MASTER_BOOKING_REQUEST:
         if appointment.status != Appointment.Status.REQUESTED:
             return ScheduledNotification.Status.STALE
+        if _has_pending_requested_alternatives(appointment):
+            return ScheduledNotification.Status.STALE
         if appointment.start_at <= now:
             return ScheduledNotification.Status.SKIPPED
         return None
@@ -1005,6 +1046,8 @@ def _obsolete_status_for_notification(
     if notification.type == ScheduledNotification.Type.STALE_REQUESTED:
         if appointment.status != Appointment.Status.REQUESTED:
             return ScheduledNotification.Status.STALE
+        if _has_pending_requested_alternatives(appointment):
+            return ScheduledNotification.Status.STALE
         if appointment.start_at <= now:
             return ScheduledNotification.Status.SKIPPED
         return None
@@ -1013,6 +1056,14 @@ def _obsolete_status_for_notification(
     if appointment.start_at <= now:
         return ScheduledNotification.Status.SKIPPED
     return None
+
+
+def _has_pending_requested_alternatives(appointment: Appointment) -> bool:
+    return AppointmentProposal.objects.filter(
+        appointment=appointment,
+        type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+        status=AppointmentProposal.Status.PENDING,
+    ).exists()
 
 
 def _is_inside_quiet_hours(value: time, *, start: time, end: time) -> bool:

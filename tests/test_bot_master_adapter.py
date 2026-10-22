@@ -6,17 +6,23 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.models import Appointment
+from apps.appointments.models import Appointment, AppointmentProposal
 from apps.appointments.services import (
     AppointmentServiceItemInput,
+    create_confirmed_appointment,
     create_requested_appointment,
 )
 from apps.bot.master import (
+    MASTER_PROPOSAL_SELECTION_LIMIT,
     build_master_booking_request_reply,
     master_booking_request_markup,
 )
 from apps.bot.models import PartnerTelegramContact
-from apps.bot.routers import _master_reply_from_callback_data
+from apps.bot.routers import (
+    MasterProposalStateValues,
+    _master_callback_result_from_data,
+    _master_reply_from_callback_data,
+)
 from apps.bot.selectors import master_telegram_contact_for_user
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
@@ -26,6 +32,8 @@ from apps.clients.services import (
 from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
+from apps.schedule.services import create_availability_window, update_schedule_settings
+from core.timezones import to_partner_time
 
 
 @pytest.fixture
@@ -91,7 +99,7 @@ def _callbacks(reply):
 
 
 @pytest.mark.django_db
-def test_master_request_reply_contains_compact_confirm_and_decline_actions(
+def test_master_request_reply_contains_compact_request_actions(
     master_request_context,
 ):
     context = master_request_context
@@ -108,6 +116,7 @@ def test_master_request_reply_contains_compact_confirm_and_decline_actions(
     assert callbacks == [
         f"mr:confirm:{appointment.id.hex}",
         f"mr:decline:{appointment.id.hex}",
+        f"mr:propose:{appointment.id.hex}",
     ]
     assert all(len(callback.encode("utf-8")) <= 64 for callback in callbacks)
 
@@ -261,8 +270,183 @@ def test_master_request_markup_accepts_uuid_without_database_lookup():
         language="en",
     )
 
-    callbacks = [button.callback_data for button in markup.inline_keyboard[0]]
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
     assert callbacks == [
         "mr:confirm:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "mr:decline:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mr:propose:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ]
+
+
+@pytest.mark.django_db
+def test_master_builds_and_sends_multiple_requested_alternatives(
+    master_request_context,
+    django_capture_on_commit_callbacks,
+):
+    context = master_request_context
+    now = timezone.now().replace(second=0, microsecond=0)
+    start_at = (now + timedelta(days=3)).replace(hour=10, minute=0)
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode="manual",
+        slot_step_minutes=30,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=start_at,
+        end_at=start_at + timedelta(hours=4),
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = _create_request(context, start_at=start_at)
+    stale_request = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=ScheduledNotification.Type.STALE_REQUESTED,
+    )
+
+    first_start = start_at + timedelta(minutes=30)
+    second_start = start_at + timedelta(hours=1)
+    first = _master_callback_result_from_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mr:ptoggle:{appointment.id.hex}:{int(first_start.timestamp())}:1",
+        proposal_state=MasterProposalStateValues(appointment_id=appointment.id),
+    )
+    second = _master_callback_result_from_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mr:ptoggle:{appointment.id.hex}:{int(second_start.timestamp())}:1",
+        proposal_state=MasterProposalStateValues(
+            appointment_id=appointment.id,
+            selected_start_ats=first.selected_start_ats,
+        ),
+    )
+    review = _master_callback_result_from_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mr:preview:{appointment.id.hex}",
+        proposal_state=MasterProposalStateValues(
+            appointment_id=appointment.id,
+            selected_start_ats=second.selected_start_ats,
+        ),
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        sent = _master_callback_result_from_data(
+            partner=context["partner"],
+            actor=context["owner"],
+            data=f"mr:psend:{appointment.id.hex}",
+            proposal_state=MasterProposalStateValues(
+                appointment_id=appointment.id,
+                selected_start_ats=second.selected_start_ats,
+            ),
+        )
+
+    proposal = AppointmentProposal.objects.get(appointment=appointment)
+    stale_request.refresh_from_db()
+    assert second.selected_start_ats == (first_start, second_start)
+    assert (
+        to_partner_time(first_start, context["partner"].timezone).strftime("%Y-%m-%d %H:%M")
+        in review.reply.text
+    )
+    assert (
+        to_partner_time(second_start, context["partner"].timezone).strftime("%Y-%m-%d %H:%M")
+        in review.reply.text
+    )
+    assert proposal.type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES
+    assert proposal.status == AppointmentProposal.Status.PENDING
+    assert stale_request.status == ScheduledNotification.Status.STALE
+    assert list(proposal.options.values_list("start_at", flat=True)) == [
+        first_start,
+        second_start,
+    ]
+    assert "надіслано варіанти часу: 2" in sent.reply.text
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        appointment_proposal=proposal,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_master_alternative_send_rechecks_slot_availability(master_request_context):
+    context = master_request_context
+    now = timezone.now().replace(second=0, microsecond=0)
+    start_at = (now + timedelta(days=3)).replace(hour=10, minute=0)
+    alternative_start = start_at + timedelta(hours=1)
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode="manual",
+        slot_step_minutes=30,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=start_at,
+        end_at=start_at + timedelta(hours=4),
+    )
+    appointment = _create_request(context, start_at=start_at)
+    create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=alternative_start,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    with pytest.raises(ValidationError):
+        _master_callback_result_from_data(
+            partner=context["partner"],
+            actor=context["owner"],
+            data=f"mr:psend:{appointment.id.hex}",
+            proposal_state=MasterProposalStateValues(
+                appointment_id=appointment.id,
+                selected_start_ats=(alternative_start,),
+            ),
+        )
+
+    assert not AppointmentProposal.objects.filter(appointment=appointment).exists()
+
+
+@pytest.mark.django_db
+def test_master_proposal_selection_limit_keeps_existing_options(master_request_context):
+    context = master_request_context
+    now = timezone.now().replace(second=0, microsecond=0)
+    start_at = (now + timedelta(days=3)).replace(hour=9, minute=0)
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode="manual",
+        slot_step_minutes=30,
+    )
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=start_at,
+        end_at=start_at + timedelta(hours=6),
+    )
+    appointment = _create_request(context, start_at=start_at)
+    selected = tuple(
+        start_at + timedelta(minutes=30 * offset)
+        for offset in range(1, MASTER_PROPOSAL_SELECTION_LIMIT + 1)
+    )
+    extra_start = start_at + timedelta(hours=3)
+
+    result = _master_callback_result_from_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mr:ptoggle:{appointment.id.hex}:{int(extra_start.timestamp())}:1",
+        proposal_state=MasterProposalStateValues(
+            appointment_id=appointment.id,
+            selected_start_ats=selected,
+        ),
+    )
+
+    assert result.selected_start_ats == selected
+    assert "щонайбільше 5 варіантів" in result.reply.text
+    assert all(len(callback.encode("utf-8")) <= 64 for callback in _callbacks(result.reply))

@@ -471,6 +471,7 @@ Rules:
 - if a new pending proposal is created for the same appointment, older pending proposal becomes superseded.
 - if proposal expires, both sides are notified when relevant.
 - requested alternatives expire by automatically cancelling the requested appointment.
+- a pending `requested_alternatives` proposal suppresses queued initial/stale master request notices; declining or cancelling it resumes the stale sequence with a new idempotency key.
 
 ### AppointmentProposalOption
 

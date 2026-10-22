@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.services import ensure_partner_access
 from apps.appointments.models import Appointment, AppointmentProposal
 from apps.appointments.proposals import (
     AppointmentProposalOptionInput,
@@ -50,6 +51,7 @@ from apps.schedule.services import (
 from core.timezones import get_zone, to_partner_time
 
 if TYPE_CHECKING:
+    from apps.accounts.models import User
     from apps.clients.models import ClientProfile
     from apps.partners.models import Partner
     from apps.schedule.models import BookingResource
@@ -369,26 +371,17 @@ def available_client_reschedule_dates(
         appointment=appointment,
         now=current_time,
     )
-    duration_minutes = _appointment_duration_minutes(appointment)
-    options: list[BookingDateOption] = []
-    for offset in range(days):
-        local_date = start_date + timedelta(days=offset)
-        slots = _reschedule_slot_options_for_local_date(
-            appointment=appointment,
-            duration_minutes=duration_minutes,
-            local_date=local_date,
-            now=current_time,
-        )
-        if slots:
-            options.append(
-                BookingDateOption(
-                    local_date=local_date,
-                    slot_count=len(slots),
-                    first_slot_at=slots[0].start_at,
-                    has_near_fit=any(slot.is_near_fit for slot in slots),
-                )
-            )
-    return paginate_telegram_entities(tuple(options), page=page, per_page=per_page)
+    options = _available_date_options_for_duration(
+        partner=partner,
+        booking_resource=appointment.booking_resource,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        start_date=start_date,
+        days=days,
+        exclude_appointment=appointment,
+        excluded_start_ats=frozenset({appointment.start_at}),
+        now=current_time,
+    )
+    return paginate_telegram_entities(options, page=page, per_page=per_page)
 
 
 def available_client_reschedule_slots(
@@ -417,6 +410,113 @@ def available_client_reschedule_slots(
         now=current_time,
     )
     return paginate_telegram_entities(slots, page=page, per_page=per_page)
+
+
+def available_requested_alternative_dates(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    start_date: date,
+    days: int,
+    page: int = 1,
+    per_page: int = BOOKING_DATES_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingDateOption]:
+    """Return dates a partner can offer for one requested appointment."""
+
+    if days <= 0:
+        raise ValidationError({"days": "Search window must be positive."})
+    current_time = now or timezone.now()
+    _validate_requested_alternative_access(
+        actor=actor,
+        partner=partner,
+        appointment=appointment,
+    )
+    options = _available_date_options_for_duration(
+        partner=partner,
+        booking_resource=appointment.booking_resource,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        start_date=start_date,
+        days=days,
+        excluded_start_ats=frozenset({appointment.start_at}),
+        now=current_time,
+    )
+    return paginate_telegram_entities(options, page=page, per_page=per_page)
+
+
+def available_requested_alternative_slots(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    local_date: date,
+    page: int = 1,
+    per_page: int = BOOKING_SLOTS_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingSlotOption]:
+    """Return concrete slots a partner can offer for one request."""
+
+    current_time = now or timezone.now()
+    _validate_requested_alternative_access(
+        actor=actor,
+        partner=partner,
+        appointment=appointment,
+    )
+    slots = _requested_alternative_slot_options_for_local_date(
+        appointment=appointment,
+        local_date=local_date,
+        now=current_time,
+    )
+    return paginate_telegram_entities(slots, page=page, per_page=per_page)
+
+
+def create_requested_alternative_proposal(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    selected_start_ats: Iterable[datetime],
+    now: datetime | None = None,
+) -> AppointmentProposal:
+    """Create a requested-alternatives proposal from freshly validated slots."""
+
+    current_time = now or timezone.now()
+    start_ats = _unique_aware_datetimes(selected_start_ats)
+    if not start_ats:
+        raise ValidationError({"options": "Select at least one alternative time."})
+
+    with transaction.atomic():
+        appointment = (
+            Appointment.objects.select_for_update()
+            .select_related("partner", "booking_resource", "client_profile")
+            .prefetch_related("service_items")
+            .get(id=appointment.id)
+        )
+        _validate_requested_alternative_access(
+            actor=actor,
+            partner=partner,
+            appointment=appointment,
+        )
+        option_inputs = []
+        for start_at in start_ats:
+            matching_slot = _find_matching_requested_alternative_slot(
+                appointment=appointment,
+                start_at=start_at,
+                now=current_time,
+            )
+            option_inputs.append(
+                AppointmentProposalOptionInput(
+                    start_at=matching_slot.start_at,
+                    is_near_fit=matching_slot.is_near_fit,
+                )
+            )
+        return create_appointment_proposal(
+            actor=actor,
+            appointment=appointment,
+            proposal_type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
+            options=option_inputs,
+        )
 
 
 def reschedule_client_appointment(
@@ -570,9 +670,32 @@ def _available_booking_date_options(
 ) -> tuple[BookingDateOption, ...]:
     """Compute a date range while loading schedule and busy data only once."""
 
-    current_time = now or timezone.now()
     booking_resource = booking_resource or get_or_create_default_booking_resource(partner=partner)
     summary = build_booking_summary(partner=partner, selected_service_ids=selected_service_ids)
+    return _available_date_options_for_duration(
+        partner=partner,
+        booking_resource=booking_resource,
+        duration_minutes=summary.duration_minutes,
+        start_date=start_date,
+        days=days,
+        now=now,
+    )
+
+
+def _available_date_options_for_duration(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    duration_minutes: int,
+    start_date: date,
+    days: int,
+    now: datetime | None,
+    exclude_appointment: Appointment | None = None,
+    excluded_start_ats: frozenset[datetime] = frozenset(),
+) -> tuple[BookingDateOption, ...]:
+    """Compute a date range once for catalog and snapshotted appointment durations."""
+
+    current_time = now or timezone.now()
     schedule_settings = _schedule_settings_for_booking(partner)
     range_start, _first_day_end = _local_date_range(
         partner=partner,
@@ -594,7 +717,7 @@ def _available_booking_date_options(
         return ()
 
     duration_and_tolerance = timedelta(
-        minutes=summary.duration_minutes + schedule_settings.near_fit_tolerance_minutes
+        minutes=duration_minutes + schedule_settings.near_fit_tolerance_minutes
     )
     blocked_intervals = tuple(
         TimeInterval(block.start_at, block.end_at)
@@ -609,6 +732,7 @@ def _available_booking_date_options(
         booking_resource=booking_resource,
         start_at=range_start,
         end_at=range_end + duration_and_tolerance,
+        exclude_appointment=exclude_appointment,
     )
     options: list[BookingDateOption] = []
     for offset in range(days):
@@ -617,7 +741,7 @@ def _available_booking_date_options(
         slots = generate_available_slots(
             partner=partner,
             booking_resource=booking_resource,
-            duration_minutes=summary.duration_minutes,
+            duration_minutes=duration_minutes,
             range_start=day_start,
             range_end=day_end,
             schedule_settings=schedule_settings,
@@ -626,6 +750,7 @@ def _available_booking_date_options(
             blocked_intervals=blocked_intervals,
             now=current_time,
         )
+        slots = tuple(slot for slot in slots if slot.start_at not in excluded_start_ats)
         if slots:
             options.append(
                 BookingDateOption(
@@ -707,6 +832,40 @@ def _reschedule_slot_options_for_local_date(
         exclude_appointment=appointment,
     )
     return tuple(slot for slot in slots if slot.start_at != appointment.start_at)
+
+
+def _requested_alternative_slot_options_for_local_date(
+    *,
+    appointment: Appointment,
+    local_date: date,
+    now: datetime,
+) -> tuple[BookingSlotOption, ...]:
+    slots = _slot_options_for_local_date(
+        partner=appointment.partner,
+        booking_resource=appointment.booking_resource,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        local_date=local_date,
+        now=now,
+    )
+    return tuple(slot for slot in slots if slot.start_at != appointment.start_at)
+
+
+def _find_matching_requested_alternative_slot(
+    *,
+    appointment: Appointment,
+    start_at: datetime,
+    now: datetime,
+) -> BookingSlotOption:
+    local_date = to_partner_time(start_at, appointment.partner.timezone).date()
+    slots = _requested_alternative_slot_options_for_local_date(
+        appointment=appointment,
+        local_date=local_date,
+        now=now,
+    )
+    for slot in slots:
+        if slot.start_at == start_at:
+            return slot
+    raise ValidationError({"start_at": "Selected alternative is no longer available."})
 
 
 def _find_matching_reschedule_slot(
@@ -831,6 +990,31 @@ def _validate_client_reschedule(
         raise ValidationError({"appointment": "Only a confirmed appointment can be moved."})
     if appointment.start_at <= now:
         raise ValidationError({"appointment": "Past appointments cannot be moved."})
+
+
+def _validate_requested_alternative_access(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+) -> None:
+    ensure_partner_access(actor, partner)
+    if appointment.partner_id != partner.id:
+        raise ValidationError({"appointment": "Appointment is not available to this partner."})
+    if appointment.status != Appointment.Status.REQUESTED:
+        raise ValidationError({"appointment": "Appointment is no longer requested."})
+
+
+def _unique_aware_datetimes(values: Iterable[datetime]) -> tuple[datetime, ...]:
+    unique_values: list[datetime] = []
+    seen: set[datetime] = set()
+    for value in values:
+        _validate_aware_datetime(value, "start_at")
+        normalized = value.astimezone(datetime_timezone.utc)
+        if normalized not in seen:
+            seen.add(normalized)
+            unique_values.append(normalized)
+    return tuple(unique_values)
 
 
 def _active_services_for_selection(

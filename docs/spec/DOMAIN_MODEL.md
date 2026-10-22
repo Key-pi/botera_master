@@ -506,7 +506,9 @@ Post-create booking messages/actions:
 - When master confirms a `requested` appointment, appointment becomes `confirmed`, client receives a confirmed message, and reminders are created.
 - When master declines/cancels a `requested` appointment, client-facing reason is optional.
 - When master proposes another time for a `requested` appointment, master may propose multiple alternative slots.
+- The MVP Telegram adapter exposes up to five alternatives per proposal while the proposal model remains adapter-neutral and extensible.
 - When master proposes alternative slots for a `requested` appointment, the original appointment remains `requested` until the client chooses a slot, cancels the request, or the proposal expires.
+- While such a proposal is pending, stale-request reminders are paused because the next action belongs to the client; decline/cancel resumes the reminder sequence.
 - If the client chooses one of the master-proposed slots, the system re-checks availability, then the appointment becomes `confirmed` and reminders are created.
 - If none of the proposed slots works for the client, the client may choose another available time; that choice follows the partner's normal auto-confirm/manual-confirm mode.
 - Requested appointment alternative proposals expire after 48 hours.

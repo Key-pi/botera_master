@@ -45,9 +45,17 @@ from apps.bot.master import (
     build_master_booking_request_action_failed_reply,
     build_master_booking_request_decline_reply,
     build_master_booking_request_reply,
+    build_master_requested_alternative_dates_reply,
+    build_master_requested_alternative_review_reply,
+    build_master_requested_alternative_slots_reply,
     confirm_master_booking_request_reply,
     decline_master_booking_request_reply,
+    parse_master_proposal_date_token,
+    parse_master_proposal_page_token,
+    parse_master_proposal_timestamp_token,
     parse_master_request_appointment_id,
+    send_master_requested_alternative_proposal_reply,
+    toggle_master_requested_alternative_slot_reply,
 )
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
@@ -105,6 +113,12 @@ class BookingFlowState(StatesGroup):
     waiting_for_phone = State()
 
 
+class MasterProposalFlowState(StatesGroup):
+    """Ephemeral alternative-slot selection for one master booking request."""
+
+    active = State()
+
+
 @dataclass(frozen=True, slots=True)
 class BookingCallbackResult:
     """Booking adapter response plus the next ephemeral FSM state."""
@@ -130,6 +144,24 @@ class BookingStateValues:
     date_source: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class MasterCallbackResult:
+    """Master adapter response plus its next ephemeral proposal state."""
+
+    reply: BotMasterReply
+    appointment_id: UUID | None = None
+    selected_start_ats: tuple[datetime, ...] = ()
+    keep_proposal_state: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MasterProposalStateValues:
+    """Validated values restored from one master proposal conversation."""
+
+    appointment_id: UUID | None = None
+    selected_start_ats: tuple[datetime, ...] = ()
+
+
 BOOKING_SERVICE_IDS_STATE_KEY = "booking_service_ids"
 BOOKING_SUMMARY_SIGNATURE_STATE_KEY = "booking_summary_signature"
 BOOKING_COMMENT_STATE_KEY = "booking_comment"
@@ -137,6 +169,8 @@ BOOKING_PENDING_START_STATE_KEY = "booking_pending_start"
 BOOKING_DATE_SOURCE_STATE_KEY = "booking_date_source"
 BOOKING_INPUT_COMMENT = "comment"
 BOOKING_INPUT_PHONE = "phone"
+MASTER_PROPOSAL_APPOINTMENT_STATE_KEY = "master_proposal_appointment_id"
+MASTER_PROPOSAL_STARTS_STATE_KEY = "master_proposal_start_ats"
 
 
 def build_partner_router() -> Router:
@@ -436,6 +470,10 @@ def build_partner_router() -> Router:
         partner: Partner,
         state: FSMContext,
     ) -> None:
+        if callback.data == f"{MASTER_REQUEST_CALLBACK_PREFIX}:noop":
+            await callback.answer()
+            return
+
         contact = await sync_to_async(master_telegram_contact_for_user)(
             partner=partner,
             telegram_user_id=callback.from_user.id,
@@ -452,18 +490,30 @@ def build_partner_router() -> Router:
             await callback.answer()
             return
 
-        await state.clear()
+        proposal_state = _master_proposal_state_values(await state.get_data())
         try:
-            reply = await sync_to_async(_master_reply_from_callback_data)(
+            result = await sync_to_async(_master_callback_result_from_data)(
                 partner=partner,
                 actor=contact.user,
                 data=callback.data,
+                proposal_state=proposal_state,
             )
         except ValidationError:
+            await state.clear()
             reply = await sync_to_async(build_master_booking_request_action_failed_reply)(
                 partner=partner,
                 appointment_id=_master_request_id_from_callback(callback.data),
             )
+        else:
+            reply = result.reply
+            if result.keep_proposal_state and result.appointment_id is not None:
+                await _store_master_proposal_state(
+                    state=state,
+                    appointment_id=result.appointment_id,
+                    selected_start_ats=result.selected_start_ats,
+                )
+            else:
+                await state.clear()
 
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
@@ -997,40 +1047,142 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
     raise ValidationError({"callback": "Unsupported callback."})
 
 
-def _master_reply_from_callback_data(*, partner: Partner, actor, data: str) -> BotMasterReply:
+def _master_callback_result_from_data(
+    *,
+    partner: Partner,
+    actor,
+    data: str,
+    proposal_state: MasterProposalStateValues | None = None,
+) -> MasterCallbackResult:
     parts = data.split(":")
-    if len(parts) != 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
+    if len(parts) < 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
         raise ValidationError({"callback": "Unsupported callback."})
 
     appointment_id = parse_master_request_appointment_id(parts[2])
-    if parts[1] == "view":
-        return build_master_booking_request_reply(
-            partner=partner,
-            appointment_id=appointment_id,
+    proposal_state = proposal_state or MasterProposalStateValues()
+    selected_start_ats = (
+        proposal_state.selected_start_ats if proposal_state.appointment_id == appointment_id else ()
+    )
+    action = parts[1]
+    if action == "view" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=build_master_booking_request_reply(
+                partner=partner,
+                appointment_id=appointment_id,
+            )
         )
-    if parts[1] == "confirm":
-        return confirm_master_booking_request_reply(
+    if action == "confirm" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=confirm_master_booking_request_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+            )
+        )
+    if action == "decline" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=build_master_booking_request_decline_reply(
+                partner=partner,
+                appointment_id=appointment_id,
+            )
+        )
+    if action == "declinego" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=decline_master_booking_request_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+            )
+        )
+    if action == "propose" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=build_master_requested_alternative_dates_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+            ),
+            appointment_id=appointment_id,
+            keep_proposal_state=True,
+        )
+    if action == "pdates" and len(parts) == 4:
+        return MasterCallbackResult(
+            reply=build_master_requested_alternative_dates_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+                page=parse_master_proposal_page_token(parts[3]),
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "pslots" and len(parts) == 5:
+        return MasterCallbackResult(
+            reply=build_master_requested_alternative_slots_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                local_date=parse_master_proposal_date_token(parts[3]),
+                selected_start_ats=selected_start_ats,
+                page=parse_master_proposal_page_token(parts[4]),
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "ptoggle" and len(parts) == 5:
+        selection = toggle_master_requested_alternative_slot_reply(
             partner=partner,
             actor=actor,
             appointment_id=appointment_id,
+            start_at=parse_master_proposal_timestamp_token(parts[3]),
+            selected_start_ats=selected_start_ats,
+            page=parse_master_proposal_page_token(parts[4]),
         )
-    if parts[1] == "decline":
-        return build_master_booking_request_decline_reply(
-            partner=partner,
+        return MasterCallbackResult(
+            reply=selection.reply,
             appointment_id=appointment_id,
+            selected_start_ats=selection.selected_start_ats,
+            keep_proposal_state=True,
         )
-    if parts[1] == "declinego":
-        return decline_master_booking_request_reply(
-            partner=partner,
-            actor=actor,
+    if action == "preview" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=build_master_requested_alternative_review_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+            ),
             appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "psend" and len(parts) == 3:
+        return MasterCallbackResult(
+            reply=send_master_requested_alternative_proposal_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+            )
         )
     raise ValidationError({"callback": "Unsupported callback."})
 
 
+def _master_reply_from_callback_data(*, partner: Partner, actor, data: str) -> BotMasterReply:
+    """Compatibility helper for stateless master actions and focused adapter tests."""
+
+    return _master_callback_result_from_data(
+        partner=partner,
+        actor=actor,
+        data=data,
+    ).reply
+
+
 def _master_request_id_from_callback(data: str) -> UUID | None:
     parts = data.split(":")
-    if len(parts) != 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
+    if len(parts) < 3 or parts[0] != MASTER_REQUEST_CALLBACK_PREFIX:
         return None
     try:
         return parse_master_request_appointment_id(parts[2])
@@ -1140,6 +1292,49 @@ def _booking_state_values(data: dict) -> BookingStateValues:
         client_comment=client_comment,
         pending_start_at=pending_start_at,
         date_source=date_source,
+    )
+
+
+async def _store_master_proposal_state(
+    *,
+    state: FSMContext,
+    appointment_id: UUID,
+    selected_start_ats: tuple[datetime, ...],
+) -> None:
+    await state.set_state(MasterProposalFlowState.active)
+    await state.set_data(
+        {
+            MASTER_PROPOSAL_APPOINTMENT_STATE_KEY: appointment_id.hex,
+            MASTER_PROPOSAL_STARTS_STATE_KEY: [
+                int(start_at.timestamp()) for start_at in selected_start_ats
+            ],
+        }
+    )
+
+
+def _master_proposal_state_values(data: dict) -> MasterProposalStateValues:
+    raw_appointment_id = data.get(MASTER_PROPOSAL_APPOINTMENT_STATE_KEY)
+    try:
+        appointment_id = (
+            parse_master_request_appointment_id(str(raw_appointment_id))
+            if raw_appointment_id
+            else None
+        )
+    except ValidationError:
+        return MasterProposalStateValues()
+
+    raw_start_ats = data.get(MASTER_PROPOSAL_STARTS_STATE_KEY, ())
+    if not isinstance(raw_start_ats, (list, tuple)):
+        return MasterProposalStateValues(appointment_id=appointment_id)
+    try:
+        selected_start_ats = tuple(
+            parse_master_proposal_timestamp_token(str(value)) for value in raw_start_ats
+        )
+    except ValidationError:
+        return MasterProposalStateValues(appointment_id=appointment_id)
+    return MasterProposalStateValues(
+        appointment_id=appointment_id,
+        selected_start_ats=selected_start_ats,
     )
 
 

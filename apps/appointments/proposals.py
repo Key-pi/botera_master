@@ -114,6 +114,8 @@ def create_appointment_proposal(
                 "expires_at": expires_at.isoformat(),
             },
         )
+        if proposal_type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES:
+            _on_commit_stale_pending_request_notifications(appointment.id)
         if actor is None:
             _on_commit_schedule_master_client_reschedule_notification(proposal.id)
         else:
@@ -185,6 +187,11 @@ def decline_appointment_proposal(
             payload={"appointment_id": str(proposal.appointment_id)},
         )
         _on_commit_schedule_proposal_response_notification(proposal.id)
+        if (
+            proposal.type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES
+            and proposal.appointment.status == Appointment.Status.REQUESTED
+        ):
+            _on_commit_schedule_stale_requested_notification(proposal.appointment_id)
     return proposal
 
 
@@ -234,7 +241,7 @@ def cancel_appointment_proposal(
     with transaction.atomic():
         proposal = (
             AppointmentProposal.objects.select_for_update()
-            .select_related("partner")
+            .select_related("partner", "appointment")
             .get(id=proposal.id)
         )
         ensure_partner_access(actor, proposal.partner)
@@ -250,6 +257,11 @@ def cancel_appointment_proposal(
             message="Appointment change proposal cancelled by partner.",
             payload={"appointment_id": str(proposal.appointment_id)},
         )
+        if (
+            proposal.type == AppointmentProposal.Type.REQUESTED_ALTERNATIVES
+            and proposal.appointment.status == Appointment.Status.REQUESTED
+        ):
+            _on_commit_schedule_stale_requested_notification(proposal.appointment_id)
     return proposal
 
 
@@ -631,6 +643,14 @@ def _on_commit_schedule_client_proposal_notification(proposal_id) -> None:
     transaction.on_commit(lambda: _schedule_client_proposal_notification(proposal_id))
 
 
+def _on_commit_stale_pending_request_notifications(appointment_id) -> None:
+    transaction.on_commit(lambda: _stale_pending_request_notifications(appointment_id))
+
+
+def _on_commit_schedule_stale_requested_notification(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_stale_requested_notification(appointment_id))
+
+
 def _on_commit_schedule_master_client_reschedule_notification(proposal_id) -> None:
     transaction.on_commit(lambda: _schedule_master_client_reschedule_notification(proposal_id))
 
@@ -656,6 +676,25 @@ def _schedule_client_proposal_notification(proposal_id) -> None:
         .get(id=proposal_id)
     )
     schedule_client_appointment_proposal_notification(proposal=proposal)
+
+
+def _stale_pending_request_notifications(appointment_id) -> None:
+    from apps.notifications.services import stale_pending_request_notifications
+
+    appointment = Appointment.objects.get(id=appointment_id)
+    stale_pending_request_notifications(appointment=appointment)
+
+
+def _schedule_stale_requested_notification(appointment_id) -> None:
+    from apps.notifications.services import resume_stale_requested_notification
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    resume_stale_requested_notification(
+        appointment=appointment,
+        anchor_at=timezone.now(),
+    )
 
 
 def _schedule_master_client_reschedule_notification(proposal_id) -> None:

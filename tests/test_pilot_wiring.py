@@ -425,6 +425,7 @@ def test_booking_request_dispatches_actionable_notice_to_primary_master(
     assert callbacks == [
         f"mr:confirm:{appointment.id.hex}",
         f"mr:decline:{appointment.id.hex}",
+        f"mr:propose:{appointment.id.hex}",
     ]
 
 
