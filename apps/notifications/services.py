@@ -49,6 +49,9 @@ CLIENT_TARGET_NOTIFICATION_TYPES = frozenset(
         ScheduledNotification.Type.CLIENT_APPOINTMENT_CREATED,
         ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_CONFIRMED,
         ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
@@ -341,6 +344,42 @@ def schedule_client_booking_request_declined_notification(
         type=ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED,
         due_at=due_at,
         idempotency_key=f"appointment:{appointment.id}:client:request_declined",
+        now=current_time,
+    )
+
+
+def schedule_client_appointment_status_notification(
+    *,
+    appointment: Appointment,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue a client-visible notice for a master-controlled final status."""
+
+    type_by_status = {
+        Appointment.Status.CANCELLED_BY_MASTER: (
+            ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER
+        ),
+        Appointment.Status.COMPLETED: ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED,
+        Appointment.Status.NO_SHOW: ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
+    }
+    notification_type = type_by_status.get(appointment.status)
+    if notification_type is None or not appointment.client_profile.telegram_identity_id:
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(due_at=current_time, partner=appointment.partner)
+    status_version = appointment.status_changed_at or current_time
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=notification_type,
+        due_at=due_at,
+        idempotency_key=(
+            f"appointment:{appointment.id}:client:status:{appointment.status}:"
+            f"{status_version.isoformat()}"
+        ),
         now=current_time,
     )
 
@@ -1165,6 +1204,18 @@ def _obsolete_status_for_notification(
         return None
     if notification.type == ScheduledNotification.Type.CLIENT_BOOKING_REQUEST_DECLINED:
         if appointment.status != Appointment.Status.CANCELLED_BY_MASTER:
+            return ScheduledNotification.Status.STALE
+        return None
+    client_status_by_type = {
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER: (
+            Appointment.Status.CANCELLED_BY_MASTER
+        ),
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED: Appointment.Status.COMPLETED,
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW: Appointment.Status.NO_SHOW,
+    }
+    expected_appointment_status = client_status_by_type.get(notification.type)
+    if expected_appointment_status is not None:
+        if appointment.status != expected_appointment_status:
             return ScheduledNotification.Status.STALE
         return None
     if notification.type == ScheduledNotification.Type.STALE_REQUESTED:

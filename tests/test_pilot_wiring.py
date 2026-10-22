@@ -604,6 +604,104 @@ def test_auto_confirmed_client_booking_dispatches_to_primary_master(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("status", "notification_type", "expected_text"),
+    [
+        (
+            Appointment.Status.CANCELLED_BY_MASTER,
+            ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER,
+            "скасував запис",
+        ),
+        (
+            Appointment.Status.COMPLETED,
+            ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED,
+            "Візит до Pilot Partner завершено",
+        ),
+        (
+            Appointment.Status.NO_SHOW,
+            ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
+            "позначив запис як неявку",
+        ),
+    ],
+)
+def test_master_final_status_dispatches_to_client(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+    status,
+    notification_type,
+    expected_text,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555062,
+        username="final-status-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_confirmed_appointment(
+            actor=created.owner,
+            partner=created.partner,
+            booking_resource=default_booking_resource_for_partner(created.partner),
+            client_profile=client_profile,
+            start_at=timezone.now() - timedelta(hours=2),
+            service_items=[AppointmentServiceItemInput(service=service)],
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        transition_appointment_status(
+            actor=created.owner,
+            appointment=appointment,
+            new_status=status,
+            reason="Master is unavailable.",
+        )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    processed = dispatch_due_notifications_task()
+
+    notice = ScheduledNotification.objects.get(
+        appointment=appointment,
+        type=notification_type,
+    )
+    assert processed == 1
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads[0]["chat_id"] == 555062
+    assert expected_text in sent_payloads[0]["text"]
+    if status == Appointment.Status.CANCELLED_BY_MASTER:
+        assert "Master is unavailable." in sent_payloads[0]["text"]
+
+
+@pytest.mark.django_db
 def test_client_cancellation_notice_dispatches_to_primary_master(
     bot_token_settings,
     partner_with_bot_username,

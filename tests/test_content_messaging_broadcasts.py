@@ -112,6 +112,14 @@ def test_content_template_override_validation_and_language_fallback(content_cont
         key="master.client_booked_appointment",
         language="en",
     )
+    completed_template = SystemTemplate.objects.get(
+        key="appointment.completed",
+        language="en",
+    )
+    no_show_template = SystemTemplate.objects.get(
+        key="appointment.no_show",
+        language="en",
+    )
     assert required_field_template.editable is False
     assert required_field_template.placeholder_allowlist == ["missing_fields"]
     assert "comment" in final_confirm_template.placeholder_allowlist
@@ -120,6 +128,8 @@ def test_content_template_override_validation_and_language_fallback(content_cont
     assert master_action_template.editable is False
     assert master_auto_confirm_template.editable is True
     assert "comment" in master_auto_confirm_template.placeholder_allowlist
+    assert completed_template.editable is True
+    assert no_show_template.editable is True
 
     override = set_partner_template_override(
         actor=created.owner,

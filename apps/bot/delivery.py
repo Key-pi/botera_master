@@ -172,6 +172,33 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             text=template.body,
         )
 
+    client_status_key_by_type = {
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER: (
+            "appointment.cancelled_by_master"
+        ),
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED: "appointment.completed",
+        ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW: "appointment.no_show",
+    }
+    client_status_key = client_status_key_by_type.get(notification.type)
+    if client_status_key is not None:
+        if (
+            notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+            or notification.appointment is None
+        ):
+            return None
+        template = render_content_template(
+            partner=notification.partner,
+            key=client_status_key,
+            language=notification.client_profile.language,
+            context=_appointment_template_context(notification.appointment),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+        )
+
     if notification.type == ScheduledNotification.Type.MASTER_BOOKING_REQUEST:
         if notification.appointment is None:
             return None

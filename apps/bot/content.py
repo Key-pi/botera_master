@@ -262,6 +262,20 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("partner_name", "date", "time", "services", "reason"),
     ),
     _definition(
+        "appointment.completed",
+        uk="Візит до {partner_name} завершено: {date} о {time}, {services}.",
+        ru="Визит к {partner_name} завершён: {date} в {time}, {services}.",
+        en="Visit with {partner_name} completed: {date} at {time}, {services}.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
+        "appointment.no_show",
+        uk="{partner_name} позначив запис як неявку: {date} о {time}, {services}.",
+        ru="{partner_name} отметил запись как неявку: {date} в {time}, {services}.",
+        en="{partner_name} marked the booking as a no-show: {date} at {time}, {services}.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
         "appointment.late_cancel_penalty_warning",
         uk="Скасування пізнє. Буде створено штраф {penalty_amount} {currency}. Дедлайн: {deadline_hours} год.",
         ru="Отмена поздняя. Будет создан штраф {penalty_amount} {currency}. Дедлайн: {deadline_hours} ч.",

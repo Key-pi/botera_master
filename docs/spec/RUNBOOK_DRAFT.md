@@ -170,7 +170,9 @@ flow.
    booking notice. For manual confirmation, verify the master receives the
    immediate request with **Confirm**, **Decline**, and **Propose another time**
    actions. Exercise the needed action in Telegram and verify the
-   appointment/proposal state in partner admin.
+   appointment/proposal state in partner admin. From a past confirmed visit,
+   verify that master cancellation, **Completed**, and **No-show** each create
+   the corresponding durable client notification.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
    receives the queued reply through the partner bot.

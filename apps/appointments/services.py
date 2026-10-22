@@ -383,6 +383,12 @@ def transition_appointment_status(
             and new_status == Appointment.Status.CANCELLED_BY_MASTER
         ):
             _on_commit_schedule_client_request_declined_notification(appointment.id)
+        elif new_status in {
+            Appointment.Status.CANCELLED_BY_MASTER,
+            Appointment.Status.COMPLETED,
+            Appointment.Status.NO_SHOW,
+        }:
+            _on_commit_schedule_client_status_notification(appointment.id)
     return appointment
 
 
@@ -591,6 +597,7 @@ def correct_final_appointment_status(
         else:
             _release_active_penalties_if_cancelled(appointment)
             _on_commit_stale_appointment_notifications(appointment.id)
+            _on_commit_schedule_client_status_notification(appointment.id)
     return appointment
 
 
@@ -668,6 +675,10 @@ def _on_commit_schedule_client_request_declined_notification(appointment_id) -> 
     transaction.on_commit(lambda: _schedule_client_request_declined_notification(appointment_id))
 
 
+def _on_commit_schedule_client_status_notification(appointment_id) -> None:
+    transaction.on_commit(lambda: _schedule_client_status_notification(appointment_id))
+
+
 def _on_commit_schedule_master_client_cancelled_notification(appointment_id) -> None:
     transaction.on_commit(lambda: _schedule_master_client_cancelled_notification(appointment_id))
 
@@ -708,6 +719,15 @@ def _schedule_client_request_declined_notification(appointment_id) -> None:
         id=appointment_id
     )
     schedule_client_booking_request_declined_notification(appointment=appointment)
+
+
+def _schedule_client_status_notification(appointment_id) -> None:
+    from apps.notifications.services import schedule_client_appointment_status_notification
+
+    appointment = Appointment.objects.select_related("partner", "client_profile").get(
+        id=appointment_id
+    )
+    schedule_client_appointment_status_notification(appointment=appointment)
 
 
 def _schedule_confirmed_notifications(appointment_id) -> None:

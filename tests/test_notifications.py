@@ -13,6 +13,7 @@ from apps.appointments.proposals import (
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     confirm_requested_appointment,
+    correct_final_appointment_status,
     create_confirmed_appointment,
     create_manual_appointment,
     create_requested_appointment,
@@ -297,6 +298,10 @@ def test_declining_request_stales_master_actions_and_notifies_client(
     ).exists()
     assert not ScheduledNotification.objects.filter(
         appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER,
+    ).exists()
+    assert not ScheduledNotification.objects.filter(
+        appointment=appointment,
         type__in=(
             ScheduledNotification.Type.MASTER_BOOKING_REQUEST,
             ScheduledNotification.Type.STALE_REQUESTED,
@@ -328,9 +333,10 @@ def test_final_status_stales_pending_reminders(
             new_status=Appointment.Status.COMPLETED,
         )
 
-    assert not ScheduledNotification.objects.filter(
+    assert ScheduledNotification.objects.filter(
         appointment=appointment,
         status=ScheduledNotification.Status.QUEUED,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED,
     ).exists()
     assert (
         ScheduledNotification.objects.filter(
@@ -339,6 +345,75 @@ def test_final_status_stales_pending_reminders(
         ).count()
         == 3
     )
+
+
+@pytest.mark.django_db
+def test_final_status_correction_stales_old_notice_and_queues_current_one(
+    notification_context,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_confirmed_appointment(
+            actor=context["owner"],
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["telegram_client"],
+            start_at=timezone.now() - timedelta(hours=2),
+            service_items=[_service_input(context["service"])],
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        transition_appointment_status(
+            actor=context["owner"],
+            appointment=appointment,
+            new_status=Appointment.Status.COMPLETED,
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        correct_final_appointment_status(
+            actor=context["owner"],
+            appointment=appointment,
+            new_status=Appointment.Status.NO_SHOW,
+            reason="Completion was marked by mistake.",
+        )
+
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED,
+        status=ScheduledNotification.Status.STALE,
+    ).exists()
+    assert ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
+        status=ScheduledNotification.Status.QUEUED,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_final_status_does_not_queue_client_notice_without_telegram(
+    notification_context,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    with django_capture_on_commit_callbacks(execute=True):
+        appointment = create_confirmed_appointment(
+            actor=context["owner"],
+            partner=context["partner"],
+            booking_resource=context["resource"],
+            client_profile=context["manual_client"],
+            start_at=timezone.now() - timedelta(hours=2),
+            service_items=[_service_input(context["service"])],
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        transition_appointment_status(
+            actor=context["owner"],
+            appointment=appointment,
+            new_status=Appointment.Status.NO_SHOW,
+        )
+
+    assert not ScheduledNotification.objects.filter(
+        appointment=appointment,
+        type=ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
+    ).exists()
 
 
 @pytest.mark.django_db

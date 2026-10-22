@@ -539,6 +539,8 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   - `appointment.cancel_confirm_prompt` with `{date}`, `{time}`, `{services}`.
   - `appointment.cancelled_by_client` with `{date}`, `{time}`, `{services}`.
   - `appointment.cancelled_by_master` with `{partner_name}`, `{date}`, `{time}`, `{services}`, `{reason}`.
+  - `appointment.completed` with `{partner_name}`, `{date}`, `{time}`, `{services}`.
+  - `appointment.no_show` with `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `appointment.late_cancel_penalty_warning` with `{penalty_amount}`, `{currency}`, `{deadline_hours}`.
   - `appointment.late_cancelled_with_penalty` with `{penalty_amount}`, `{currency}`.
   - `appointment.reschedule_start` with `{date}`, `{time}`, `{services}`.
