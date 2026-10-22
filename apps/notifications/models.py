@@ -115,6 +115,9 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             "client_appointment_no_show",
             "Client appointment no-show",
         )
+        CLIENT_PENALTY_CREATED = "client_penalty_created", "Client penalty created"
+        CLIENT_PENALTY_PAID = "client_penalty_paid", "Client penalty paid"
+        CLIENT_PENALTY_WAIVED = "client_penalty_waived", "Client penalty waived"
         CLIENT_APPOINTMENT_REMINDER = (
             "client_appointment_reminder",
             "Client appointment reminder",
@@ -198,6 +201,13 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         null=True,
         blank=True,
     )
+    penalty = models.ForeignKey(
+        "finance.Penalty",
+        on_delete=models.CASCADE,
+        related_name="scheduled_notifications",
+        null=True,
+        blank=True,
+    )
     reminder_rule = models.ForeignKey(
         "notifications.ReminderRule",
         on_delete=models.SET_NULL,
@@ -232,6 +242,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             models.Index(fields=["appointment", "status"]),
             models.Index(fields=["appointment_proposal", "status"]),
             models.Index(fields=["client_profile", "status"]),
+            models.Index(fields=["penalty", "status"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -244,6 +255,27 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
                     & models.Q(source_notification__isnull=True)
                 ),
                 name="notifications_failure_marker_has_source",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        type__in=(
+                            "client_penalty_created",
+                            "client_penalty_paid",
+                            "client_penalty_waived",
+                        ),
+                        penalty__isnull=False,
+                    )
+                    | ~models.Q(
+                        type__in=(
+                            "client_penalty_created",
+                            "client_penalty_paid",
+                            "client_penalty_waived",
+                        )
+                    )
+                    & models.Q(penalty__isnull=True)
+                ),
+                name="notifications_penalty_notice_has_penalty",
             ),
         ]
 
@@ -259,6 +291,16 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         ):
             raise ValidationError(
                 {"source_notification": "Source notification must belong to the same partner."}
+            )
+        if self.penalty_id and self.partner_id and self.penalty.partner_id != self.partner_id:
+            raise ValidationError({"penalty": "Penalty must belong to the same partner."})
+        if (
+            self.penalty_id
+            and self.client_profile_id
+            and self.penalty.client_profile_id != self.client_profile_id
+        ):
+            raise ValidationError(
+                {"client_profile": "Penalty notification must target the penalty client."}
             )
 
 

@@ -51,6 +51,7 @@ class ScheduledNotificationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "appointment",
         "appointment_proposal",
         "client_profile",
+        "penalty",
         "reminder_rule",
     ]
     readonly_fields = [

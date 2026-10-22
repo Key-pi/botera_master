@@ -25,6 +25,8 @@ from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.finance.models import Penalty
+from apps.finance.services import create_penalty, mark_penalty_paid
 from apps.notifications.models import (
     DeliveryAttempt,
     PartnerNotificationSettings,
@@ -414,6 +416,54 @@ def test_final_status_does_not_queue_client_notice_without_telegram(
         appointment=appointment,
         type=ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_created_penalty_notice_becomes_stale_after_penalty_is_paid(
+    notification_context,
+    django_capture_on_commit_callbacks,
+):
+    context = notification_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["telegram_client"],
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[_service_input(context["service"])],
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        penalty = create_penalty(
+            actor=context["owner"],
+            partner=context["partner"],
+            client_profile=context["telegram_client"],
+            source_appointment=appointment,
+            reason=Penalty.Reason.NO_SHOW,
+            amount=5000,
+        )
+    created_notice = ScheduledNotification.objects.get(
+        penalty=penalty,
+        type=ScheduledNotification.Type.CLIENT_PENALTY_CREATED,
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        mark_penalty_paid(actor=context["owner"], penalty=penalty)
+
+    calls = []
+
+    def deliver(_notification):
+        calls.append(_notification.id)
+        return DeliveryResult(success=True)
+
+    result = dispatch_notification(
+        notification=created_notice,
+        deliver=deliver,
+        now=created_notice.due_at + timedelta(seconds=1),
+    )
+
+    created_notice.refresh_from_db()
+    assert result == ScheduledNotification.Status.SKIPPED
+    assert created_notice.status == ScheduledNotification.Status.STALE
+    assert calls == []
 
 
 @pytest.mark.django_db

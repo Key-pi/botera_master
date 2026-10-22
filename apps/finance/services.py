@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from functools import partial
 from typing import TYPE_CHECKING
 
 from django.core.exceptions import ValidationError
@@ -80,6 +81,7 @@ def create_penalty(
     reason: str,
     amount: int,
     source_appointment: Appointment | None = None,
+    late_by_minutes: int | None = None,
     note: str = "",
     currency: str = DEFAULT_CURRENCY,
 ) -> Penalty:
@@ -97,17 +99,28 @@ def create_penalty(
             appointment=source_appointment,
             client_profile=client_profile,
         )
+    if late_by_minutes is not None:
+        if reason != Penalty.Reason.LATE_ARRIVAL:
+            raise ValidationError(
+                {"late_by_minutes": "Late minutes are only valid for late-arrival penalties."}
+            )
+        if late_by_minutes <= 0:
+            raise ValidationError({"late_by_minutes": "Late minutes must be positive."})
 
-    return Penalty.objects.create(
-        partner=partner,
-        client_profile=client_profile,
-        source_appointment=source_appointment,
-        reason=reason,
-        amount=amount,
-        currency=currency,
-        note=note,
-        created_by=actor,
-    )
+    with transaction.atomic():
+        penalty = Penalty.objects.create(
+            partner=partner,
+            client_profile=client_profile,
+            source_appointment=source_appointment,
+            reason=reason,
+            amount=amount,
+            currency=currency,
+            late_by_minutes=late_by_minutes,
+            note=note,
+            created_by=actor,
+        )
+        _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="created")
+    return penalty
 
 
 def create_late_cancel_penalty_for_appointment(
@@ -187,6 +200,7 @@ def create_late_arrival_penalty_for_appointment(
         reason=Penalty.Reason.LATE_ARRIVAL,
         amount=settings.late_arrival_penalty_amount,
         currency=settings.currency,
+        late_by_minutes=late_by_minutes,
         note=penalty_note,
     )
 
@@ -334,6 +348,7 @@ def mark_penalty_paid(*, actor: User, penalty: Penalty) -> Penalty:
         penalty.status = Penalty.Status.PAID
         penalty.paid_at = timezone.now()
         penalty.save(update_fields=["status", "paid_at", "updated_at"])
+        _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="paid")
     return penalty
 
 
@@ -346,6 +361,8 @@ def waive_penalty(*, actor: User, penalty: Penalty, note: str = "") -> Penalty:
         penalty = Penalty.objects.select_for_update().get(id=penalty.id)
         if penalty.status == Penalty.Status.PAID:
             raise ValidationError({"penalty": "Paid penalties cannot be waived."})
+        if penalty.status == Penalty.Status.WAIVED:
+            return penalty
         active_application_ids = list(
             PenaltyApplication.objects.filter(
                 penalty=penalty,
@@ -362,6 +379,7 @@ def waive_penalty(*, actor: User, penalty: Penalty, note: str = "") -> Penalty:
         else:
             update_fields = ["status", "waived_at", "updated_at"]
         penalty.save(update_fields=update_fields)
+        _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="waived")
     return penalty
 
 
@@ -428,6 +446,35 @@ def _settle_locked_application(
     penalty.paid_at = settled_at
     penalty.save(update_fields=["status", "paid_at", "updated_at"])
     _recalculate_appointment_penalty_total(appointment=application.appointment)
+    _on_commit_schedule_penalty_notification(penalty_id=penalty.id, event="paid")
+
+
+def _on_commit_schedule_penalty_notification(*, penalty_id, event: str) -> None:
+    transaction.on_commit(
+        partial(
+            _schedule_penalty_notification_after_commit,
+            penalty_id=penalty_id,
+            event=event,
+        )
+    )
+
+
+def _schedule_penalty_notification_after_commit(*, penalty_id, event: str) -> None:
+    from apps.notifications.services import schedule_client_penalty_notification
+
+    penalty = (
+        Penalty.objects.select_related(
+            "partner",
+            "client_profile",
+            "client_profile__telegram_identity",
+            "source_appointment",
+        )
+        .filter(id=penalty_id)
+        .first()
+    )
+    if penalty is None:
+        return
+    schedule_client_penalty_notification(penalty=penalty, event=event)
 
 
 def _recalculate_appointment_penalty_total(*, appointment: Appointment) -> None:

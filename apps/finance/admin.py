@@ -34,6 +34,7 @@ class PenaltyAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "status",
         "amount",
         "currency",
+        "late_by_minutes",
         "source_appointment",
         "created_at",
     ]

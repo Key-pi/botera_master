@@ -13,7 +13,11 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.catalog.services import create_service, create_service_category
-from apps.clients.services import create_manual_client_profile
+from apps.clients.services import (
+    create_manual_client_profile,
+    resolve_client_profile_for_telegram_identity,
+    upsert_telegram_identity,
+)
 from apps.finance.models import Expense, Penalty, PenaltyApplication
 from apps.finance.selectors import finance_report_for_partner
 from apps.finance.services import (
@@ -23,11 +27,13 @@ from apps.finance.services import (
     create_late_cancel_penalty_for_appointment,
     create_no_show_penalty_for_appointment,
     create_penalty,
+    mark_penalty_paid,
     release_penalty_application,
     settle_penalty_application,
     update_penalty_settings,
     waive_penalty,
 )
+from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 from apps.schedule.services import update_schedule_settings
@@ -253,6 +259,83 @@ def test_configured_late_cancel_no_show_and_late_arrival_penalties(finance_conte
     assert no_show.amount == 5000
     assert late_arrival.reason == Penalty.Reason.LATE_ARRIVAL
     assert late_arrival.amount == 2000
+    assert late_arrival.late_by_minutes == 15
+
+
+@pytest.mark.django_db
+def test_penalty_lifecycle_schedules_client_notifications_once_after_commit(
+    finance_context,
+    django_capture_on_commit_callbacks,
+):
+    context = finance_context
+    identity = upsert_telegram_identity(
+        telegram_user_id=987654,
+        username="finance-client",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=context["partner"],
+        telegram_identity=identity,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=client_profile,
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[_service_input(context["service"])],
+    )
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        penalty = create_late_arrival_penalty_for_appointment(
+            actor=context["owner"],
+            appointment=appointment,
+            late_by_minutes=15,
+        )
+
+    created_notice = ScheduledNotification.objects.get(
+        penalty=penalty,
+        type=ScheduledNotification.Type.CLIENT_PENALTY_CREATED,
+    )
+    assert created_notice.client_profile == client_profile
+    assert created_notice.appointment is None
+    assert created_notice.penalty.source_appointment == appointment
+
+    with django_capture_on_commit_callbacks(execute=True):
+        mark_penalty_paid(actor=context["owner"], penalty=penalty)
+    with django_capture_on_commit_callbacks(execute=True):
+        mark_penalty_paid(actor=context["owner"], penalty=penalty)
+
+    assert (
+        ScheduledNotification.objects.filter(
+            penalty=penalty,
+            type=ScheduledNotification.Type.CLIENT_PENALTY_PAID,
+        ).count()
+        == 1
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        waived_penalty = create_late_arrival_penalty_for_appointment(
+            actor=context["owner"],
+            appointment=appointment,
+            late_by_minutes=20,
+        )
+    with django_capture_on_commit_callbacks(execute=True):
+        waive_penalty(actor=context["owner"], penalty=waived_penalty)
+    with django_capture_on_commit_callbacks(execute=True):
+        waive_penalty(actor=context["owner"], penalty=waived_penalty)
+
+    assert (
+        ScheduledNotification.objects.filter(
+            penalty=waived_penalty,
+            type=ScheduledNotification.Type.CLIENT_PENALTY_WAIVED,
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db

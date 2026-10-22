@@ -539,6 +539,7 @@ Key fields:
 - `status`
 - `amount`
 - `currency`: MVP UAH
+- `late_by_minutes`: structured lateness value for a late-arrival penalty; null for other reasons
 - `note`
 - `created_by`
 - `paid_at`
@@ -613,6 +614,7 @@ Key fields:
 - `appointment`
 - `appointment_proposal`
 - `client_profile`
+- `penalty`: required only for client penalty lifecycle notifications
 - `source_notification`: set only for a `failed_delivery_to_master` marker and points to the
   exhausted client reminder it represents
 - `type`
@@ -627,6 +629,8 @@ Key fields:
 Rules:
 - booking-request lifecycle uses explicit durable types for the initial master request and the
   client confirmation/decline result; these are not inferred from reminder records.
+- penalty `created`, `paid`, and `waived` events use explicit durable client notification types;
+  obsolete queued events become stale when the current penalty status no longer matches.
 - actionable master request and stale-request messages may carry the same compact confirm/decline
   callback controls, while appointment state remains authoritative.
 - if appointment is moved/cancelled/completed/no_show, old pending reminders become cancelled/stale.

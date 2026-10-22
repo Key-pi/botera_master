@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from apps.appointments.models import Appointment, AppointmentProposal
 from apps.clients.services import mark_client_unreachable
+from apps.finance.models import Penalty
 from apps.notifications.models import (
     DEFAULT_CLIENT_REMINDER_OFFSETS_MINUTES,
     DEFAULT_MASTER_REMINDER_OFFSET_MINUTES,
@@ -52,6 +53,9 @@ CLIENT_TARGET_NOTIFICATION_TYPES = frozenset(
         ScheduledNotification.Type.CLIENT_APPOINTMENT_CANCELLED_BY_MASTER,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_COMPLETED,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_NO_SHOW,
+        ScheduledNotification.Type.CLIENT_PENALTY_CREATED,
+        ScheduledNotification.Type.CLIENT_PENALTY_PAID,
+        ScheduledNotification.Type.CLIENT_PENALTY_WAIVED,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
@@ -380,6 +384,54 @@ def schedule_client_appointment_status_notification(
             f"appointment:{appointment.id}:client:status:{appointment.status}:"
             f"{status_version.isoformat()}"
         ),
+        now=current_time,
+    )
+
+
+def schedule_client_penalty_notification(
+    *,
+    penalty: Penalty,
+    event: str,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue one client-visible penalty lifecycle event."""
+
+    type_by_event = {
+        "created": ScheduledNotification.Type.CLIENT_PENALTY_CREATED,
+        "paid": ScheduledNotification.Type.CLIENT_PENALTY_PAID,
+        "waived": ScheduledNotification.Type.CLIENT_PENALTY_WAIVED,
+    }
+    notification_type = type_by_event.get(event)
+    if notification_type is None:
+        raise ValidationError({"event": "Unsupported penalty notification event."})
+    if not penalty.client_profile.telegram_identity_id:
+        return None
+    if event == "created":
+        if penalty.status not in {
+            Penalty.Status.UNPAID,
+            Penalty.Status.APPLIED_TO_APPOINTMENT,
+        }:
+            return None
+        if penalty.source_appointment_id is None:
+            return None
+        if penalty.reason == Penalty.Reason.LATE_ARRIVAL and penalty.late_by_minutes is None:
+            return None
+    elif event == "paid" and penalty.status != Penalty.Status.PAID:
+        return None
+    elif event == "waived" and penalty.status != Penalty.Status.WAIVED:
+        return None
+
+    current_time = now or timezone.now()
+    due_at = apply_quiet_hours(due_at=current_time, partner=penalty.partner)
+    return _upsert_scheduled_notification(
+        partner=penalty.partner,
+        appointment=None,
+        penalty=penalty,
+        client_profile=penalty.client_profile,
+        reminder_rule=None,
+        type=notification_type,
+        due_at=due_at,
+        idempotency_key=f"penalty:{penalty.id}:client:{event}",
         now=current_time,
     )
 
@@ -899,6 +951,8 @@ def _prepare_notification_for_delivery(
                 "appointment",
                 "appointment_proposal",
                 "client_profile",
+                "penalty",
+                "penalty__source_appointment",
                 "reminder_rule",
                 "source_notification",
             )
@@ -1077,6 +1131,7 @@ def _upsert_scheduled_notification(
     partner: Partner,
     appointment: Appointment | None,
     appointment_proposal: AppointmentProposal | None = None,
+    penalty: Penalty | None = None,
     client_profile,
     reminder_rule: ReminderRule | None,
     type: str,
@@ -1094,6 +1149,7 @@ def _upsert_scheduled_notification(
             "partner": partner,
             "appointment": appointment,
             "appointment_proposal": appointment_proposal,
+            "penalty": penalty,
             "client_profile": client_profile,
             "reminder_rule": reminder_rule,
             "type": type,
@@ -1138,6 +1194,24 @@ def _obsolete_status_for_notification(
             or source.status != ScheduledNotification.Status.FAILED
             or not source.failed_visible_to_partner
         ):
+            return ScheduledNotification.Status.STALE
+        return None
+
+    penalty = notification.penalty
+    if notification.type == ScheduledNotification.Type.CLIENT_PENALTY_CREATED:
+        if penalty is None or penalty.status not in {
+            Penalty.Status.UNPAID,
+            Penalty.Status.APPLIED_TO_APPOINTMENT,
+        }:
+            return ScheduledNotification.Status.STALE
+        return None
+    penalty_status_by_type = {
+        ScheduledNotification.Type.CLIENT_PENALTY_PAID: Penalty.Status.PAID,
+        ScheduledNotification.Type.CLIENT_PENALTY_WAIVED: Penalty.Status.WAIVED,
+    }
+    expected_penalty_status = penalty_status_by_type.get(notification.type)
+    if expected_penalty_status is not None:
+        if penalty is None or penalty.status != expected_penalty_status:
             return ScheduledNotification.Status.STALE
         return None
 

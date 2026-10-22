@@ -89,6 +89,7 @@ class Penalty(PartnerBoundModel):
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.UNPAID)
     amount = models.PositiveIntegerField()
     currency = models.CharField(max_length=3, default=DEFAULT_CURRENCY)
+    late_by_minutes = models.PositiveIntegerField(null=True, blank=True)
     note = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -106,6 +107,11 @@ class Penalty(PartnerBoundModel):
             models.CheckConstraint(
                 condition=models.Q(amount__gte=0),
                 name="finance_penalty_amount_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(late_by_minutes__isnull=True)
+                | models.Q(late_by_minutes__gt=0),
+                name="finance_penalty_late_minutes_positive",
             ),
         ]
         indexes = [
@@ -142,6 +148,10 @@ class Penalty(PartnerBoundModel):
         ):
             raise ValidationError(
                 {"source_appointment": "Source appointment must belong to this client."}
+            )
+        if self.late_by_minutes is not None and self.reason != self.Reason.LATE_ARRIVAL:
+            raise ValidationError(
+                {"late_by_minutes": "Late minutes are only valid for late-arrival penalties."}
             )
 
 

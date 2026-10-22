@@ -39,9 +39,11 @@ from apps.bot.services import (
 )
 from apps.broadcasts.models import BroadcastRecipient
 from apps.broadcasts.services import BroadcastDeliveryResult
+from apps.finance.models import Penalty
 from apps.messaging.models import ConversationMessage
 from apps.notifications.models import ScheduledNotification
 from apps.notifications.services import DeliveryResult
+from core.money import Money
 from core.security.masking import mask_sensitive_text
 from core.timezones import get_zone, to_partner_time
 
@@ -192,6 +194,42 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             key=client_status_key,
             language=notification.client_profile.language,
             context=_appointment_template_context(notification.appointment),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+        )
+
+    penalty_key_by_type = {
+        ScheduledNotification.Type.CLIENT_PENALTY_PAID: "penalty.paid",
+        ScheduledNotification.Type.CLIENT_PENALTY_WAIVED: "penalty.waived",
+    }
+    if notification.type == ScheduledNotification.Type.CLIENT_PENALTY_CREATED:
+        penalty_key_by_reason = {
+            Penalty.Reason.LATE_CANCEL: "penalty.created_late_cancel",
+            Penalty.Reason.NO_SHOW: "penalty.created_no_show",
+            Penalty.Reason.LATE_ARRIVAL: "penalty.created_late_arrival",
+        }
+        penalty_key = (
+            penalty_key_by_reason.get(notification.penalty.reason)
+            if notification.penalty is not None
+            else None
+        )
+    else:
+        penalty_key = penalty_key_by_type.get(notification.type)
+    if penalty_key is not None:
+        if (
+            notification.penalty is None
+            or notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+        ):
+            return None
+        template = render_content_template(
+            partner=notification.partner,
+            key=penalty_key,
+            language=notification.client_profile.language,
+            context=_penalty_template_context(notification.penalty),
         )
         return TelegramPayload(
             token=token,
@@ -656,6 +694,26 @@ def _appointment_template_context(appointment: Appointment) -> dict[str, str]:
         "services": _appointment_services_label(appointment),
         "reason": appointment.client_visible_reason.strip(),
     }
+
+
+def _penalty_template_context(penalty: Penalty) -> dict[str, str]:
+    context = {
+        "penalty_amount": str(
+            Money(amount=penalty.amount, currency=penalty.currency).to_major_decimal()
+        ),
+        "currency": penalty.currency,
+        "late_minutes": str(penalty.late_by_minutes or ""),
+        "appointment_date": "",
+        "appointment_time": "",
+    }
+    if penalty.source_appointment is not None:
+        partner_time = to_partner_time(
+            penalty.source_appointment.start_at,
+            penalty.partner.timezone,
+        )
+        context["appointment_date"] = partner_time.date().isoformat()
+        context["appointment_time"] = _format_local_time(partner_time)
+    return context
 
 
 def _appointment_services_label(appointment: Appointment) -> str:

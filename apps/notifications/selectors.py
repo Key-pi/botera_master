@@ -43,6 +43,8 @@ def due_notifications(
             "partner",
             "appointment",
             "client_profile",
+            "penalty",
+            "penalty__source_appointment",
             "reminder_rule",
             "source_notification",
         )
@@ -77,6 +79,8 @@ def notification_for_partner_by_id(
             "appointment",
             "client_profile",
             "client_profile__telegram_identity",
+            "penalty",
+            "penalty__source_appointment",
             "source_notification",
         )
         .first()

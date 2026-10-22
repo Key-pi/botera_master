@@ -38,6 +38,12 @@ from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.finance.services import (
+    create_late_arrival_penalty_for_appointment,
+    mark_penalty_paid,
+    update_penalty_settings,
+    waive_penalty,
+)
 from apps.messaging.models import ConversationMessage
 from apps.messaging.services import create_client_message_to_master, create_master_reply_to_client
 from apps.messaging.tasks import dispatch_queued_conversation_messages_task
@@ -699,6 +705,95 @@ def test_master_final_status_dispatches_to_client(
     assert expected_text in sent_payloads[0]["text"]
     if status == Appointment.Status.CANCELLED_BY_MASTER:
         assert "Master is unavailable." in sent_payloads[0]["text"]
+
+
+@pytest.mark.django_db
+def test_penalty_lifecycle_dispatches_localized_client_notifications(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    update_penalty_settings(
+        actor=created.owner,
+        partner=created.partner,
+        penalties_enabled=True,
+    )
+    client_identity = upsert_telegram_identity(
+        telegram_user_id=555063,
+        username="penalty-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=client_identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append({"token": token, "chat_id": chat_id, "text": text})
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        paid_penalty = create_late_arrival_penalty_for_appointment(
+            actor=created.owner,
+            appointment=appointment,
+            late_by_minutes=15,
+        )
+    assert dispatch_due_notifications_task() == 1
+
+    with django_capture_on_commit_callbacks(execute=True):
+        mark_penalty_paid(actor=created.owner, penalty=paid_penalty)
+    assert dispatch_due_notifications_task() == 1
+
+    with django_capture_on_commit_callbacks(execute=True):
+        waived_penalty = create_late_arrival_penalty_for_appointment(
+            actor=created.owner,
+            appointment=appointment,
+            late_by_minutes=20,
+        )
+    assert dispatch_due_notifications_task() == 1
+
+    with django_capture_on_commit_callbacks(execute=True):
+        waive_penalty(actor=created.owner, penalty=waived_penalty)
+    assert dispatch_due_notifications_task() == 1
+
+    assert [payload["chat_id"] for payload in sent_payloads] == [555063] * 4
+    assert "запізнення на 15 хв: 20.00 UAH" in sent_payloads[0]["text"]
+    assert sent_payloads[1]["text"] == "Штраф оплачено: 20.00 UAH."
+    assert "запізнення на 20 хв: 20.00 UAH" in sent_payloads[2]["text"]
+    assert sent_payloads[3]["text"] == "Штраф списано: 20.00 UAH."
 
 
 @pytest.mark.django_db
