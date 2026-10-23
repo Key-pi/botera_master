@@ -62,12 +62,14 @@
       gap: 16px;
       justify-content: space-between;
     }
-    .calendar-quick-create {
+    .calendar-quick-create,
+    .calendar-copy-schedule {
       border: 1px solid var(--hairline-color);
       border-left: 4px solid var(--primary);
       padding: 14px;
     }
-    .calendar-quick-create h2 {
+    .calendar-quick-create h2,
+    .calendar-copy-schedule h2 {
       font-size: 1rem;
       margin: 0 0 12px;
     }
@@ -116,6 +118,14 @@
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 12px;
+    }
+    .calendar-copy-summary {
+      color: var(--body-quiet-color);
+      margin: 0 0 12px;
+    }
+    .calendar-copy-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 320px);
     }
     .calendar-range {
       font-size: 1rem;
@@ -175,9 +185,11 @@
     .calendar-day-controls {
       align-items: center;
       display: flex;
+      flex-wrap: wrap;
       gap: 5px;
+      justify-content: flex-end;
     }
-    .calendar-day-add {
+    .calendar-day-action {
       font-size: 0.72rem;
       font-weight: 600;
     }
@@ -406,6 +418,7 @@
             <h2>{% translate "Add calendar item" %}</h2>
             <form method="post">
               {% csrf_token %}
+              <input type="hidden" name="form_action" value="quick_create">
               {{ quick_create_form.non_field_errors }}
               <div class="calendar-quick-create-grid">
                 <div class="calendar-form-field calendar-form-field--type">
@@ -444,6 +457,39 @@
           </section>
         {% endif %}
 
+        {% if copy_schedule_form %}
+          <section class="calendar-copy-schedule" id="copy-schedule">
+            <h2>
+              {% if copy_scope == "day" %}
+                {% translate "Copy day" %}
+              {% else %}
+                {% translate "Copy week" %}
+              {% endif %}
+            </h2>
+            <p class="calendar-copy-summary">
+              {% translate "Source" %}: {{ copy_source_date|date:"DATE_FORMAT" }}<br>
+              {% translate "Availability and blocked time are added to the selected resource. Existing items stay in place, and appointments are never copied." %}
+            </p>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="form_action" value="copy_schedule">
+              {{ copy_schedule_form.non_field_errors }}
+              <div class="calendar-copy-grid">
+                <div class="calendar-form-field">
+                  {{ copy_schedule_form.target_date.errors }}
+                  <label for="{{ copy_schedule_form.target_date.id_for_label }}">{{ copy_schedule_form.target_date.label }}</label>
+                  {{ copy_schedule_form.target_date }}
+                  {% if copy_schedule_form.target_date.help_text %}<span class="calendar-form-help">{{ copy_schedule_form.target_date.help_text }}</span>{% endif %}
+                </div>
+              </div>
+              <div class="calendar-form-actions">
+                <button type="submit">{% translate "Copy schedule" %}</button>
+                <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}">{% translate "Cancel" %}</a>
+              </div>
+            </form>
+          </section>
+        {% endif %}
+
         <div class="calendar-toolbar">
           <div>
             <p class="calendar-range">
@@ -457,6 +503,7 @@
             </div>
           </div>
           <div class="calendar-week-nav">
+            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;copy=week&amp;source={{ snapshot.week_start|date:'Y-m-d' }}#copy-schedule">{% translate "Copy week" %}</a>
             <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.previous_week_start|date:'Y-m-d' }}">{% translate "Previous week" %}</a>
             <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.current_week_start|date:'Y-m-d' }}">{% translate "Today" %}</a>
             <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.next_week_start|date:'Y-m-d' }}">{% translate "Next week" %}</a>
@@ -474,7 +521,8 @@
                   </span>
                   <span class="calendar-day-controls">
                     {% if calendar_day.is_today %}<span class="calendar-today-label">{% translate "Today" %}</span>{% endif %}
-                    <a class="calendar-day-add" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;create=1&amp;date={{ calendar_day.day|date:'Y-m-d' }}#quick-create">{% translate "Add" %}</a>
+                    <a class="calendar-day-action" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;create=1&amp;date={{ calendar_day.day|date:'Y-m-d' }}#quick-create">{% translate "Add" %}</a>
+                    <a class="calendar-day-action" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;copy=day&amp;source={{ calendar_day.day|date:'Y-m-d' }}#copy-schedule">{% translate "Copy" %}</a>
                   </span>
                 </header>
                 {% if calendar_day.entries %}

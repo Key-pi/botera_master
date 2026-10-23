@@ -31,7 +31,9 @@ from apps.schedule.models import (
 )
 from apps.schedule.selectors import (
     availability_windows_for_resource,
+    availability_windows_starting_in_period,
     blocked_times_for_resource,
+    blocked_times_starting_in_period,
 )
 
 
@@ -47,6 +49,19 @@ class GeneratedSlot:
     end_at: datetime
     is_near_fit: bool
     availability_window_id: object
+
+
+@dataclass(frozen=True)
+class ScheduleCopyResult:
+    """Counts produced by one idempotent calendar copy operation."""
+
+    availability_created: int
+    blocked_created: int
+    skipped_existing: int
+
+    @property
+    def created_total(self) -> int:
+        return self.availability_created + self.blocked_created
 
 
 def initialize_partner_schedule(*, partner: Partner) -> BookingResource:
@@ -281,6 +296,207 @@ def validate_blocked_time_input(
         max_length=MAX_BLOCKED_TIME_LENGTH,
         forbid_past=True,
     )
+
+
+def copy_schedule_day(
+    *,
+    actor: User,
+    partner: Partner,
+    booking_resource: BookingResource,
+    source_day: date,
+    target_day: date,
+) -> ScheduleCopyResult:
+    """Copy one resource's concrete day plan while preserving local wall-clock time."""
+
+    return _copy_schedule_period(
+        actor=actor,
+        partner=partner,
+        booking_resource=booking_resource,
+        source_start_date=source_day,
+        target_start_date=target_day,
+        day_count=1,
+    )
+
+
+def copy_schedule_week(
+    *,
+    actor: User,
+    partner: Partner,
+    booking_resource: BookingResource,
+    source_week_start: date,
+    target_week_start: date,
+) -> ScheduleCopyResult:
+    """Copy one resource's concrete week plan into another partner-local week."""
+
+    normalized_source = source_week_start - timedelta(days=source_week_start.weekday())
+    normalized_target = target_week_start - timedelta(days=target_week_start.weekday())
+    return _copy_schedule_period(
+        actor=actor,
+        partner=partner,
+        booking_resource=booking_resource,
+        source_start_date=normalized_source,
+        target_start_date=normalized_target,
+        day_count=7,
+    )
+
+
+def _copy_schedule_period(
+    *,
+    actor: User,
+    partner: Partner,
+    booking_resource: BookingResource,
+    source_start_date: date,
+    target_start_date: date,
+    day_count: int,
+) -> ScheduleCopyResult:
+    """Copy schedule facts starting in a bounded local period, never appointments."""
+
+    ensure_partner_access(actor, partner)
+    _validate_booking_resource_partner(partner=partner, booking_resource=booking_resource)
+    if day_count not in (1, 7):
+        raise ValidationError("Schedule copy supports only one day or one week.")
+    if source_start_date == target_start_date:
+        raise ValidationError({"target_date": "Choose a different target period."})
+    if source_start_date > date.max - timedelta(days=day_count):
+        raise ValidationError({"source_date": "Source period is out of supported range."})
+
+    partner_zone = ZoneInfo(partner.timezone)
+    source_start_at = _local_midnight_utc(day=source_start_date, zone=partner_zone)
+    source_end_at = _local_midnight_utc(
+        day=source_start_date + timedelta(days=day_count),
+        zone=partner_zone,
+    )
+    day_delta = (target_start_date - source_start_date).days
+    availability_created = 0
+    blocked_created = 0
+    skipped_existing = 0
+
+    with transaction.atomic():
+        locked_resource = BookingResource.objects.select_for_update().get(id=booking_resource.id)
+        _validate_booking_resource_partner(partner=partner, booking_resource=locked_resource)
+        source_windows = tuple(
+            availability_windows_starting_in_period(
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=source_start_at,
+                end_at=source_end_at,
+            )
+        )
+        source_blocks = tuple(
+            blocked_times_starting_in_period(
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=source_start_at,
+                end_at=source_end_at,
+            )
+        )
+
+        for source_window in source_windows:
+            target_start_at, target_end_at = _shift_interval_by_local_days(
+                start_at=source_window.start_at,
+                end_at=source_window.end_at,
+                day_delta=day_delta,
+                zone=partner_zone,
+            )
+            validate_availability_window_input(
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=target_start_at,
+                end_at=target_end_at,
+            )
+            if AvailabilityWindow.objects.filter(
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=target_start_at,
+                end_at=target_end_at,
+            ).exists():
+                skipped_existing += 1
+                continue
+            create_availability_window(
+                actor=actor,
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=target_start_at,
+                end_at=target_end_at,
+            )
+            availability_created += 1
+
+        for source_block in source_blocks:
+            target_start_at, target_end_at = _shift_interval_by_local_days(
+                start_at=source_block.start_at,
+                end_at=source_block.end_at,
+                day_delta=day_delta,
+                zone=partner_zone,
+            )
+            validate_blocked_time_input(
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=target_start_at,
+                end_at=target_end_at,
+            )
+            if BlockedTime.objects.filter(
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=target_start_at,
+                end_at=target_end_at,
+                reason=source_block.reason,
+            ).exists():
+                skipped_existing += 1
+                continue
+            create_blocked_time(
+                actor=actor,
+                partner=partner,
+                booking_resource=locked_resource,
+                start_at=target_start_at,
+                end_at=target_end_at,
+                reason=source_block.reason,
+            )
+            blocked_created += 1
+
+    return ScheduleCopyResult(
+        availability_created=availability_created,
+        blocked_created=blocked_created,
+        skipped_existing=skipped_existing,
+    )
+
+
+def _shift_interval_by_local_days(
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    day_delta: int,
+    zone: ZoneInfo,
+) -> tuple[datetime, datetime]:
+    """Shift both local endpoints by calendar days instead of UTC duration."""
+
+    local_start = start_at.astimezone(zone)
+    local_end = end_at.astimezone(zone)
+    return (
+        _shift_local_endpoint(value=local_start, day_delta=day_delta, zone=zone),
+        _shift_local_endpoint(value=local_end, day_delta=day_delta, zone=zone),
+    )
+
+
+def _shift_local_endpoint(*, value: datetime, day_delta: int, zone: ZoneInfo) -> datetime:
+    try:
+        shifted = datetime.combine(
+            value.date() + timedelta(days=day_delta),
+            value.timetz(),
+        )
+    except OverflowError as exc:
+        raise ValidationError({"target_date": "Target period is out of supported range."}) from exc
+
+    shifted_utc = shifted.astimezone(datetime_timezone.utc)
+    round_trip = shifted_utc.astimezone(zone)
+    if round_trip.replace(tzinfo=None) != shifted.replace(tzinfo=None):
+        raise ValidationError(
+            {"target_date": "Target period contains a local time skipped by a timezone change."}
+        )
+    return shifted_utc
+
+
+def _local_midnight_utc(*, day: date, zone: ZoneInfo) -> datetime:
+    return datetime.combine(day, time.min, tzinfo=zone).astimezone(datetime_timezone.utc)
 
 
 def create_availability_template(

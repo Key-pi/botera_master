@@ -125,6 +125,40 @@ def blocked_times_for_resource(
     ).order_by("start_at", "end_at")
 
 
+def availability_windows_starting_in_period(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    end_at: datetime,
+) -> QuerySet[AvailabilityWindow]:
+    """Return concrete availability owned by one local-calendar source period."""
+
+    return AvailabilityWindow.objects.filter(
+        partner=partner,
+        booking_resource=booking_resource,
+        start_at__gte=start_at,
+        start_at__lt=end_at,
+    ).order_by("start_at", "end_at", "id")
+
+
+def blocked_times_starting_in_period(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    end_at: datetime,
+) -> QuerySet[BlockedTime]:
+    """Return blocked intervals owned by one local-calendar source period."""
+
+    return BlockedTime.objects.filter(
+        partner=partner,
+        booking_resource=booking_resource,
+        start_at__gte=start_at,
+        start_at__lt=end_at,
+    ).order_by("start_at", "end_at", "id")
+
+
 def availability_templates_for_partner(
     partner: Partner,
     *,

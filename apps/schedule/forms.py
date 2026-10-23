@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -96,6 +96,44 @@ class CalendarQuickCreateForm(forms.Form):
             return cleaned_data
         cleaned_data["end_at"] = end_at
         return cleaned_data
+
+
+class CalendarCopyScheduleForm(forms.Form):
+    """Collect a destination for copying one resource's concrete schedule."""
+
+    DAY = "day"
+    WEEK = "week"
+    SCOPES = (DAY, WEEK)
+
+    target_date = forms.DateField(
+        label="Target date",
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+    )
+
+    def __init__(self, *args, scope: str, source_date: date, **kwargs) -> None:
+        if scope not in self.SCOPES:
+            raise ValueError("Unknown calendar copy scope.")
+        super().__init__(*args, **kwargs)
+        self.scope = scope
+        self.source_date = self._normalize(source_date)
+        self.fields["target_date"].label = (
+            "Target day" if scope == self.DAY else "Date in target week"
+        )
+        self.initial.setdefault(
+            "target_date",
+            self.source_date + timedelta(days=1 if scope == self.DAY else 7),
+        )
+
+    def clean_target_date(self) -> date:
+        target_date = self._normalize(self.cleaned_data["target_date"])
+        if target_date == self.source_date:
+            raise forms.ValidationError("Choose a different target period.")
+        return target_date
+
+    def _normalize(self, value: date) -> date:
+        if self.scope == self.WEEK:
+            return value - timedelta(days=value.weekday())
+        return value
 
 
 class AvailabilityWindowAdminForm(forms.ModelForm):
@@ -312,6 +350,15 @@ def add_domain_errors_to_calendar_quick_create_form(
     exc: DjangoValidationError,
 ) -> None:
     """Expose schedule-service validation on the calendar adapter form."""
+
+    _add_domain_errors(form, exc)
+
+
+def add_domain_errors_to_calendar_copy_form(
+    form: CalendarCopyScheduleForm,
+    exc: DjangoValidationError,
+) -> None:
+    """Expose copy-service validation on the calendar adapter form."""
 
     _add_domain_errors(form, exc)
 

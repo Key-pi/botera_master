@@ -242,6 +242,7 @@ def test_calendar_quick_add_creates_availability_and_blocked_time_in_partner_tim
     availability_response = client.post(
         url,
         {
+            "form_action": "quick_create",
             "item_type": "availability",
             "day": target_day.isoformat(),
             "start_time": "18:00",
@@ -252,6 +253,7 @@ def test_calendar_quick_add_creates_availability_and_blocked_time_in_partner_tim
     blocked_response = client.post(
         url,
         {
+            "form_action": "quick_create",
             "item_type": "blocked",
             "day": target_day.isoformat(),
             "start_time": "19:00",
@@ -298,6 +300,7 @@ def test_calendar_quick_add_hands_appointment_time_to_manual_flow(client) -> Non
     response = client.post(
         _quick_create_url(context=context, week_start=week_start, target_day=target_day),
         {
+            "form_action": "quick_create",
             "item_type": "appointment",
             "day": target_day.isoformat(),
             "start_time": "14:30",
@@ -319,6 +322,72 @@ def test_calendar_quick_add_hands_appointment_time_to_manual_flow(client) -> Non
         time(hour=14, minute=30),
     )
     assert Appointment.objects.filter(partner=context["created"].partner).exists() is False
+
+
+@pytest.mark.django_db
+def test_calendar_copy_day_adds_schedule_without_copying_appointments(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Copy Day Studio",
+        username="copy-day-owner",
+        client_name="Copy Day Client",
+        service_name="Copy Day Service",
+    )
+    week_start = _future_week_start(context["created"].partner.timezone)
+    source_day = week_start + timedelta(days=1)
+    target_day = source_day + timedelta(days=2)
+    source_start = _local_datetime(context["created"].partner.timezone, source_day, 10)
+    create_availability_window(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=source_start,
+        end_at=source_start + timedelta(hours=4),
+    )
+    create_blocked_time(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=source_start + timedelta(hours=1),
+        end_at=source_start + timedelta(hours=1, minutes=30),
+        reason="Lunch",
+    )
+    _create_appointment(context, start_at=source_start + timedelta(hours=2))
+    client.force_login(context["created"].owner)
+    url = _copy_schedule_url(
+        context=context,
+        week_start=week_start,
+        source_date=source_day,
+        scope="day",
+    )
+
+    open_response = client.get(url)
+    copy_response = client.post(
+        url,
+        {
+            "form_action": "copy_schedule",
+            "target_date": target_day.isoformat(),
+        },
+    )
+
+    assert open_response.status_code == 200
+    assert f'value="{(source_day + timedelta(days=1)).isoformat()}"' in (
+        open_response.content.decode()
+    )
+    assert b"appointments are never copied" in open_response.content
+    assert copy_response.status_code == 302
+    partner_zone = get_zone(context["created"].partner.timezone)
+    copied_window = AvailabilityWindow.objects.exclude(start_at=source_start).get(
+        partner=context["created"].partner
+    )
+    copied_block = BlockedTime.objects.exclude(start_at=source_start + timedelta(hours=1)).get(
+        partner=context["created"].partner
+    )
+    assert copied_window.start_at.astimezone(partner_zone).date() == target_day
+    assert copied_window.start_at.astimezone(partner_zone).time() == time(10)
+    assert copied_block.reason == "Lunch"
+    assert Appointment.objects.filter(partner=context["created"].partner).count() == 1
 
 
 def _create_calendar_context(
@@ -392,4 +461,14 @@ def _quick_create_url(*, context, week_start, target_day) -> str:
         f"&resource={context['resource'].id}"
         f"&week={week_start.isoformat()}"
         f"&create=1&date={target_day.isoformat()}"
+    )
+
+
+def _copy_schedule_url(*, context, week_start, source_date, scope: str) -> str:
+    return (
+        f"{reverse('schedule:calendar')}"
+        f"?partner={context['created'].partner.id}"
+        f"&resource={context['resource'].id}"
+        f"&week={week_start.isoformat()}"
+        f"&copy={scope}&source={source_date.isoformat()}"
     )

@@ -14,14 +14,21 @@ from django.utils import timezone
 
 from apps.partners.selectors import visible_partners_for_user
 from apps.schedule.forms import (
+    CalendarCopyScheduleForm,
     CalendarQuickCreateForm,
+    add_domain_errors_to_calendar_copy_form,
     add_domain_errors_to_calendar_quick_create_form,
 )
 from apps.schedule.selectors import (
     active_booking_resources_for_partner,
     partner_calendar_snapshot,
 )
-from apps.schedule.services import create_availability_window, create_blocked_time
+from apps.schedule.services import (
+    copy_schedule_day,
+    copy_schedule_week,
+    create_availability_window,
+    create_blocked_time,
+)
 from core.timezones import get_zone
 
 
@@ -44,18 +51,20 @@ def calendar(request):
             week_start=selected_week,
         )
 
-    quick_create_open = request.method == "POST" or request.GET.get("create") == "1"
+    form_action = request.POST.get("form_action", "") if request.method == "POST" else ""
+    quick_create_submission = form_action == "quick_create"
+    quick_create_open = quick_create_submission or request.GET.get("create") == "1"
     quick_create_form = None
     if selected_partner is not None and selected_resource is not None and quick_create_open:
         quick_create_form = CalendarQuickCreateForm(
-            request.POST or None,
+            request.POST if quick_create_submission else None,
             partner=selected_partner,
             initial={
                 "item_type": CalendarQuickCreateForm.AVAILABILITY,
                 "day": _selected_quick_create_day(request=request, fallback=selected_week),
             },
         )
-        if request.method == "POST" and quick_create_form.is_valid():
+        if quick_create_submission and quick_create_form.is_valid():
             try:
                 response = _run_quick_create(
                     request=request,
@@ -66,6 +75,53 @@ def calendar(request):
                 )
             except ValidationError as exc:
                 add_domain_errors_to_calendar_quick_create_form(quick_create_form, exc)
+            else:
+                return response
+
+    copy_scope = _selected_copy_scope(request=request)
+    if form_action == "copy_schedule" and copy_scope is None:
+        raise Http404("Calendar copy scope not found.")
+    copy_source_date = (
+        _selected_copy_source_date(
+            request=request,
+            scope=copy_scope,
+            fallback=selected_week,
+        )
+        if copy_scope is not None
+        else None
+    )
+    copy_schedule_submission = form_action == "copy_schedule"
+    copy_schedule_form = None
+    if (
+        selected_partner is not None
+        and selected_resource is not None
+        and copy_scope is not None
+        and copy_source_date is not None
+    ):
+        copy_schedule_form = CalendarCopyScheduleForm(
+            request.POST if copy_schedule_submission else None,
+            scope=copy_scope,
+            source_date=copy_source_date,
+            initial={
+                "target_date": _default_copy_target_date(
+                    partner=selected_partner,
+                    scope=copy_scope,
+                    source_date=copy_source_date,
+                )
+            },
+        )
+        if copy_schedule_submission and copy_schedule_form.is_valid():
+            try:
+                response = _run_schedule_copy(
+                    request=request,
+                    form=copy_schedule_form,
+                    scope=copy_scope,
+                    source_date=copy_source_date,
+                    partner=selected_partner,
+                    booking_resource=selected_resource,
+                )
+            except ValidationError as exc:
+                add_domain_errors_to_calendar_copy_form(copy_schedule_form, exc)
             else:
                 return response
 
@@ -80,6 +136,9 @@ def calendar(request):
         "snapshot": snapshot,
         "quick_create_open": quick_create_open,
         "quick_create_form": quick_create_form,
+        "copy_scope": copy_scope,
+        "copy_source_date": copy_source_date,
+        "copy_schedule_form": copy_schedule_form,
     }
     return TemplateResponse(request, "schedule/calendar.html", context)
 
@@ -122,6 +181,57 @@ def _run_quick_create(*, request, form, partner, booking_resource, week_start):
             partner_id=partner.id,
             resource_id=booking_resource.id,
             week_start=week_start,
+        )
+    )
+
+
+def _run_schedule_copy(
+    *,
+    request,
+    form,
+    scope,
+    source_date,
+    partner,
+    booking_resource,
+):
+    target_date = form.cleaned_data["target_date"]
+    if scope == CalendarCopyScheduleForm.DAY:
+        result = copy_schedule_day(
+            actor=request.user,
+            partner=partner,
+            booking_resource=booking_resource,
+            source_day=source_date,
+            target_day=target_date,
+        )
+    else:
+        result = copy_schedule_week(
+            actor=request.user,
+            partner=partner,
+            booking_resource=booking_resource,
+            source_week_start=source_date,
+            target_week_start=target_date,
+        )
+
+    if result.created_total:
+        messages.success(
+            request,
+            (
+                f"Copied {result.availability_created} availability window(s) and "
+                f"{result.blocked_created} blocked interval(s). "
+                f"Skipped {result.skipped_existing} existing item(s)."
+            ),
+        )
+    elif result.skipped_existing:
+        messages.info(request, "All matching schedule items already exist in the target period.")
+    else:
+        messages.info(request, "No availability or blocked time starts in the source period.")
+
+    target_week = target_date - timedelta(days=target_date.weekday())
+    return HttpResponseRedirect(
+        _calendar_url(
+            partner_id=partner.id,
+            resource_id=booking_resource.id,
+            week_start=target_week,
         )
     )
 
@@ -179,6 +289,39 @@ def _selected_quick_create_day(*, request, fallback: date) -> date:
         return date.fromisoformat(raw_day)
     except ValueError as exc:
         raise Http404("Calendar date not found.") from exc
+
+
+def _selected_copy_scope(*, request) -> str | None:
+    raw_scope = request.GET.get("copy", "").strip()
+    if not raw_scope:
+        return None
+    if raw_scope not in CalendarCopyScheduleForm.SCOPES:
+        raise Http404("Calendar copy scope not found.")
+    return raw_scope
+
+
+def _selected_copy_source_date(*, request, scope: str, fallback: date) -> date:
+    raw_source_date = request.GET.get("source", "").strip()
+    if raw_source_date:
+        try:
+            source_date = date.fromisoformat(raw_source_date)
+        except ValueError as exc:
+            raise Http404("Calendar copy source not found.") from exc
+    else:
+        source_date = fallback
+    if source_date < date.min + timedelta(days=31) or source_date > date.max - timedelta(days=31):
+        raise Http404("Calendar copy source not found.")
+    if scope == CalendarCopyScheduleForm.WEEK:
+        return source_date - timedelta(days=source_date.weekday())
+    return source_date
+
+
+def _default_copy_target_date(*, partner, scope: str, source_date: date) -> date:
+    local_today = timezone.localdate(timezone=get_zone(partner.timezone))
+    if scope == CalendarCopyScheduleForm.DAY:
+        return max(source_date + timedelta(days=1), local_today + timedelta(days=1))
+    current_week_start = local_today - timedelta(days=local_today.weekday())
+    return max(source_date + timedelta(days=7), current_week_start + timedelta(days=7))
 
 
 def _calendar_url(*, partner_id, resource_id, week_start: date) -> str:

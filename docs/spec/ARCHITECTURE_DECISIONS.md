@@ -135,6 +135,12 @@ This document records approved architecture-preparation decisions and deferred t
 - Calendar event/layer types such as availability windows, blocked time, appointments, conflicts, and near-fit/request markers should be visually distinguishable.
 - Clicking an appointment opens a detail panel/modal with actions to edit, propose reschedule, cancel, mark completed, mark no-show, and message client.
 - Calendar supports quick copy day/week actions in addition to saved availability templates.
+- Quick day/week copy is scoped to one booking resource and copies only concrete
+  availability and blocked-time records whose start belongs to the source period;
+  appointments are never copied.
+- Copy preserves partner-local calendar days and wall-clock times across timezone/DST
+  changes, keeps existing target records, and skips exact duplicates instead of
+  clearing or overwriting the target period.
 - Calendar admin should be usable on mobile with adapted interactions, while dense editing can remain more comfortable on desktop/tablet in MVP.
 - Partner can create multiple reusable availability templates and apply them to future weeks/date ranges.
 - Weekly schedules are treated as reusable templates, not the only scheduling model.

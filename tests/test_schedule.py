@@ -1,4 +1,4 @@
-from datetime import time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -12,6 +12,8 @@ from apps.schedule.selectors import default_booking_resource_for_partner
 from apps.schedule.services import (
     TimeInterval,
     apply_availability_template,
+    copy_schedule_day,
+    copy_schedule_week,
     create_availability_template,
     create_availability_template_window,
     create_availability_window,
@@ -21,6 +23,7 @@ from apps.schedule.services import (
     update_availability_template_window,
     update_schedule_settings,
 )
+from core.timezones import get_zone
 
 
 @pytest.fixture
@@ -383,6 +386,134 @@ def test_normal_services_reject_past_windows(partner_with_schedule):
 
 
 @pytest.mark.django_db
+def test_copy_schedule_day_preserves_partner_wall_clock_and_is_idempotent(
+    partner_with_schedule,
+    monkeypatch,
+):
+    created = partner_with_schedule
+    resource = default_booking_resource_for_partner(created.partner)
+    partner_zone = get_zone(created.partner.timezone)
+    monkeypatch.setattr(
+        "apps.schedule.services.timezone.now",
+        lambda: datetime(2026, 3, 20, tzinfo=get_zone("UTC")),
+    )
+    source_day = date(2026, 3, 28)
+    target_day = date(2026, 3, 30)
+    source_start = datetime.combine(source_day, time(18), tzinfo=partner_zone)
+    source_end = datetime.combine(source_day, time(21), tzinfo=partner_zone)
+    create_availability_window(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        start_at=source_start,
+        end_at=source_end,
+    )
+    create_blocked_time(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        start_at=datetime.combine(source_day, time(19), tzinfo=partner_zone),
+        end_at=datetime.combine(source_day, time(19, 30), tzinfo=partner_zone),
+        reason="Break",
+    )
+
+    first_result = copy_schedule_day(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        source_day=source_day,
+        target_day=target_day,
+    )
+    second_result = copy_schedule_day(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        source_day=source_day,
+        target_day=target_day,
+    )
+
+    copied_window = resource.availability_windows.get(start_at__date=target_day)
+    copied_block = resource.blocked_times.get(start_at__date=target_day)
+    copied_local_start = copied_window.start_at.astimezone(partner_zone)
+    assert first_result.availability_created == 1
+    assert first_result.blocked_created == 1
+    assert first_result.skipped_existing == 0
+    assert second_result.created_total == 0
+    assert second_result.skipped_existing == 2
+    assert copied_local_start.date() == target_day
+    assert copied_local_start.time() == time(18)
+    assert copied_window.end_at.astimezone(partner_zone).time() == time(21)
+    assert copied_local_start.utcoffset() != source_start.utcoffset()
+    assert copied_window.source_template_id is None
+    assert copied_block.reason == "Break"
+    assert copied_block.created_by == created.owner
+
+
+@pytest.mark.django_db
+def test_copy_schedule_day_rejects_nonexistent_target_wall_clock(
+    partner_with_schedule,
+    monkeypatch,
+):
+    created = partner_with_schedule
+    resource = default_booking_resource_for_partner(created.partner)
+    partner_zone = get_zone(created.partner.timezone)
+    monkeypatch.setattr(
+        "apps.schedule.services.timezone.now",
+        lambda: datetime(2026, 3, 20, tzinfo=get_zone("UTC")),
+    )
+    source_day = date(2026, 3, 28)
+    source_start = datetime.combine(source_day, time(3, 30), tzinfo=partner_zone)
+    create_availability_window(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        start_at=source_start,
+        end_at=source_start + timedelta(minutes=30),
+    )
+
+    with pytest.raises(ValidationError, match="skipped by a timezone change"):
+        copy_schedule_day(
+            actor=created.owner,
+            partner=created.partner,
+            booking_resource=resource,
+            source_day=source_day,
+            target_day=date(2026, 3, 29),
+        )
+
+    assert resource.availability_windows.count() == 1
+
+
+@pytest.mark.django_db
+def test_copy_schedule_week_normalizes_week_start(partner_with_schedule):
+    created = partner_with_schedule
+    resource = default_booking_resource_for_partner(created.partner)
+    partner_zone = get_zone(created.partner.timezone)
+    source_week = timezone.localdate(timezone=partner_zone) + timedelta(days=14)
+    source_week -= timedelta(days=source_week.weekday())
+    source_start = datetime.combine(source_week + timedelta(days=4), time(9), tzinfo=partner_zone)
+    create_availability_window(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        start_at=source_start,
+        end_at=source_start + timedelta(hours=3),
+    )
+
+    result = copy_schedule_week(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        source_week_start=source_week + timedelta(days=2),
+        target_week_start=source_week + timedelta(days=9),
+    )
+
+    copied = resource.availability_windows.exclude(start_at=source_start).get()
+    assert result.availability_created == 1
+    assert copied.start_at.astimezone(partner_zone).date() == source_week + timedelta(days=11)
+    assert copied.start_at.astimezone(partner_zone).time() == time(9)
+
+
+@pytest.mark.django_db
 def test_template_application_creates_concrete_windows(
     partner_with_schedule,
     rounded_future_start,
@@ -441,6 +572,15 @@ def test_partner_owner_cannot_use_other_partner_booking_resource(rounded_future_
             booking_resource=second_resource,
             start_at=rounded_future_start,
             end_at=rounded_future_start + timedelta(hours=1),
+        )
+
+    with pytest.raises(PermissionDenied):
+        copy_schedule_day(
+            actor=first.owner,
+            partner=second.partner,
+            booking_resource=second_resource,
+            source_day=rounded_future_start.date(),
+            target_day=rounded_future_start.date() + timedelta(days=1),
         )
 
 
