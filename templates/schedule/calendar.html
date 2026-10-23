@@ -62,6 +62,61 @@
       gap: 16px;
       justify-content: space-between;
     }
+    .calendar-quick-create {
+      border: 1px solid var(--hairline-color);
+      border-left: 4px solid var(--primary);
+      padding: 14px;
+    }
+    .calendar-quick-create h2 {
+      font-size: 1rem;
+      margin: 0 0 12px;
+    }
+    .calendar-quick-create-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+    }
+    .calendar-form-field {
+      min-width: 0;
+    }
+    .calendar-form-field label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+    .calendar-form-field input,
+    .calendar-form-field textarea {
+      box-sizing: border-box;
+      max-width: 100%;
+      width: 100%;
+    }
+    .calendar-form-field--type,
+    .calendar-form-field--reason {
+      grid-column: 1 / -1;
+    }
+    .calendar-form-field--type > div {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .calendar-form-field--type > div > div label {
+      align-items: center;
+      display: inline-flex;
+      gap: 5px;
+      margin: 0;
+    }
+    .calendar-form-help {
+      color: var(--body-quiet-color);
+      display: block;
+      font-size: 0.75rem;
+      margin-top: 4px;
+    }
+    .calendar-form-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
     .calendar-range {
       font-size: 1rem;
       font-weight: 600;
@@ -116,6 +171,15 @@
       gap: 7px;
       justify-content: space-between;
       padding: 9px 10px;
+    }
+    .calendar-day-controls {
+      align-items: center;
+      display: flex;
+      gap: 5px;
+    }
+    .calendar-day-add {
+      font-size: 0.72rem;
+      font-weight: 600;
     }
     .calendar-day-header strong {
       font-size: 0.84rem;
@@ -254,6 +318,9 @@
       .calendar-week {
         grid-template-columns: minmax(0, 1fr);
       }
+      .calendar-quick-create-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       .calendar-day {
         min-height: 0;
       }
@@ -277,6 +344,9 @@
         </div>
         <div class="calendar-actions">
           {% if selected_resource %}
+            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}{% if snapshot %}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;create=1&amp;date={{ snapshot.week_start|date:'Y-m-d' }}#quick-create{% endif %}">
+              {% translate "Quick add" %}
+            </a>
             <a class="button" href="{% url 'admin:schedule_availabilitywindow_add' %}?partner={{ selected_partner.pk }}&amp;booking_resource={{ selected_resource.pk }}">
               {% translate "Open availability" %}
             </a>
@@ -331,6 +401,49 @@
       </div>
 
       {% if snapshot %}
+        {% if quick_create_open and quick_create_form %}
+          <section class="calendar-quick-create" id="quick-create">
+            <h2>{% translate "Add calendar item" %}</h2>
+            <form method="post">
+              {% csrf_token %}
+              {{ quick_create_form.non_field_errors }}
+              <div class="calendar-quick-create-grid">
+                <div class="calendar-form-field calendar-form-field--type">
+                  {{ quick_create_form.item_type.errors }}
+                  <label>{{ quick_create_form.item_type.label }}</label>
+                  {{ quick_create_form.item_type }}
+                </div>
+                <div class="calendar-form-field">
+                  {{ quick_create_form.day.errors }}
+                  <label for="{{ quick_create_form.day.id_for_label }}">{{ quick_create_form.day.label }}</label>
+                  {{ quick_create_form.day }}
+                </div>
+                <div class="calendar-form-field">
+                  {{ quick_create_form.start_time.errors }}
+                  <label for="{{ quick_create_form.start_time.id_for_label }}">{{ quick_create_form.start_time.label }}</label>
+                  {{ quick_create_form.start_time }}
+                </div>
+                <div class="calendar-form-field">
+                  {{ quick_create_form.end_time.errors }}
+                  <label for="{{ quick_create_form.end_time.id_for_label }}">{{ quick_create_form.end_time.label }}</label>
+                  {{ quick_create_form.end_time }}
+                  <span class="calendar-form-help">{{ quick_create_form.end_time.help_text }}</span>
+                </div>
+                <div class="calendar-form-field calendar-form-field--reason">
+                  {{ quick_create_form.reason.errors }}
+                  <label for="{{ quick_create_form.reason.id_for_label }}">{{ quick_create_form.reason.label }}</label>
+                  {{ quick_create_form.reason }}
+                  <span class="calendar-form-help">{{ quick_create_form.reason.help_text }}</span>
+                </div>
+              </div>
+              <div class="calendar-form-actions">
+                <button type="submit">{% translate "Continue" %}</button>
+                <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}">{% translate "Cancel" %}</a>
+              </div>
+            </form>
+          </section>
+        {% endif %}
+
         <div class="calendar-toolbar">
           <div>
             <p class="calendar-range">
@@ -359,7 +472,10 @@
                     <strong>{{ calendar_day.day|date:"D" }}</strong>
                     <span class="calendar-day-date">{{ calendar_day.day|date:"j M" }}</span>
                   </span>
-                  {% if calendar_day.is_today %}<span class="calendar-today-label">{% translate "Today" %}</span>{% endif %}
+                  <span class="calendar-day-controls">
+                    {% if calendar_day.is_today %}<span class="calendar-today-label">{% translate "Today" %}</span>{% endif %}
+                    <a class="calendar-day-add" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;create=1&amp;date={{ calendar_day.day|date:'Y-m-d' }}#quick-create">{% translate "Add" %}</a>
+                  </span>
                 </header>
                 {% if calendar_day.entries %}
                   <div class="calendar-day-body">

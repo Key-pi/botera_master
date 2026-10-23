@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 
 from apps.partners.models import Partner
 from apps.schedule.models import (
@@ -20,6 +23,79 @@ from apps.schedule.services import (
     validate_blocked_time_input,
     validate_schedule_settings_input,
 )
+from core.timezones import get_zone
+
+
+class CalendarQuickCreateForm(forms.Form):
+    """Collect one trusted-resource calendar action in partner-local time."""
+
+    AVAILABILITY = "availability"
+    BLOCKED = "blocked"
+    APPOINTMENT = "appointment"
+
+    item_type = forms.ChoiceField(
+        label="Type",
+        choices=(
+            (AVAILABILITY, "Availability"),
+            (BLOCKED, "Blocked time"),
+            (APPOINTMENT, "Appointment"),
+        ),
+        widget=forms.RadioSelect,
+    )
+    day = forms.DateField(
+        label="Date",
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+    )
+    start_time = forms.TimeField(
+        label="Start time",
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+    end_time = forms.TimeField(
+        label="End time",
+        required=False,
+        widget=forms.TimeInput(attrs={"type": "time"}),
+        help_text="Required for availability and blocked time.",
+    )
+    reason = forms.CharField(
+        label="Reason",
+        required=False,
+        max_length=500,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text="Optional; used only for blocked time.",
+    )
+
+    def __init__(self, *args, partner: Partner, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.partner = partner
+
+    def clean(self):
+        cleaned_data = super().clean()
+        item_type = cleaned_data.get("item_type")
+        day = cleaned_data.get("day")
+        start_time = cleaned_data.get("start_time")
+        if not item_type or day is None or start_time is None:
+            return cleaned_data
+
+        partner_zone = get_zone(self.partner.timezone)
+        start_at = datetime.combine(day, start_time, tzinfo=partner_zone)
+        if start_at < timezone.now():
+            self.add_error("start_time", "New calendar items cannot start in the past.")
+            return cleaned_data
+        cleaned_data["start_at"] = start_at
+
+        if item_type == self.APPOINTMENT:
+            return cleaned_data
+
+        end_time = cleaned_data.get("end_time")
+        if end_time is None:
+            self.add_error("end_time", "End time is required for this type.")
+            return cleaned_data
+        end_at = datetime.combine(day, end_time, tzinfo=partner_zone)
+        if end_at <= start_at:
+            self.add_error("end_time", "End time must be after start time.")
+            return cleaned_data
+        cleaned_data["end_at"] = end_at
+        return cleaned_data
 
 
 class AvailabilityWindowAdminForm(forms.ModelForm):
@@ -229,6 +305,15 @@ class ApplyAvailabilityTemplateAdminForm(forms.Form):
         except DjangoValidationError as exc:
             _add_domain_errors(self, exc)
         return cleaned_data
+
+
+def add_domain_errors_to_calendar_quick_create_form(
+    form: CalendarQuickCreateForm,
+    exc: DjangoValidationError,
+) -> None:
+    """Expose schedule-service validation on the calendar adapter form."""
+
+    _add_domain_errors(form, exc)
 
 
 def _add_domain_errors(form: forms.Form, exc: DjangoValidationError) -> None:

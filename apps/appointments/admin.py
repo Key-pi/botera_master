@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponseRedirect
@@ -258,15 +260,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         form = ManualAppointmentAdminForm(
             request.POST or None,
             actor=request.user,
-            initial=(
-                {
-                    field_name: request.GET[field_name]
-                    for field_name in ("partner", "booking_resource")
-                    if request.GET.get(field_name)
-                }
-                if request.method == "GET"
-                else None
-            ),
+            initial=_manual_appointment_initial(request) if request.method == "GET" else None,
         )
         service_formset = ManualAppointmentServiceItemFormSet(
             request.POST or None,
@@ -947,6 +941,25 @@ class AppointmentProposalOptionAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+def _manual_appointment_initial(request) -> dict:
+    """Read non-authoritative calendar hints for the tenant-safe admin form."""
+
+    initial = {
+        field_name: request.GET[field_name]
+        for field_name in ("partner", "booking_resource")
+        if request.GET.get(field_name)
+    }
+    raw_start_at = request.GET.get("start_at", "").strip()
+    if raw_start_at:
+        try:
+            parsed_start_at = datetime.fromisoformat(raw_start_at)
+        except ValueError:
+            pass
+        else:
+            initial["start_at"] = parsed_start_at.replace(tzinfo=None)
+    return initial
 
 
 def _add_validation_error(form, exc: ValidationError) -> None:

@@ -5,11 +5,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.appointments.models import Appointment
 from apps.appointments.services import AppointmentServiceItemInput, create_confirmed_appointment
 from apps.catalog.models import Service, ServiceCategory
 from apps.clients.services import create_manual_client_profile
 from apps.partners.services import create_partner_with_owner
-from apps.schedule.models import BookingResource
+from apps.schedule.models import AvailabilityWindow, BlockedTime, BookingResource
 from apps.schedule.services import create_availability_window, create_blocked_time
 from core.timezones import get_zone
 
@@ -220,6 +221,106 @@ def test_calendar_manual_appointment_action_prefills_visible_context(client) -> 
     assert response.context["form"].initial["booking_resource"] == str(context["resource"].id)
 
 
+@pytest.mark.django_db
+def test_calendar_quick_add_creates_availability_and_blocked_time_in_partner_timezone(
+    client,
+) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Quick Schedule Studio",
+        username="quick-schedule-owner",
+        client_name="Quick Client",
+        service_name="Quick Service",
+    )
+    week_start = _future_week_start(context["created"].partner.timezone)
+    target_day = week_start + timedelta(days=2)
+    client.force_login(context["created"].owner)
+    url = _quick_create_url(context=context, week_start=week_start, target_day=target_day)
+
+    open_response = client.get(url)
+    availability_response = client.post(
+        url,
+        {
+            "item_type": "availability",
+            "day": target_day.isoformat(),
+            "start_time": "18:00",
+            "end_time": "21:00",
+            "reason": "",
+        },
+    )
+    blocked_response = client.post(
+        url,
+        {
+            "item_type": "blocked",
+            "day": target_day.isoformat(),
+            "start_time": "19:00",
+            "end_time": "19:30",
+            "reason": "Personal break",
+        },
+    )
+
+    assert open_response.status_code == 200
+    assert f'value="{target_day.isoformat()}"' in open_response.content.decode()
+    assert availability_response.status_code == 302
+    assert blocked_response.status_code == 302
+    window = AvailabilityWindow.objects.get(partner=context["created"].partner)
+    blocked = BlockedTime.objects.get(partner=context["created"].partner)
+    partner_zone = get_zone(context["created"].partner.timezone)
+    assert window.booking_resource == context["resource"]
+    assert window.start_at.astimezone(partner_zone).replace(tzinfo=None) == datetime.combine(
+        target_day,
+        time(hour=18),
+    )
+    assert window.end_at.astimezone(partner_zone).replace(tzinfo=None) == datetime.combine(
+        target_day,
+        time(hour=21),
+    )
+    assert blocked.booking_resource == context["resource"]
+    assert blocked.reason == "Personal break"
+    assert blocked.created_by == context["created"].owner
+
+
+@pytest.mark.django_db
+def test_calendar_quick_add_hands_appointment_time_to_manual_flow(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Quick Appointment Studio",
+        username="quick-appointment-owner",
+        client_name="Appointment Client",
+        service_name="Appointment Service",
+    )
+    week_start = _future_week_start(context["created"].partner.timezone)
+    target_day = week_start + timedelta(days=3)
+    client.force_login(context["created"].owner)
+
+    response = client.post(
+        _quick_create_url(context=context, week_start=week_start, target_day=target_day),
+        {
+            "item_type": "appointment",
+            "day": target_day.isoformat(),
+            "start_time": "14:30",
+            "end_time": "",
+            "reason": "",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith(reverse("admin:appointments_appointment_add"))
+    manual_response = client.get(response.headers["Location"])
+    assert manual_response.status_code == 200
+    assert manual_response.context["form"].initial["partner"] == str(context["created"].partner.id)
+    assert manual_response.context["form"].initial["booking_resource"] == str(
+        context["resource"].id
+    )
+    assert manual_response.context["form"].initial["start_at"] == datetime.combine(
+        target_day,
+        time(hour=14, minute=30),
+    )
+    assert Appointment.objects.filter(partner=context["created"].partner).exists() is False
+
+
 def _create_calendar_context(
     *,
     superuser,
@@ -282,3 +383,13 @@ def _future_week_start(timezone_name: str):
 
 def _local_datetime(timezone_name: str, day, hour: int):
     return datetime.combine(day, time(hour=hour), tzinfo=get_zone(timezone_name))
+
+
+def _quick_create_url(*, context, week_start, target_day) -> str:
+    return (
+        f"{reverse('schedule:calendar')}"
+        f"?partner={context['created'].partner.id}"
+        f"&resource={context['resource'].id}"
+        f"&week={week_start.isoformat()}"
+        f"&create=1&date={target_day.isoformat()}"
+    )
