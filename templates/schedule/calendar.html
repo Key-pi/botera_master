@@ -270,6 +270,10 @@
     .calendar-legend-swatch--confirmed {
       background: #dceaf7;
     }
+    .calendar-legend-swatch--conflict {
+      background: #f8dfe2;
+      border-color: #b54848;
+    }
     .calendar-grid-scroll {
       overflow-x: auto;
     }
@@ -376,6 +380,9 @@
       background: #f9eaea;
       border-color: #b54848;
     }
+    .calendar-entry--schedule-conflict {
+      box-shadow: inset 0 0 0 2px #b54848;
+    }
     .calendar-entry-time {
       display: block;
       font-size: 0.72rem;
@@ -406,6 +413,10 @@
       border: 1px solid currentColor;
       font-size: 0.65rem;
       padding: 1px 4px;
+    }
+    .calendar-entry-flag--conflict {
+      color: #9f3636;
+      font-weight: 700;
     }
     .calendar-day-empty {
       color: var(--body-quiet-color);
@@ -821,6 +832,7 @@
               <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--blocked"></span>{% translate "Blocked" %}</span>
               <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--requested"></span>{% translate "Requested" %}</span>
               <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--confirmed"></span>{% translate "Confirmed" %}</span>
+              <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--conflict"></span>{% translate "Conflict" %}</span>
             </div>
           </div>
           <div class="calendar-toolbar-actions">
@@ -830,6 +842,11 @@
               <a role="tab" aria-selected="{% if snapshot.view == 'month' %}true{% else %}false{% endif %}" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view=month&amp;date={{ snapshot.focus_date|date:'Y-m-d' }}">{% translate "Month" %}</a>
             </nav>
             <div class="calendar-period-nav">
+              {% if snapshot.conflicts %}
+                <a class="button" href="{% url 'schedule:conflicts' %}?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}">
+                  {% blocktranslate count counter=snapshot.conflicts|length %}One conflict{% plural %}{{ counter }} conflicts{% endblocktranslate %}
+                </a>
+              {% endif %}
               {% if snapshot.view == "week" %}
                 <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view=week&amp;date={{ snapshot.period_start|date:'Y-m-d' }}&amp;copy=week&amp;source={{ snapshot.period_start|date:'Y-m-d' }}#copy-schedule">{% translate "Copy week" %}</a>
               {% endif %}
@@ -889,7 +906,7 @@
                           {% if entry.record.reason %}<span class="calendar-entry-detail">{{ entry.record.reason }}</span>{% endif %}
                         </div>
                       {% else %}
-                        <div class="calendar-entry calendar-entry--{{ entry.record.status }}">
+                        <div class="calendar-entry calendar-entry--{{ entry.record.status }}{% if entry.record.id in snapshot.conflicted_appointment_ids %} calendar-entry--schedule-conflict{% endif %}">
                           <span class="calendar-entry-time">
                             {% if entry.continues_before %}&larr;{% endif %}
                             {{ entry.display_start_at|date:"H:i" }}–{{ entry.display_end_at|date:"H:i" }}
@@ -902,6 +919,7 @@
                           <span class="calendar-entry-flags">
                             <span class="calendar-entry-flag">{{ entry.record.get_status_display }}</span>
                             {% if entry.record.is_near_fit %}<span class="calendar-entry-flag">{% translate "Near-fit" %}</span>{% endif %}
+                            {% if entry.record.id in snapshot.conflicted_appointment_ids %}<span class="calendar-entry-flag calendar-entry-flag--conflict">{% translate "Schedule conflict" %}</span>{% endif %}
                           </span>
                         </div>
                       {% endif %}

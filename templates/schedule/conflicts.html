@@ -1,0 +1,351 @@
+{% extends "admin/base_site.html" %}
+{% load i18n tz %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .conflict-page {
+      display: grid;
+      gap: 18px;
+      max-width: 1440px;
+    }
+    .conflict-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 20px;
+      justify-content: space-between;
+    }
+    .conflict-header h1 {
+      font-size: 1.5rem;
+      margin: 0 0 6px;
+    }
+    .conflict-subtitle,
+    .conflict-summary p {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .conflict-header-actions,
+    .conflict-filter,
+    .conflict-actions,
+    .conflict-pagination {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .conflict-filter label {
+      font-weight: 600;
+    }
+    .conflict-filter select {
+      max-width: 280px;
+      min-width: 180px;
+    }
+    .conflict-workspace-nav {
+      border-bottom: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .conflict-workspace-nav a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+    .conflict-workspace-nav a[aria-current="page"] {
+      background: var(--selected-bg);
+    }
+    .conflict-summary {
+      border-left: 4px solid #b54848;
+      padding: 3px 0 3px 14px;
+    }
+    .conflict-summary h2 {
+      font-size: 1rem;
+      margin: 0 0 5px;
+    }
+    .conflict-table-wrap {
+      overflow-x: auto;
+    }
+    .conflict-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .conflict-table th,
+    .conflict-table td {
+      border-bottom: 1px solid var(--hairline-color);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .conflict-table th {
+      background: var(--darkened-bg);
+      color: var(--body-quiet-color);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+    .conflict-client,
+    .conflict-time {
+      font-weight: 600;
+    }
+    .conflict-detail {
+      color: var(--body-quiet-color);
+      display: block;
+      font-size: 0.75rem;
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+    }
+    .conflict-reasons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .conflict-reason {
+      border: 1px solid #b54848;
+      color: #8f3131;
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 5px;
+    }
+    .conflict-actions .button {
+      white-space: nowrap;
+    }
+    .conflict-empty {
+      border-left: 4px solid #39865b;
+      padding-left: 14px;
+    }
+    .conflict-pagination {
+      justify-content: flex-end;
+    }
+    .conflict-no-access {
+      border-left: 4px solid var(--error-fg);
+      padding-left: 14px;
+    }
+    @media (max-width: 900px) {
+      .conflict-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .conflict-header-actions,
+      .conflict-filter {
+        align-items: stretch;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .conflict-filter select,
+      .conflict-filter button {
+        max-width: 100%;
+        width: 100%;
+      }
+      .conflict-workspace-nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .conflict-workspace-nav a {
+        border-bottom: 1px solid var(--hairline-color);
+        overflow-wrap: anywhere;
+      }
+      .conflict-table-wrap {
+        overflow: visible;
+      }
+      .conflict-table,
+      .conflict-table tbody,
+      .conflict-table tr,
+      .conflict-table td {
+        display: block;
+        width: 100%;
+      }
+      .conflict-table thead {
+        display: none;
+      }
+      .conflict-table tr {
+        border-bottom: 1px solid var(--hairline-color);
+        box-sizing: border-box;
+        padding: 8px 0;
+      }
+      .conflict-table td {
+        border: 0;
+        box-sizing: border-box;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: minmax(92px, 0.35fr) minmax(0, 1fr);
+        padding: 6px 10px;
+      }
+      .conflict-table td::before {
+        color: var(--body-quiet-color);
+        content: attr(data-label);
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .conflict-actions .button {
+        box-sizing: border-box;
+        flex: 1 1 140px;
+        text-align: center;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <main class="conflict-page">
+    {% if selected_partner %}
+      <header class="conflict-header">
+        <div>
+          <h1>{{ selected_partner.name }} · {% translate "Schedule conflicts" %}</h1>
+          <p class="conflict-subtitle">{{ selected_partner.timezone }} · {% translate "Confirmed appointments that no longer fit the current schedule" %}</p>
+        </div>
+        <div class="conflict-header-actions">
+          {% if partners|length > 1 %}
+            <form class="conflict-filter" method="get">
+              <label for="conflict-partner">{% translate "Partner" %}</label>
+              <select id="conflict-partner" name="partner">
+                {% for partner in partners %}
+                  <option value="{{ partner.pk }}"{% if partner.pk == selected_partner.pk %} selected{% endif %}>{{ partner.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">{% translate "Open" %}</button>
+            </form>
+          {% endif %}
+          <form class="conflict-filter" method="get">
+            <input type="hidden" name="partner" value="{{ selected_partner.pk }}">
+            <label for="conflict-resource">{% translate "Resource" %}</label>
+            <select id="conflict-resource" name="resource">
+              <option value="">{% translate "All resources" %}</option>
+              {% for resource in resources %}
+                <option value="{{ resource.pk }}"{% if selected_resource and resource.pk == selected_resource.pk %} selected{% endif %}>
+                  {{ resource.name }}{% if not resource.is_active %} · {% translate "Inactive" %}{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+            <button type="submit">{% translate "Filter" %}</button>
+          </form>
+        </div>
+      </header>
+
+      <nav class="conflict-workspace-nav" aria-label="{% translate 'Partner workspace' %}">
+        <a href="{% url 'partners:dashboard' %}?partner={{ selected_partner.pk }}">{% translate "Dashboard" %}</a>
+        <a aria-current="page" href="{% url 'schedule:calendar' %}?partner={{ selected_partner.pk }}">{% translate "Calendar" %}</a>
+        <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Appointments" %}</a>
+        <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Clients" %}</a>
+        <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Catalog" %}</a>
+        <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Broadcasts" %}</a>
+        <a href="{% url 'admin:finance_expense_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Finance" %}</a>
+        <a href="{% url 'admin:bot_botinstance_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Bot" %}</a>
+        <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Activity Log" %}</a>
+      </nav>
+
+      {% if conflict_count %}
+        <section class="conflict-summary">
+          <h2>
+            {% blocktranslate count counter=conflict_count %}
+              One appointment needs schedule review
+            {% plural %}
+              {{ counter }} appointments need schedule review
+            {% endblocktranslate %}
+          </h2>
+          <p>{% translate "Appointments stay unchanged until you cancel them or the client accepts a proposed time. Leaving a row untouched keeps the current appointment." %}</p>
+        </section>
+
+        {% timezone selected_partner.timezone %}
+          <div class="conflict-table-wrap">
+            <table class="conflict-table">
+              <thead>
+                <tr>
+                  <th>{% translate "Date and time" %}</th>
+                  <th>{% translate "Client and services" %}</th>
+                  <th>{% translate "Resource" %}</th>
+                  <th>{% translate "Problem" %}</th>
+                  <th>{% translate "Actions" %}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in conflict_rows %}
+                  <tr>
+                    <td data-label="{% translate 'Date and time' %}">
+                      <div>
+                        {% if row.calendar_url %}
+                          <a class="conflict-time" href="{{ row.calendar_url }}">{{ row.conflict.appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}</a>
+                        {% else %}
+                          <span class="conflict-time">{{ row.conflict.appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}</span>
+                        {% endif %}
+                        <span class="conflict-detail">{{ row.conflict.appointment.end_at|date:"TIME_FORMAT" }}</span>
+                      </div>
+                    </td>
+                    <td data-label="{% translate 'Client and services' %}">
+                      <div>
+                        {% if row.actions.client_url %}
+                          <a class="conflict-client" href="{{ row.actions.client_url }}">{{ row.conflict.appointment.client_profile.display_name }}</a>
+                        {% else %}
+                          <span class="conflict-client">{{ row.conflict.appointment.client_profile.display_name }}</span>
+                        {% endif %}
+                        <span class="conflict-detail">
+                          {% for item in row.conflict.appointment.service_items.all %}{{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "No service lines" %}{% endfor %}
+                        </span>
+                      </div>
+                    </td>
+                    <td data-label="{% translate 'Resource' %}">
+                      <div>
+                        {{ row.conflict.appointment.booking_resource.name }}
+                        {% if not row.conflict.appointment.booking_resource.is_active %}<span class="conflict-detail">{% translate "Inactive resource" %}</span>{% endif %}
+                      </div>
+                    </td>
+                    <td data-label="{% translate 'Problem' %}">
+                      <div>
+                        <div class="conflict-reasons">
+                          {% for reason in row.conflict.reasons %}
+                            <span class="conflict-reason">
+                              {% if reason == "inactive_resource" %}
+                                {% translate "Resource is inactive" %}
+                              {% elif reason == "blocked_time" %}
+                                {% translate "Overlaps blocked time" %}
+                              {% else %}
+                                {% translate "Outside availability" %}
+                              {% endif %}
+                            </span>
+                          {% endfor %}
+                        </div>
+                        {% for blocked_time in row.conflict.overlapping_blocked_times %}
+                          {% if blocked_time.reason %}<span class="conflict-detail">{{ blocked_time.reason }}</span>{% endif %}
+                        {% endfor %}
+                      </div>
+                    </td>
+                    <td data-label="{% translate 'Actions' %}">
+                      <nav class="conflict-actions" aria-label="{% translate 'Conflict actions' %}">
+                        {% if row.actions.proposal_url %}<a class="button default" href="{{ row.actions.proposal_url }}">{% translate "Propose time" %}</a>{% endif %}
+                        {% if row.actions.cancel_url %}<a class="button" href="{{ row.actions.cancel_url }}">{% translate "Cancel" %}</a>{% endif %}
+                        {% if row.actions.message_url %}<a class="button" href="{{ row.actions.message_url }}">{% translate "Message" %}</a>{% endif %}
+                        {% if row.actions.record_url %}<a class="button" href="{{ row.actions.record_url }}">{% translate "Open record" %}</a>{% endif %}
+                      </nav>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if page_obj.has_other_pages %}
+            <nav class="conflict-pagination" aria-label="{% translate 'Conflict pages' %}">
+              {% if page_obj.has_previous %}<a class="button" href="?{{ pagination_query }}&amp;page={{ page_obj.previous_page_number }}">{% translate "Previous" %}</a>{% endif %}
+              <span>{% blocktranslate with current=page_obj.number total=page_obj.paginator.num_pages %}Page {{ current }} of {{ total }}{% endblocktranslate %}</span>
+              {% if page_obj.has_next %}<a class="button" href="?{{ pagination_query }}&amp;page={{ page_obj.next_page_number }}">{% translate "Next" %}</a>{% endif %}
+            </nav>
+          {% endif %}
+        {% endtimezone %}
+      {% else %}
+        <section class="conflict-empty">
+          <h2>{% translate "No active schedule conflicts" %}</h2>
+          <p>{% translate "Future confirmed appointments fit the current availability and blocked-time rules." %}</p>
+        </section>
+      {% endif %}
+    {% else %}
+      <section class="conflict-no-access">
+        <h1>{% translate "No partner access" %}</h1>
+        <p>{% translate "This account does not have an active partner membership." %}</p>
+      </section>
+    {% endif %}
+  </main>
+{% endblock %}

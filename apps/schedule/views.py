@@ -7,6 +7,7 @@ from uuid import UUID
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
@@ -26,7 +27,9 @@ from apps.schedule.selectors import (
     CALENDAR_VIEW_WEEK,
     CALENDAR_VIEWS,
     active_booking_resources_for_partner,
+    booking_resources_for_partner,
     partner_calendar_snapshot,
+    upcoming_schedule_conflicts_for_partner,
 )
 from apps.schedule.services import (
     copy_schedule_day,
@@ -179,6 +182,57 @@ def calendar(request):
     return TemplateResponse(request, "schedule/calendar.html", context)
 
 
+@staff_member_required
+def conflict_list(request):
+    """Render computed future schedule conflicts inside trusted partner scope."""
+
+    partners = tuple(visible_partners_for_user(request.user).order_by("name", "id"))
+    selected_partner = _selected_partner(request=request, partners=partners)
+    resources = (
+        tuple(booking_resources_for_partner(selected_partner)) if selected_partner else ()
+    )
+    selected_resource = _selected_optional_resource(request=request, resources=resources)
+    conflicts = (
+        upcoming_schedule_conflicts_for_partner(
+            partner=selected_partner,
+            booking_resource=selected_resource,
+        )
+        if selected_partner is not None
+        else ()
+    )
+    paginator = Paginator(conflicts, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    conflict_rows = tuple(
+        {
+            "conflict": conflict,
+            "actions": _calendar_appointment_actions(
+                request=request,
+                appointment=conflict.appointment,
+            ),
+            "calendar_url": _calendar_appointment_url(conflict.appointment),
+        }
+        for conflict in page_obj.object_list
+    )
+    filter_query = {"partner": selected_partner.id} if selected_partner is not None else {}
+    if selected_resource is not None:
+        filter_query["resource"] = selected_resource.id
+
+    context = {
+        **admin.site.each_context(request),
+        "is_nav_sidebar_enabled": False,
+        "title": "Schedule conflicts",
+        "partners": partners,
+        "selected_partner": selected_partner,
+        "resources": resources,
+        "selected_resource": selected_resource,
+        "conflict_count": len(conflicts),
+        "conflict_rows": conflict_rows,
+        "page_obj": page_obj,
+        "pagination_query": urlencode(filter_query),
+    }
+    return TemplateResponse(request, "schedule/conflicts.html", context)
+
+
 def _run_quick_create(
     *,
     request,
@@ -301,6 +355,18 @@ def _selected_resource(*, request, resources):
             (resource for resource in resources if resource.is_default),
             resources[0] if resources else None,
         )
+
+    selected_id = _parse_uuid(raw_resource_id, message="Calendar resource not found.")
+    for resource in resources:
+        if resource.id == selected_id:
+            return resource
+    raise Http404("Calendar resource not found.")
+
+
+def _selected_optional_resource(*, request, resources):
+    raw_resource_id = request.GET.get("resource", "").strip()
+    if not raw_resource_id:
+        return None
 
     selected_id = _parse_uuid(raw_resource_id, message="Calendar resource not found.")
     for resource in resources:
@@ -478,6 +544,23 @@ def _calendar_url(*, partner_id, resource_id, calendar_view: str, selected_date:
         }
     )
     return f"{reverse('schedule:calendar')}?{query}"
+
+
+def _calendar_appointment_url(appointment: Appointment) -> str | None:
+    if not appointment.booking_resource.is_active:
+        return None
+    selected_date = appointment.start_at.astimezone(
+        get_zone(appointment.partner.timezone)
+    ).date()
+    return (
+        _calendar_url(
+            partner_id=appointment.partner_id,
+            resource_id=appointment.booking_resource_id,
+            calendar_view=CALENDAR_VIEW_WEEK,
+            selected_date=selected_date,
+        )
+        + f"&appointment={appointment.id}#appointment-detail"
+    )
 
 
 def _parse_uuid(raw_value: str, *, message: str) -> UUID:

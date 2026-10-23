@@ -6,7 +6,12 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.appointments.models import Appointment
-from apps.appointments.services import AppointmentServiceItemInput, create_confirmed_appointment
+from apps.appointments.services import (
+    AppointmentServiceItemInput,
+    confirm_requested_appointment,
+    create_confirmed_appointment,
+    create_requested_appointment,
+)
 from apps.catalog.models import Service, ServiceCategory
 from apps.clients.services import (
     create_manual_client_profile,
@@ -15,6 +20,12 @@ from apps.clients.services import (
 )
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import AvailabilityWindow, BlockedTime, BookingResource
+from apps.schedule.selectors import (
+    SCHEDULE_CONFLICT_BLOCKED_TIME,
+    SCHEDULE_CONFLICT_INACTIVE_RESOURCE,
+    SCHEDULE_CONFLICT_OUTSIDE_AVAILABILITY,
+    schedule_conflicts_for_partner_period,
+)
 from apps.schedule.services import create_availability_window, create_blocked_time
 from core.timezones import get_zone
 
@@ -162,6 +173,230 @@ def test_partner_calendar_rejects_unknown_view(client) -> None:
 
 
 @pytest.mark.django_db
+def test_partner_calendar_does_not_flag_ended_confirmed_appointment(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Historical Calendar Studio",
+        username="historical-calendar-owner",
+        client_name="Historical Calendar Client",
+        service_name="Historical Calendar Service",
+    )
+    partner_zone = get_zone(context["created"].partner.timezone)
+    target_day = timezone.localdate(timezone=partner_zone) - timedelta(days=7)
+    appointment = _create_appointment(
+        context,
+        start_at=_local_datetime(context["created"].partner.timezone, target_day, 10),
+    )
+    client.force_login(context["created"].owner)
+
+    response = client.get(
+        reverse("schedule:calendar"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+            "view": "day",
+            "date": target_day.isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    snapshot = response.context["snapshot"]
+    assert appointment.id in {
+        entry.record.id for day in snapshot.days for entry in day.entries
+    }
+    assert snapshot.conflicts == ()
+    assert (
+        "calendar-entry--confirmed calendar-entry--schedule-conflict"
+        not in response.content.decode()
+    )
+
+
+@pytest.mark.django_db
+def test_calendar_and_conflict_list_surface_blocked_confirmed_appointment(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Conflict Studio",
+        username="conflict-calendar-owner",
+        client_name="Conflict Client",
+        service_name="Conflict Service",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone) + timedelta(days=1)
+    availability_start = _local_datetime(
+        context["created"].partner.timezone,
+        target_day,
+        9,
+    )
+    create_availability_window(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=availability_start,
+        end_at=availability_start + timedelta(hours=4),
+    )
+    appointment = _create_appointment(
+        context,
+        start_at=availability_start + timedelta(hours=1),
+    )
+    blocked_time = create_blocked_time(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=appointment.start_at + timedelta(minutes=30),
+        end_at=appointment.end_at,
+        reason="Unexpected personal break",
+    )
+    client.force_login(context["created"].owner)
+
+    calendar_response = client.get(
+        reverse("schedule:calendar"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+            "view": "week",
+            "date": target_day.isoformat(),
+        },
+    )
+    conflict_response = client.get(
+        reverse("schedule:conflicts"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+        },
+    )
+    dashboard_response = client.get(
+        reverse("partners:dashboard"),
+        {"partner": str(context["created"].partner.id)},
+    )
+
+    assert calendar_response.status_code == 200
+    snapshot = calendar_response.context["snapshot"]
+    assert snapshot.conflicted_appointment_ids == frozenset({appointment.id})
+    assert snapshot.conflicts[0].reasons == (SCHEDULE_CONFLICT_BLOCKED_TIME,)
+    assert snapshot.conflicts[0].overlapping_blocked_times == (blocked_time,)
+    assert "Schedule conflict" in calendar_response.content.decode()
+
+    assert conflict_response.status_code == 200
+    assert conflict_response.context["conflict_count"] == 1
+    content = conflict_response.content.decode()
+    assert "Conflict Client" in content
+    assert "Conflict Service" in content
+    assert "Overlaps blocked time" in content
+    assert "Unexpected personal break" in content
+    assert "Cancel" in content
+    assert dashboard_response.status_code == 200
+    assert dashboard_response.context["snapshot"].schedule_conflict_count == 1
+    assert reverse("schedule:conflicts") in dashboard_response.content.decode()
+
+
+@pytest.mark.django_db
+def test_conflict_detection_merges_windows_and_honors_confirmed_near_fit() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Fit Rules Studio",
+        username="fit-rules-owner",
+        client_name="Fit Rules Client",
+        service_name="Fit Rules Service",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone) + timedelta(days=2)
+    first_window_start = _local_datetime(
+        context["created"].partner.timezone,
+        target_day,
+        9,
+    )
+    for offset in (0, 1):
+        create_availability_window(
+            actor=context["created"].owner,
+            partner=context["created"].partner,
+            booking_resource=context["resource"],
+            start_at=first_window_start + timedelta(hours=offset),
+            end_at=first_window_start + timedelta(hours=offset + 1),
+        )
+    merged_fit = _create_appointment(
+        context,
+        start_at=first_window_start + timedelta(minutes=30),
+    )
+
+    near_fit_window_start = first_window_start + timedelta(hours=5)
+    create_availability_window(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=near_fit_window_start,
+        end_at=near_fit_window_start + timedelta(hours=1),
+    )
+    near_fit = create_requested_appointment(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=near_fit_window_start + timedelta(minutes=10),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+        is_near_fit=True,
+    )
+    confirm_requested_appointment(
+        actor=context["created"].owner,
+        appointment=near_fit,
+    )
+    outside = _create_appointment(
+        context,
+        start_at=near_fit_window_start + timedelta(hours=2),
+    )
+
+    conflicts = schedule_conflicts_for_partner_period(
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=first_window_start,
+        end_at=first_window_start + timedelta(days=1),
+    )
+
+    assert [conflict.appointment.id for conflict in conflicts] == [outside.id]
+    assert conflicts[0].reasons == (SCHEDULE_CONFLICT_OUTSIDE_AVAILABILITY,)
+    assert merged_fit.id not in {conflict.appointment.id for conflict in conflicts}
+    assert near_fit.id not in {conflict.appointment.id for conflict in conflicts}
+
+
+@pytest.mark.django_db
+def test_conflict_list_keeps_inactive_resource_appointments_visible(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Inactive Resource Studio",
+        username="inactive-resource-owner",
+        client_name="Inactive Resource Client",
+        service_name="Inactive Resource Service",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone)
+    appointment = _create_appointment(
+        context,
+        start_at=_local_datetime(context["created"].partner.timezone, target_day, 10),
+    )
+    context["resource"].is_active = False
+    context["resource"].save(update_fields=["is_active", "updated_at"])
+    client.force_login(context["created"].owner)
+
+    response = client.get(
+        reverse("schedule:conflicts"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.context["conflict_count"] == 1
+    row = response.context["conflict_rows"][0]
+    assert row["conflict"].appointment == appointment
+    assert SCHEDULE_CONFLICT_INACTIVE_RESOURCE in row["conflict"].reasons
+    assert row["calendar_url"] is None
+    content = response.content.decode()
+    assert "Inactive Resource Client" in content
+    assert "Resource is inactive" in content
+
+
+@pytest.mark.django_db
 def test_partner_calendar_rejects_foreign_partner_and_resource(client) -> None:
     superuser = User.objects.create_superuser(username="root", password="secret")
     first = _create_calendar_context(
@@ -195,6 +430,20 @@ def test_partner_calendar_rejects_foreign_partner_and_resource(client) -> None:
 
     assert foreign_partner_response.status_code == 404
     assert foreign_resource_response.status_code == 404
+
+    foreign_conflict_partner_response = client.get(
+        reverse("schedule:conflicts"),
+        {"partner": str(second["created"].partner.id)},
+    )
+    foreign_conflict_resource_response = client.get(
+        reverse("schedule:conflicts"),
+        {
+            "partner": str(first["created"].partner.id),
+            "resource": str(second["resource"].id),
+        },
+    )
+    assert foreign_conflict_partner_response.status_code == 404
+    assert foreign_conflict_resource_response.status_code == 404
 
 
 @pytest.mark.django_db

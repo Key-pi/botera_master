@@ -10,6 +10,8 @@ from django.utils import timezone
 
 from apps.appointments.models import Appointment
 from apps.schedule.models import (
+    DEFAULT_NEAR_FIT_TOLERANCE_MINUTES,
+    MAX_BOOKING_HORIZON_DAYS,
     AvailabilityTemplate,
     AvailabilityWindow,
     BlockedTime,
@@ -36,6 +38,9 @@ CALENDAR_VIEWS = (
     CALENDAR_VIEW_WEEK,
     CALENDAR_VIEW_MONTH,
 )
+SCHEDULE_CONFLICT_INACTIVE_RESOURCE = "inactive_resource"
+SCHEDULE_CONFLICT_BLOCKED_TIME = "blocked_time"
+SCHEDULE_CONFLICT_OUTSIDE_AVAILABILITY = "outside_availability"
 CALENDAR_ENTRY_SORT_ORDER = {
     "availability": 0,
     "blocked": 1,
@@ -65,6 +70,15 @@ class CalendarDay:
 
 
 @dataclass(frozen=True, slots=True)
+class ScheduleConflict:
+    """Computed schedule problem for one unchanged confirmed appointment."""
+
+    appointment: Appointment
+    reasons: tuple[str, ...]
+    overlapping_blocked_times: tuple[BlockedTime, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PartnerCalendarSnapshot:
     """Bounded calendar-period read model for one partner booking resource."""
 
@@ -79,6 +93,11 @@ class PartnerCalendarSnapshot:
     current_period_start: date
     leading_blank_days: tuple[int, ...]
     days: tuple[CalendarDay, ...]
+    conflicts: tuple[ScheduleConflict, ...]
+
+    @property
+    def conflicted_appointment_ids(self) -> frozenset[object]:
+        return frozenset(conflict.appointment.id for conflict in self.conflicts)
 
 
 def default_booking_resource_for_partner(partner: Partner) -> BookingResource | None:
@@ -96,10 +115,97 @@ def active_booking_resources_for_partner(partner: Partner) -> QuerySet[BookingRe
     )
 
 
+def booking_resources_for_partner(partner: Partner) -> QuerySet[BookingResource]:
+    """Return all resources so inactive-resource conflicts remain visible."""
+
+    return BookingResource.objects.filter(partner=partner).order_by(
+        "sort_order",
+        "name",
+    )
+
+
 def schedule_settings_for_partner(partner: Partner) -> PartnerScheduleSettings | None:
     """Return persisted schedule settings when they already exist."""
 
     return PartnerScheduleSettings.objects.filter(partner=partner).first()
+
+
+def upcoming_schedule_conflicts_for_partner(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource | None = None,
+    now: datetime | None = None,
+) -> tuple[ScheduleConflict, ...]:
+    """Return bounded future conflicts for the partner operations screen."""
+
+    current_time = now or timezone.now()
+    return schedule_conflicts_for_partner_period(
+        partner=partner,
+        booking_resource=booking_resource,
+        start_at=current_time,
+        end_at=current_time + timedelta(days=MAX_BOOKING_HORIZON_DAYS),
+    )
+
+
+def schedule_conflicts_for_partner_period(
+    *,
+    partner: Partner,
+    start_at: datetime,
+    end_at: datetime,
+    booking_resource: BookingResource | None = None,
+) -> tuple[ScheduleConflict, ...]:
+    """Compute confirmed appointments made invalid by the current schedule."""
+
+    if timezone.is_naive(start_at) or timezone.is_naive(end_at):
+        raise ValueError("Schedule conflict bounds must be timezone-aware.")
+    if start_at >= end_at:
+        raise ValueError("Schedule conflict end must be after start.")
+    if booking_resource is not None and booking_resource.partner_id != partner.id:
+        raise ValueError("Booking resource must belong to the selected partner.")
+
+    appointments = Appointment.objects.filter(
+        partner=partner,
+        status=Appointment.Status.CONFIRMED,
+        start_at__lt=end_at,
+        end_at__gt=start_at,
+    )
+    windows = AvailabilityWindow.objects.filter(
+        partner=partner,
+        start_at__lt=end_at,
+        end_at__gt=start_at,
+    )
+    blocked_times = BlockedTime.objects.filter(
+        partner=partner,
+        start_at__lt=end_at,
+        end_at__gt=start_at,
+    )
+    if booking_resource is not None:
+        appointments = appointments.filter(booking_resource=booking_resource)
+        windows = windows.filter(booking_resource=booking_resource)
+        blocked_times = blocked_times.filter(booking_resource=booking_resource)
+
+    appointment_records = tuple(
+        appointments.select_related(
+            "partner",
+            "booking_resource",
+            "client_profile",
+            "client_profile__telegram_identity",
+        )
+        .prefetch_related("service_items")
+        .order_by("start_at", "created_at")
+    )
+    settings = schedule_settings_for_partner(partner)
+    tolerance_minutes = (
+        settings.near_fit_tolerance_minutes
+        if settings is not None
+        else DEFAULT_NEAR_FIT_TOLERANCE_MINUTES
+    )
+    return _schedule_conflicts_from_records(
+        appointments=appointment_records,
+        availability_windows=tuple(windows.order_by("start_at", "end_at")),
+        blocked_times=tuple(blocked_times.order_by("start_at", "end_at")),
+        near_fit_tolerance_minutes=tolerance_minutes,
+    )
 
 
 def availability_windows_for_resource(
@@ -245,6 +351,22 @@ def partner_calendar_snapshot(
             statuses=CALENDAR_APPOINTMENT_STATUSES,
         )
     )
+    settings = schedule_settings_for_partner(partner)
+    conflicts = _schedule_conflicts_from_records(
+        appointments=tuple(
+            appointment
+            for appointment in appointments
+            if appointment.status == Appointment.Status.CONFIRMED
+            and appointment.end_at > current_time
+        ),
+        availability_windows=availability_windows,
+        blocked_times=blocked_times,
+        near_fit_tolerance_minutes=(
+            settings.near_fit_tolerance_minutes
+            if settings is not None
+            else DEFAULT_NEAR_FIT_TOLERANCE_MINUTES
+        ),
+    )
 
     days = tuple(
         _calendar_day(
@@ -274,6 +396,7 @@ def partner_calendar_snapshot(
             else ()
         ),
         days=days,
+        conflicts=conflicts,
     )
 
 
@@ -376,6 +499,93 @@ def _calendar_entry(*, kind: str, record, day_start: datetime, day_end: datetime
 
 def _overlaps(*, record, start_at: datetime, end_at: datetime) -> bool:
     return record.start_at < end_at and record.end_at > start_at
+
+
+def _schedule_conflicts_from_records(
+    *,
+    appointments: tuple[Appointment, ...],
+    availability_windows: tuple[AvailabilityWindow, ...],
+    blocked_times: tuple[BlockedTime, ...],
+    near_fit_tolerance_minutes: int,
+) -> tuple[ScheduleConflict, ...]:
+    windows_by_resource: dict[object, list[AvailabilityWindow]] = {}
+    for window in availability_windows:
+        windows_by_resource.setdefault(window.booking_resource_id, []).append(window)
+
+    blocks_by_resource: dict[object, list[BlockedTime]] = {}
+    for blocked_time in blocked_times:
+        blocks_by_resource.setdefault(blocked_time.booking_resource_id, []).append(blocked_time)
+
+    merged_windows_by_resource = {
+        resource_id: _merge_availability_windows(windows)
+        for resource_id, windows in windows_by_resource.items()
+    }
+    tolerance = timedelta(minutes=near_fit_tolerance_minutes)
+    conflicts: list[ScheduleConflict] = []
+    for appointment in appointments:
+        reasons: list[str] = []
+        if not appointment.booking_resource.is_active:
+            reasons.append(SCHEDULE_CONFLICT_INACTIVE_RESOURCE)
+
+        overlapping_blocks = tuple(
+            blocked_time
+            for blocked_time in blocks_by_resource.get(appointment.booking_resource_id, ())
+            if appointment.start_at < blocked_time.end_at
+            and appointment.end_at > blocked_time.start_at
+        )
+        if overlapping_blocks:
+            reasons.append(SCHEDULE_CONFLICT_BLOCKED_TIME)
+
+        merged_windows = merged_windows_by_resource.get(appointment.booking_resource_id, ())
+        if not _appointment_fits_availability(
+            appointment=appointment,
+            merged_windows=merged_windows,
+            near_fit_tolerance=tolerance,
+        ):
+            reasons.append(SCHEDULE_CONFLICT_OUTSIDE_AVAILABILITY)
+
+        if reasons:
+            conflicts.append(
+                ScheduleConflict(
+                    appointment=appointment,
+                    reasons=tuple(reasons),
+                    overlapping_blocked_times=overlapping_blocks,
+                )
+            )
+    return tuple(conflicts)
+
+
+def _merge_availability_windows(
+    windows: list[AvailabilityWindow],
+) -> tuple[tuple[datetime, datetime], ...]:
+    """Merge overlapping or adjacent windows before validating appointments."""
+
+    merged: list[tuple[datetime, datetime]] = []
+    for window in sorted(windows, key=lambda item: (item.start_at, item.end_at)):
+        if not merged or window.start_at > merged[-1][1]:
+            merged.append((window.start_at, window.end_at))
+            continue
+        previous_start, previous_end = merged[-1]
+        merged[-1] = (previous_start, max(previous_end, window.end_at))
+    return tuple(merged)
+
+
+def _appointment_fits_availability(
+    *,
+    appointment: Appointment,
+    merged_windows: tuple[tuple[datetime, datetime], ...],
+    near_fit_tolerance: timedelta,
+) -> bool:
+    for window_start, window_end in merged_windows:
+        if window_start <= appointment.start_at and appointment.end_at <= window_end:
+            return True
+        if (
+            appointment.is_near_fit
+            and window_start <= appointment.start_at < window_end
+            and appointment.end_at <= window_end + near_fit_tolerance
+        ):
+            return True
+    return False
 
 
 def _local_midnight_utc(*, day: date, zone) -> datetime:

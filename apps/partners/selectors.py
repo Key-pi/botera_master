@@ -21,6 +21,7 @@ from apps.notifications.models import ScheduledNotification
 from apps.notifications.selectors import failed_notifications_visible_to_partner
 from apps.partners.models import Partner
 from apps.partners.setup import PartnerSetupStatus, SetupStep, get_partner_setup_status
+from apps.schedule.selectors import ScheduleConflict, upcoming_schedule_conflicts_for_partner
 from core.timezones import get_zone
 
 if TYPE_CHECKING:
@@ -54,6 +55,8 @@ class PartnerDashboardSnapshot:
     pending_request_count: int
     failed_notifications: tuple[ScheduledNotification, ...]
     failed_notification_count: int
+    schedule_conflicts: tuple[ScheduleConflict, ...]
+    schedule_conflict_count: int
     today_finance: FinanceReport
 
 
@@ -108,6 +111,10 @@ def partner_dashboard_snapshot(
 
     pending_queryset = requested_appointments_for_partner(partner=partner)
     failed_queryset = failed_notifications_visible_to_partner(partner)
+    schedule_conflicts = upcoming_schedule_conflicts_for_partner(
+        partner=partner,
+        now=current_time,
+    )
     setup_status = get_partner_setup_status(partner)
 
     return PartnerDashboardSnapshot(
@@ -125,6 +132,8 @@ def partner_dashboard_snapshot(
         pending_request_count=pending_queryset.count(),
         failed_notifications=tuple(failed_queryset[:DASHBOARD_LIST_LIMIT]),
         failed_notification_count=failed_queryset.count(),
+        schedule_conflicts=schedule_conflicts[:DASHBOARD_LIST_LIMIT],
+        schedule_conflict_count=len(schedule_conflicts),
         today_finance=finance_report_for_partner(
             partner=partner,
             start_date=local_today,
