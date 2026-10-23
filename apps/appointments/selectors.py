@@ -100,6 +100,25 @@ def appointment_for_partner_by_id(
     )
 
 
+def appointment_for_booking_resource_by_id(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    appointment_id: UUID,
+) -> Appointment | None:
+    """Resolve one appointment inside a trusted partner/resource calendar."""
+
+    return (
+        appointments_for_partner(partner)
+        .prefetch_related("service_items")
+        .filter(
+            id=appointment_id,
+            booking_resource=booking_resource,
+        )
+        .first()
+    )
+
+
 def appointments_visible_to_user(user: User) -> QuerySet[Appointment]:
     """Return appointments an admin actor can see through trusted memberships."""
 

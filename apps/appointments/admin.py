@@ -32,6 +32,7 @@ from apps.appointments.proposals import (
     decline_appointment_proposal_as_partner,
 )
 from apps.appointments.services import (
+    available_appointment_status_targets,
     correct_final_appointment_status,
     create_manual_appointment_with_client,
     transition_appointment_status,
@@ -380,9 +381,17 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         if not self.has_change_permission(request, appointment):
             raise PermissionDenied
 
+        initial = None
+        if request.method == "GET":
+            requested_target = request.GET.get("target", "").strip()
+            if requested_target in available_appointment_status_targets(
+                appointment=appointment
+            ):
+                initial = {"new_status": requested_target}
         form = AppointmentStatusAdminForm(
             request.POST or None,
             appointment=appointment,
+            initial=initial,
         )
         if request.method == "POST" and form.is_valid():
             try:

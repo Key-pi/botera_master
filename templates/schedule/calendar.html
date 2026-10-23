@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n tz %}
+{% load client_admin i18n tz %}
 
 {% block extrastyle %}
   {{ block.super }}
@@ -63,15 +63,103 @@
       justify-content: space-between;
     }
     .calendar-quick-create,
-    .calendar-copy-schedule {
+    .calendar-copy-schedule,
+    .calendar-appointment-panel {
       border: 1px solid var(--hairline-color);
       border-left: 4px solid var(--primary);
       padding: 14px;
     }
     .calendar-quick-create h2,
-    .calendar-copy-schedule h2 {
+    .calendar-copy-schedule h2,
+    .calendar-appointment-panel h2 {
       font-size: 1rem;
       margin: 0 0 12px;
+    }
+    .calendar-appointment-panel {
+      border-left-color: #3678a8;
+      display: grid;
+      gap: 14px;
+    }
+    .calendar-appointment-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+    }
+    .calendar-appointment-header h2 {
+      font-size: 1.15rem;
+      margin-bottom: 4px;
+    }
+    .calendar-appointment-header p {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .calendar-appointment-close {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .calendar-appointment-details,
+    .calendar-appointment-totals {
+      display: grid;
+      gap: 0;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin: 0;
+    }
+    .calendar-appointment-details > div,
+    .calendar-appointment-totals > div {
+      border-bottom: 1px solid var(--hairline-color);
+      min-width: 0;
+      padding: 10px 12px;
+    }
+    .calendar-appointment-details dt,
+    .calendar-appointment-totals dt {
+      color: var(--body-quiet-color);
+      font-size: 0.7rem;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+    }
+    .calendar-appointment-details dd,
+    .calendar-appointment-totals dd {
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .calendar-appointment-services {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .calendar-appointment-services th,
+    .calendar-appointment-services td {
+      border-bottom: 1px solid var(--hairline-color);
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .calendar-appointment-services th {
+      color: var(--body-quiet-color);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+    .calendar-appointment-text {
+      border-left: 3px solid var(--hairline-color);
+      margin: 0;
+      overflow-wrap: anywhere;
+      padding: 2px 0 2px 10px;
+    }
+    .calendar-appointment-text strong {
+      display: block;
+      font-size: 0.75rem;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+    }
+    .calendar-appointment-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .calendar-appointment-channel-warning {
+      color: var(--body-quiet-color);
+      margin: 0;
     }
     .calendar-quick-create-grid {
       display: grid;
@@ -330,6 +418,38 @@
       .calendar-week {
         grid-template-columns: minmax(0, 1fr);
       }
+      .calendar-appointment-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .calendar-appointment-details,
+      .calendar-appointment-totals {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .calendar-appointment-actions .button {
+        box-sizing: border-box;
+        flex: 1 1 160px;
+        text-align: center;
+      }
+      .calendar-appointment-services thead {
+        display: none;
+      }
+      .calendar-appointment-services,
+      .calendar-appointment-services tbody,
+      .calendar-appointment-services tr,
+      .calendar-appointment-services td {
+        display: block;
+        width: 100%;
+      }
+      .calendar-appointment-services tr {
+        border-bottom: 1px solid var(--hairline-color);
+        padding: 7px 0;
+      }
+      .calendar-appointment-services td {
+        border: 0;
+        box-sizing: border-box;
+        padding: 3px 10px;
+      }
       .calendar-quick-create-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -413,6 +533,132 @@
       </div>
 
       {% if snapshot %}
+        {% if selected_appointment %}
+          {% timezone selected_partner.timezone %}
+            <section class="calendar-appointment-panel" id="appointment-detail">
+              <header class="calendar-appointment-header">
+                <div>
+                  <h2>{{ selected_appointment.client_profile.display_name }}</h2>
+                  <p>
+                    {{ selected_appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}–{{ selected_appointment.end_at|date:"H:i" }}
+                    · {{ selected_appointment.get_status_display }}
+                  </p>
+                </div>
+                <a class="calendar-appointment-close" href="{{ calendar_url }}">{% translate "Close details" %}</a>
+              </header>
+
+              <dl class="calendar-appointment-details">
+                <div>
+                  <dt>{% translate "Client" %}</dt>
+                  <dd>{{ selected_appointment.client_profile.display_name }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Phone" %}</dt>
+                  <dd>{{ selected_appointment.client_profile.phone|default:_("Not provided") }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Calendar resource" %}</dt>
+                  <dd>{{ selected_appointment.booking_resource.name }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Status" %}</dt>
+                  <dd>{{ selected_appointment.get_status_display }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Source" %}</dt>
+                  <dd>{{ selected_appointment.get_source_display }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Telegram" %}</dt>
+                  <dd>
+                    {% if not selected_appointment.client_profile.telegram_identity_id %}
+                      {% translate "Not linked" %}
+                    {% elif selected_appointment.client_profile.bot_unreachable %}
+                      {% translate "Currently unreachable" %}
+                    {% else %}
+                      {% translate "Connected" %}
+                    {% endif %}
+                  </dd>
+                </div>
+              </dl>
+
+              <table class="calendar-appointment-services">
+                <thead>
+                  <tr>
+                    <th>{% translate "Service" %}</th>
+                    <th>{% translate "Duration" %}</th>
+                    <th>{% translate "Price" %}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in selected_appointment.service_items.all %}
+                    <tr>
+                      <td>
+                        {{ item.service_name_snapshot }}
+                        {% if item.is_overridden %} · {% translate "Changed by master" %}{% endif %}
+                      </td>
+                      <td>{{ item.duration_minutes }} {% translate "min" %}</td>
+                      <td>{{ item.price_amount|money_amount }} {{ item.currency }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="3">{% translate "No service lines" %}</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+
+              <dl class="calendar-appointment-totals">
+                <div>
+                  <dt>{% translate "Services" %}</dt>
+                  <dd>{{ selected_appointment.service_total_amount|money_amount }} {{ selected_appointment.currency }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Penalties" %}</dt>
+                  <dd>{{ selected_appointment.penalties_total_amount|money_amount }} {{ selected_appointment.currency }}</dd>
+                </div>
+                <div>
+                  <dt>{% translate "Total" %}</dt>
+                  <dd>{{ selected_appointment.total_amount|money_amount }} {{ selected_appointment.currency }}</dd>
+                </div>
+              </dl>
+
+              {% if selected_appointment.client_comment %}
+                <p class="calendar-appointment-text">
+                  <strong>{% translate "Client comment" %}</strong>
+                  {{ selected_appointment.client_comment }}
+                </p>
+              {% endif %}
+              {% if selected_appointment.client_visible_reason %}
+                <p class="calendar-appointment-text">
+                  <strong>{% translate "Client-visible reason" %}</strong>
+                  {{ selected_appointment.client_visible_reason }}
+                </p>
+              {% endif %}
+              {% if selected_appointment.private_master_note %}
+                <p class="calendar-appointment-text">
+                  <strong>{% translate "Private master note" %}</strong>
+                  {{ selected_appointment.private_master_note }}
+                </p>
+              {% endif %}
+
+              <nav class="calendar-appointment-actions" aria-label="{% translate 'Appointment actions' %}">
+                {% if appointment_actions.confirm_url %}<a class="button default" href="{{ appointment_actions.confirm_url }}">{% translate "Confirm" %}</a>{% endif %}
+                {% if appointment_actions.complete_url %}<a class="button default" href="{{ appointment_actions.complete_url }}">{% translate "Mark completed" %}</a>{% endif %}
+                {% if appointment_actions.no_show_url %}<a class="button" href="{{ appointment_actions.no_show_url }}">{% translate "Mark no-show" %}</a>{% endif %}
+                {% if appointment_actions.cancel_url %}<a class="button" href="{{ appointment_actions.cancel_url }}">{% translate "Cancel appointment" %}</a>{% endif %}
+                {% if appointment_actions.proposal_url %}<a class="button" href="{{ appointment_actions.proposal_url }}">{% translate "Propose another time" %}</a>{% endif %}
+                {% if appointment_actions.message_url %}<a class="button" href="{{ appointment_actions.message_url }}">{% translate "Message client" %}</a>{% endif %}
+                {% if appointment_actions.client_url %}<a class="button" href="{{ appointment_actions.client_url }}">{% translate "Open client" %}</a>{% endif %}
+                {% if appointment_actions.record_url %}<a class="button" href="{{ appointment_actions.record_url }}">{% translate "Open full record" %}</a>{% endif %}
+              </nav>
+              {% if not selected_appointment.client_profile.telegram_identity_id %}
+                <p class="calendar-appointment-channel-warning">{% translate "This client has no Telegram connection, so proposals and bot messages are unavailable." %}</p>
+              {% elif selected_appointment.client_profile.bot_unreachable %}
+                <p class="calendar-appointment-channel-warning">{% translate "Telegram delivery is currently marked unreachable; a new incoming client message will restore the channel." %}</p>
+              {% endif %}
+            </section>
+          {% endtimezone %}
+        {% endif %}
+
         {% if quick_create_open and quick_create_form %}
           <section class="calendar-quick-create" id="quick-create">
             <h2>{% translate "Add calendar item" %}</h2>
@@ -555,7 +801,7 @@
                             {{ entry.display_start_at|date:"H:i" }}–{{ entry.display_end_at|date:"H:i" }}
                             {% if entry.continues_after %}&rarr;{% endif %}
                           </span>
-                          <a class="calendar-entry-title" href="{% url 'admin:appointments_appointment_change' entry.record.pk %}">{{ entry.record.client_profile.display_name }}</a>
+                          <a class="calendar-entry-title" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;appointment={{ entry.record.pk }}#appointment-detail">{{ entry.record.client_profile.display_name }}</a>
                           <span class="calendar-entry-detail">
                             {% for item in entry.record.service_items.all %}{{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "No service lines" %}{% endfor %}
                           </span>

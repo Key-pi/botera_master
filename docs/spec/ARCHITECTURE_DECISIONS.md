@@ -134,6 +134,7 @@ This document records approved architecture-preparation decisions and deferred t
 - Calendar range selection supports creating availability windows, blocked time, and manual appointments.
 - Calendar event/layer types such as availability windows, blocked time, appointments, conflicts, and near-fit/request markers should be visually distinguishable.
 - Clicking an appointment opens a detail panel/modal with actions to edit, propose reschedule, cancel, mark completed, mark no-show, and message client.
+- The Pilot Wiring week view opens that appointment detail as an inline, mobile-adapted panel resolved through the selected partner and booking resource. Its actions delegate to the existing tenant-scoped appointment, proposal, client, and messaging admin adapters; status shortcuts only preselect a target on the existing confirmation form.
 - Calendar supports quick copy day/week actions in addition to saved availability templates.
 - Quick day/week copy is scoped to one booking resource and copies only concrete
   availability and blocked-time records whose start belongs to the source period;

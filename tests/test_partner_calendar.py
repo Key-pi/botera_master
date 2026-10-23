@@ -8,7 +8,11 @@ from apps.accounts.models import User
 from apps.appointments.models import Appointment
 from apps.appointments.services import AppointmentServiceItemInput, create_confirmed_appointment
 from apps.catalog.models import Service, ServiceCategory
-from apps.clients.services import create_manual_client_profile
+from apps.clients.services import (
+    create_manual_client_profile,
+    link_client_profile_to_telegram_identity,
+    upsert_telegram_identity,
+)
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import AvailabilityWindow, BlockedTime, BookingResource
 from apps.schedule.services import create_availability_window, create_blocked_time
@@ -194,6 +198,141 @@ def test_partner_calendar_keeps_booking_resources_separate(client) -> None:
     }
     assert "Second Resource Client" in response.content.decode()
     assert "Default Resource Client" not in response.content.decode()
+
+    mismatched_detail_response = client.get(
+        reverse("schedule:calendar"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+            "week": week_start.isoformat(),
+            "appointment": str(second_appointment.id),
+        },
+    )
+    assert mismatched_detail_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_calendar_appointment_panel_reuses_tenant_safe_action_flows(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Appointment Panel Studio",
+        username="appointment-panel-owner",
+        client_name="Appointment Panel Client",
+        service_name="Appointment Panel Service",
+    )
+    identity = upsert_telegram_identity(
+        telegram_user_id=907001,
+        username="calendar-panel-client",
+        first_name="Panel",
+    )
+    context["client"] = link_client_profile_to_telegram_identity(
+        actor=context["created"].owner,
+        client_profile=context["client"],
+        telegram_identity=identity,
+    )
+    start_at = timezone.now() - timedelta(hours=2)
+    appointment = create_confirmed_appointment(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=start_at,
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+        client_comment="Detailed client comment",
+        private_master_note="Private appointment note",
+    )
+    local_day = start_at.astimezone(get_zone(context["created"].partner.timezone)).date()
+    week_start = local_day - timedelta(days=local_day.weekday())
+    client.force_login(context["created"].owner)
+
+    response = client.get(
+        reverse("schedule:calendar"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+            "week": week_start.isoformat(),
+            "appointment": str(appointment.id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.context["selected_appointment"] == appointment
+    actions = response.context["appointment_actions"]
+    assert actions["record_url"] == reverse(
+        "admin:appointments_appointment_change",
+        args=[appointment.id],
+    )
+    assert actions["client_url"] == reverse(
+        "admin:clients_clientprofile_change",
+        args=[context["client"].id],
+    )
+    assert actions["complete_url"].endswith("?target=completed")
+    assert actions["no_show_url"].endswith("?target=no_show")
+    assert actions["cancel_url"].endswith("?target=cancelled_by_master")
+    assert actions["proposal_url"] == reverse(
+        "admin:appointments_appointment_propose_time",
+        args=[appointment.id],
+    )
+    assert actions["message_url"] == reverse(
+        "admin:messaging_conversationmessage_reply",
+        args=[context["client"].id],
+    )
+    content = response.content.decode()
+    assert "Detailed client comment" in content
+    assert "Private appointment note" in content
+    assert "Appointment Panel Service" in content
+    assert "500.00 UAH" in content
+    assert "Mark completed" in content
+    assert "Mark no-show" in content
+    assert "Propose another time" in content
+    assert "Message client" in content
+
+    preselected_status_response = client.get(actions["complete_url"])
+    assert preselected_status_response.status_code == 200
+    assert preselected_status_response.context["form"]["new_status"].value() == (
+        Appointment.Status.COMPLETED
+    )
+
+
+@pytest.mark.django_db
+def test_calendar_appointment_panel_hides_unavailable_future_and_telegram_actions(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Future Panel Studio",
+        username="future-panel-owner",
+        client_name="Manual Future Client",
+        service_name="Future Panel Service",
+    )
+    week_start = _future_week_start(context["created"].partner.timezone)
+    appointment = _create_appointment(
+        context,
+        start_at=_local_datetime(context["created"].partner.timezone, week_start, 10),
+    )
+    client.force_login(context["created"].owner)
+
+    response = client.get(
+        reverse("schedule:calendar"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+            "week": week_start.isoformat(),
+            "appointment": str(appointment.id),
+        },
+    )
+
+    assert response.status_code == 200
+    actions = response.context["appointment_actions"]
+    assert actions["complete_url"] is None
+    assert actions["no_show_url"] is None
+    assert actions["proposal_url"] is None
+    assert actions["message_url"] is None
+    assert actions["cancel_url"] is not None
+    content = response.content.decode()
+    assert "Mark completed" not in content
+    assert "Mark no-show" not in content
+    assert "This client has no Telegram connection" in content
 
 
 @pytest.mark.django_db

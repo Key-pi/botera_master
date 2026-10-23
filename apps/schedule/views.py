@@ -12,6 +12,9 @@ from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.appointments.models import Appointment
+from apps.appointments.selectors import appointment_for_booking_resource_by_id
+from apps.appointments.services import available_appointment_status_targets
 from apps.partners.selectors import visible_partners_for_user
 from apps.schedule.forms import (
     CalendarCopyScheduleForm,
@@ -50,6 +53,19 @@ def calendar(request):
             booking_resource=selected_resource,
             week_start=selected_week,
         )
+    selected_appointment = _selected_calendar_appointment(
+        request=request,
+        partner=selected_partner,
+        booking_resource=selected_resource,
+    )
+    appointment_actions = (
+        _calendar_appointment_actions(
+            request=request,
+            appointment=selected_appointment,
+        )
+        if selected_appointment is not None
+        else None
+    )
 
     form_action = request.POST.get("form_action", "") if request.method == "POST" else ""
     quick_create_submission = form_action == "quick_create"
@@ -139,6 +155,17 @@ def calendar(request):
         "copy_scope": copy_scope,
         "copy_source_date": copy_source_date,
         "copy_schedule_form": copy_schedule_form,
+        "selected_appointment": selected_appointment,
+        "appointment_actions": appointment_actions,
+        "calendar_url": (
+            _calendar_url(
+                partner_id=selected_partner.id,
+                resource_id=selected_resource.id,
+                week_start=selected_week,
+            )
+            if selected_partner is not None and selected_resource is not None
+            else None
+        ),
     }
     return TemplateResponse(request, "schedule/calendar.html", context)
 
@@ -261,6 +288,93 @@ def _selected_resource(*, request, resources):
         if resource.id == selected_id:
             return resource
     raise Http404("Calendar resource not found.")
+
+
+def _selected_calendar_appointment(*, request, partner, booking_resource):
+    raw_appointment_id = request.GET.get("appointment", "").strip()
+    if not raw_appointment_id:
+        return None
+    if partner is None or booking_resource is None:
+        raise Http404("Appointment not found.")
+
+    appointment_id = _parse_uuid(raw_appointment_id, message="Appointment not found.")
+    appointment = appointment_for_booking_resource_by_id(
+        partner=partner,
+        booking_resource=booking_resource,
+        appointment_id=appointment_id,
+    )
+    if appointment is None:
+        raise Http404("Appointment not found.")
+    return appointment
+
+
+def _calendar_appointment_actions(*, request, appointment):
+    can_view_appointment = request.user.has_perm("appointments.view_appointment")
+    can_change_appointment = request.user.has_perm("appointments.change_appointment")
+    can_view_client = request.user.has_perm("clients.view_clientprofile")
+    can_message_client = request.user.has_perm("messaging.add_conversationmessage")
+    status_targets = (
+        set(available_appointment_status_targets(appointment=appointment))
+        if can_change_appointment
+        else set()
+    )
+    status_url = (
+        reverse("admin:appointments_appointment_status", args=[appointment.id])
+        if status_targets
+        else None
+    )
+
+    def status_target_url(target: str) -> str | None:
+        if status_url is None or target not in status_targets:
+            return None
+        return f"{status_url}?{urlencode({'target': target})}"
+
+    has_telegram = appointment.client_profile.telegram_identity_id is not None
+    can_propose_time = (
+        can_change_appointment
+        and has_telegram
+        and appointment.status
+        in {
+            Appointment.Status.REQUESTED,
+            Appointment.Status.CONFIRMED,
+        }
+    )
+    return {
+        "record_url": (
+            reverse("admin:appointments_appointment_change", args=[appointment.id])
+            if can_view_appointment
+            else None
+        ),
+        "client_url": (
+            reverse(
+                "admin:clients_clientprofile_change",
+                args=[appointment.client_profile_id],
+            )
+            if can_view_client
+            else None
+        ),
+        "status_url": status_url,
+        "confirm_url": status_target_url(Appointment.Status.CONFIRMED),
+        "cancel_url": status_target_url(Appointment.Status.CANCELLED_BY_MASTER),
+        "complete_url": status_target_url(Appointment.Status.COMPLETED),
+        "no_show_url": status_target_url(Appointment.Status.NO_SHOW),
+        "proposal_url": (
+            reverse(
+                "admin:appointments_appointment_propose_time",
+                args=[appointment.id],
+            )
+            if can_propose_time
+            else None
+        ),
+        "message_url": (
+            reverse(
+                "admin:messaging_conversationmessage_reply",
+                args=[appointment.client_profile_id],
+            )
+            if can_message_client and has_telegram
+            else None
+        ),
+    }
 
 
 def _selected_week(*, request, partner) -> date:
