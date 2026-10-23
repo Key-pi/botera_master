@@ -39,6 +39,7 @@ from apps.schedule.services import (
     create_availability_window,
     create_blocked_time,
     reopen_schedule_conflicts,
+    request_schedule_conflict_reschedules,
 )
 from core.timezones import get_zone
 
@@ -234,7 +235,7 @@ def conflict_list(request):
                 )
                 success_message = f"Kept {changed_count} schedule conflict(s) as is."
                 redirect_mode = CONFLICT_MODE_ACTIVE
-            else:
+            elif action_form.cleaned_data["action"] == ScheduleConflictActionForm.REOPEN:
                 changed_count = reopen_schedule_conflicts(
                     actor=request.user,
                     partner=selected_partner,
@@ -242,6 +243,21 @@ def conflict_list(request):
                 )
                 success_message = f"Reopened {changed_count} schedule conflict(s)."
                 redirect_mode = CONFLICT_MODE_KEPT_AS_IS
+            else:
+                result = request_schedule_conflict_reschedules(
+                    actor=request.user,
+                    partner=selected_partner,
+                    appointment_ids=action_form.appointment_ids,
+                )
+                success_message = (
+                    f"Queued reschedule request(s) for {result.requested_count} client(s)."
+                )
+                if result.skipped_without_telegram_count:
+                    success_message += (
+                        f" Skipped {result.skipped_without_telegram_count} client(s) without "
+                        "a Telegram connection."
+                    )
+                redirect_mode = CONFLICT_MODE_ACTIVE
         except ValidationError as exc:
             for error in exc.messages:
                 action_form.add_error(None, error)

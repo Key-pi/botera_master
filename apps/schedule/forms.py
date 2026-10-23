@@ -141,11 +141,13 @@ class ScheduleConflictActionForm(forms.Form):
     """Validate tenant-scoped selections from the schedule conflict screen."""
 
     KEEP_AS_IS = "keep_as_is"
+    REQUEST_RESCHEDULE = "request_reschedule"
     REOPEN = "reopen"
 
     action = forms.ChoiceField(
         choices=(
             (KEEP_AS_IS, "Keep as is"),
+            (REQUEST_RESCHEDULE, "Request reschedule"),
             (REOPEN, "Reopen"),
         ),
         widget=forms.HiddenInput,

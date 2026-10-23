@@ -127,6 +127,12 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-06: Bulk actions for conflict appointments are included in MVP.
 - 2026-10-23: `Leave as is` persists a partner-scoped acknowledgement for the current schedule-conflict fingerprint rather than changing the appointment. Matching acknowledgements hide active markers/counts, explicit reopen removes the decision, and relevant schedule/appointment changes make a stale decision visible again.
 - 2026-10-23: Schedule conflict keep/reopen actions support bounded bulk selection in MVP and create partner-visible audit events.
+- 2026-10-23: Active schedule conflicts support a bounded bulk action that asks Telegram-linked
+  clients to choose another time through the existing client reschedule flow. The current
+  appointment remains `confirmed`; manual clients without Telegram are reported and skipped.
+- 2026-10-23: Schedule-conflict reschedule requests are durable and idempotent per conflict
+  fingerprint. Queued requests become stale when the conflict resolves, changes, is kept as is,
+  or the appointment is no longer future and confirmed.
 - 2026-08-06: Client reminder intervals are configurable by the partner in MVP.
 - 2026-08-06: Master reminders before appointments are configurable by the partner in MVP; the partner may enable/disable them and choose timing.
 - 2026-08-06: If a client reminder is not delivered, the master should see/know about it so they can act.

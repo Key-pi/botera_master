@@ -122,6 +122,10 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
             "client_appointment_reminder",
             "Client appointment reminder",
         )
+        CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST = (
+            "client_schedule_conflict_reschedule_request",
+            "Client schedule-conflict reschedule request",
+        )
         MASTER_BOOKING_REQUEST = "master_booking_request", "Master booking request"
         MASTER_CLIENT_BOOKED_APPOINTMENT = (
             "master_client_booked_appointment",

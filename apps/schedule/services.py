@@ -4,6 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from datetime import timezone as datetime_timezone
+from functools import partial
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -69,6 +70,14 @@ class ScheduleCopyResult:
     @property
     def created_total(self) -> int:
         return self.availability_created + self.blocked_created
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleConflictRescheduleRequestResult:
+    """Outcome of asking selected conflict clients to choose another time."""
+
+    requested_count: int
+    skipped_without_telegram_count: int
 
 
 def initialize_partner_schedule(*, partner: Partner) -> BookingResource:
@@ -398,6 +407,95 @@ def reopen_schedule_conflicts(
     return len(acknowledgements)
 
 
+def request_schedule_conflict_reschedules(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment_ids: Sequence[UUID],
+    now: datetime | None = None,
+) -> ScheduleConflictRescheduleRequestResult:
+    """Queue idempotent client reschedule requests for selected active conflicts."""
+
+    ensure_partner_access(actor, partner)
+    normalized_ids = _normalize_conflict_appointment_ids(appointment_ids)
+    current_time = now or timezone.now()
+    with transaction.atomic():
+        appointments = tuple(
+            Appointment.objects.select_for_update()
+            .select_related(
+                "partner",
+                "booking_resource",
+                "client_profile",
+                "client_profile__telegram_identity",
+            )
+            .filter(
+                partner=partner,
+                id__in=normalized_ids,
+                status=Appointment.Status.CONFIRMED,
+                start_at__gt=current_time,
+            )
+            .order_by("start_at", "created_at")
+        )
+        if len(appointments) != len(normalized_ids):
+            raise ValidationError(
+                {"appointments": "Select current confirmed appointments from this partner."}
+            )
+
+        conflicts = schedule_conflicts_for_partner_period(
+            partner=partner,
+            start_at=min(current_time, min(appointment.start_at for appointment in appointments)),
+            end_at=max(appointment.end_at for appointment in appointments)
+            + timedelta(microseconds=1),
+        )
+        conflicts_by_appointment = {
+            conflict.appointment.id: conflict for conflict in conflicts
+        }
+        if any(appointment_id not in conflicts_by_appointment for appointment_id in normalized_ids):
+            raise ValidationError(
+                {"appointments": "One or more selected schedule conflicts are no longer active."}
+            )
+
+        requested: list[tuple[UUID, str]] = []
+        skipped_without_telegram = 0
+        for appointment in appointments:
+            if not appointment.client_profile.telegram_identity_id:
+                skipped_without_telegram += 1
+                continue
+            requested.append(
+                (
+                    appointment.id,
+                    conflicts_by_appointment[appointment.id].fingerprint,
+                )
+            )
+
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="schedule.conflict_reschedules_requested",
+            target_type="schedule_conflict",
+            message=f"Requested reschedule for {len(requested)} schedule conflict(s).",
+            payload={
+                "appointment_ids": [str(appointment_id) for appointment_id, _ in requested],
+                "requested_count": len(requested),
+                "skipped_without_telegram_count": skipped_without_telegram,
+            },
+        )
+        for appointment_id, fingerprint in requested:
+            transaction.on_commit(
+                partial(
+                    _schedule_conflict_reschedule_request_after_commit,
+                    appointment_id=appointment_id,
+                    conflict_fingerprint=fingerprint,
+                    now=current_time,
+                )
+            )
+
+    return ScheduleConflictRescheduleRequestResult(
+        requested_count=len(requested),
+        skipped_without_telegram_count=skipped_without_telegram,
+    )
+
+
 def _normalize_conflict_appointment_ids(
     appointment_ids: Sequence[UUID],
 ) -> tuple[UUID, ...]:
@@ -413,6 +511,34 @@ def _normalize_conflict_appointment_ids(
             }
         )
     return normalized_ids
+
+
+def _schedule_conflict_reschedule_request_after_commit(
+    *,
+    appointment_id: UUID,
+    conflict_fingerprint: str,
+    now: datetime,
+) -> None:
+    from apps.notifications.services import (
+        schedule_client_schedule_conflict_reschedule_request,
+    )
+
+    appointment = (
+        Appointment.objects.select_related(
+            "partner",
+            "client_profile",
+            "client_profile__telegram_identity",
+        )
+        .filter(id=appointment_id)
+        .first()
+    )
+    if appointment is None:
+        return
+    schedule_client_schedule_conflict_reschedule_request(
+        appointment=appointment,
+        conflict_fingerprint=conflict_fingerprint,
+        now=now,
+    )
 
 
 def validate_blocked_time_input(

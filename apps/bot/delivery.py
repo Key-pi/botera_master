@@ -201,6 +201,33 @@ def _payload_for_notification(notification: ScheduledNotification) -> TelegramPa
             text=template.body,
         )
 
+    if (
+        notification.type
+        == ScheduledNotification.Type.CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST
+    ):
+        if (
+            notification.client_profile is None
+            or not notification.client_profile.telegram_identity_id
+            or notification.appointment is None
+        ):
+            return None
+        language = notification.client_profile.language
+        template = render_content_template(
+            partner=notification.partner,
+            key="appointment.schedule_conflict_reschedule_requested",
+            language=language,
+            context=_appointment_template_context(notification.appointment),
+        )
+        return TelegramPayload(
+            token=token,
+            chat_id=notification.client_profile.telegram_identity.telegram_user_id,
+            text=template.body,
+            reply_markup=_schedule_conflict_reschedule_markup(
+                appointment=notification.appointment,
+                language=language,
+            ),
+        )
+
     penalty_key_by_type = {
         ScheduledNotification.Type.CLIENT_PENALTY_PAID: "penalty.paid",
         ScheduledNotification.Type.CLIENT_PENALTY_WAIVED: "penalty.waived",
@@ -839,6 +866,40 @@ def _broadcast_reply_markup(buttons: list[dict]) -> InlineKeyboardMarkup | None:
     if not rows:
         return None
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _schedule_conflict_reschedule_markup(
+    *,
+    appointment: Appointment,
+    language: str,
+) -> InlineKeyboardMarkup:
+    reschedule_labels = {
+        "uk": "Обрати інший час",
+        "ru": "Выбрать другое время",
+        "en": "Choose another time",
+    }
+    contact_labels = {
+        "uk": "Написати майстру",
+        "ru": "Написать мастеру",
+        "en": "Message master",
+    }
+    normalized_language = language if language in reschedule_labels else "uk"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=reschedule_labels[normalized_language],
+                    callback_data=f"pf:rsd:{appointment.id.hex}:1:1",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=contact_labels[normalized_language],
+                    callback_data="pf:contact",
+                )
+            ],
+        ]
+    )
 
 
 def _bad_request_failure_code(exc: TelegramBadRequest) -> str:

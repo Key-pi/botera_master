@@ -48,13 +48,17 @@ from apps.messaging.models import ConversationMessage
 from apps.messaging.services import create_client_message_to_master, create_master_reply_to_client
 from apps.messaging.tasks import dispatch_queued_conversation_messages_task
 from apps.notifications.models import PartnerNotificationSettings, ScheduledNotification
+from apps.notifications.services import schedule_client_schedule_conflict_reschedule_request
 from apps.notifications.tasks import (
     dispatch_due_notifications_task,
     schedule_morning_digests_task,
 )
 from apps.partners.models import Partner
 from apps.partners.services import create_partner_with_owner
-from apps.schedule.selectors import default_booking_resource_for_partner
+from apps.schedule.selectors import (
+    default_booking_resource_for_partner,
+    schedule_conflicts_for_partner_period,
+)
 from core.timezones import get_zone
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
@@ -1083,6 +1087,93 @@ def test_client_reschedule_request_and_acceptance_dispatch_to_each_side(
             "text": "Новий час підтверджено: "
             f"{local_start.date().isoformat()} о {local_start.strftime('%H:%M')}, Manicure.",
         }
+    ]
+
+
+@pytest.mark.django_db
+def test_schedule_conflict_reschedule_request_dispatches_client_actions(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    identity = upsert_telegram_identity(
+        telegram_user_id=555090,
+        username="conflict-reschedule-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    conflict = schedule_conflicts_for_partner_period(
+        partner=created.partner,
+        booking_resource=appointment.booking_resource,
+        start_at=appointment.start_at,
+        end_at=appointment.end_at + timedelta(microseconds=1),
+    )[0]
+    notice = schedule_client_schedule_conflict_reschedule_request(
+        appointment=appointment,
+        conflict_fingerprint=conflict.fingerprint,
+    )
+    assert notice is not None
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append(
+            {
+                "token": token,
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": reply_markup,
+            }
+        )
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    assert dispatch_due_notifications_task() == 1
+    notice.refresh_from_db()
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads[0]["token"] == VALID_TOKEN
+    assert sent_payloads[0]["chat_id"] == 555090
+    assert "Поточний запис залишається підтвердженим" in sent_payloads[0]["text"]
+    callbacks = [
+        button.callback_data
+        for row in sent_payloads[0]["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert callbacks == [
+        f"pf:rsd:{appointment.id.hex}:1:1",
+        "pf:contact",
     ]
 
 

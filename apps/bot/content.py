@@ -297,6 +297,13 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("date", "time", "services"),
     ),
     _definition(
+        "appointment.schedule_conflict_reschedule_requested",
+        uk="У графіку {partner_name} відбулися зміни. Будь ласка, оберіть інший час для запису {date} о {time}: {services}. Поточний запис залишається підтвердженим, доки ви не оберете новий час.",
+        ru="В графике {partner_name} произошли изменения. Пожалуйста, выберите другое время для записи {date} в {time}: {services}. Текущая запись остаётся подтверждённой, пока вы не выберете новое время.",
+        en="The schedule at {partner_name} has changed. Please choose another time for your booking on {date} at {time}: {services}. Your current booking stays confirmed until you choose a new time.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
         "appointment.reschedule_requested",
         uk="Запит на перенесення з {old_date} {old_time} на {new_date} {new_time}: {services}.",
         ru="Запрос на перенос с {old_date} {old_time} на {new_date} {new_time}: {services}.",

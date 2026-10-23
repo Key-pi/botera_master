@@ -57,6 +57,7 @@ CLIENT_TARGET_NOTIFICATION_TYPES = frozenset(
         ScheduledNotification.Type.CLIENT_PENALTY_PAID,
         ScheduledNotification.Type.CLIENT_PENALTY_WAIVED,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_REMINDER,
+        ScheduledNotification.Type.CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED,
         ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL_DECLINED,
@@ -534,6 +535,42 @@ def schedule_client_appointment_proposal_notification(
         type=ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL,
         due_at=due_at,
         idempotency_key=f"proposal:{proposal.id}:client_created",
+        now=current_time,
+    )
+
+
+def schedule_client_schedule_conflict_reschedule_request(
+    *,
+    appointment: Appointment,
+    conflict_fingerprint: str,
+    now: datetime | None = None,
+) -> ScheduledNotification | None:
+    """Queue one client request to choose a new time for an active schedule conflict."""
+
+    current_time = now or timezone.now()
+    if (
+        appointment.status != Appointment.Status.CONFIRMED
+        or appointment.start_at <= current_time
+        or not appointment.client_profile.telegram_identity_id
+    ):
+        return None
+    if len(conflict_fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in conflict_fingerprint
+    ):
+        raise ValidationError({"conflict_fingerprint": "Invalid schedule conflict fingerprint."})
+
+    due_at = apply_quiet_hours(due_at=current_time, partner=appointment.partner)
+    return _upsert_scheduled_notification(
+        partner=appointment.partner,
+        appointment=appointment,
+        client_profile=appointment.client_profile,
+        reminder_rule=None,
+        type=ScheduledNotification.Type.CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST,
+        due_at=due_at,
+        idempotency_key=_schedule_conflict_reschedule_idempotency_key(
+            appointment=appointment,
+            conflict_fingerprint=conflict_fingerprint,
+        ),
         now=current_time,
     )
 
@@ -1182,6 +1219,17 @@ def _appointment_reminder_idempotency_key(
     )
 
 
+def _schedule_conflict_reschedule_idempotency_key(
+    *,
+    appointment: Appointment,
+    conflict_fingerprint: str,
+) -> str:
+    return (
+        f"appointment:{appointment.id}:client:schedule_conflict_reschedule:"
+        f"{conflict_fingerprint}"
+    )
+
+
 def _obsolete_status_for_notification(
     *,
     notification: ScheduledNotification,
@@ -1218,6 +1266,18 @@ def _obsolete_status_for_notification(
     appointment = notification.appointment
     proposal = notification.appointment_proposal
     if notification.type == ScheduledNotification.Type.MASTER_MORNING_DIGEST:
+        return None
+    if notification.type == ScheduledNotification.Type.CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST:
+        if appointment is None or appointment.status != Appointment.Status.CONFIRMED:
+            return ScheduledNotification.Status.STALE
+        if appointment.start_at <= now:
+            return ScheduledNotification.Status.SKIPPED
+        expected_fingerprint = _schedule_conflict_fingerprint_from_notification(notification)
+        current_fingerprint = _active_schedule_conflict_fingerprint(
+            appointment=appointment,
+        )
+        if expected_fingerprint is None or current_fingerprint != expected_fingerprint:
+            return ScheduledNotification.Status.STALE
         return None
     if notification.type == ScheduledNotification.Type.CLIENT_APPOINTMENT_PROPOSAL:
         if (
@@ -1313,6 +1373,39 @@ def _has_pending_requested_alternatives(appointment: Appointment) -> bool:
         type=AppointmentProposal.Type.REQUESTED_ALTERNATIVES,
         status=AppointmentProposal.Status.PENDING,
     ).exists()
+
+
+def _schedule_conflict_fingerprint_from_notification(
+    notification: ScheduledNotification,
+) -> str | None:
+    prefix = (
+        f"appointment:{notification.appointment_id}:client:"
+        "schedule_conflict_reschedule:"
+    )
+    if not notification.idempotency_key.startswith(prefix):
+        return None
+    fingerprint = notification.idempotency_key.removeprefix(prefix)
+    return fingerprint if len(fingerprint) == 64 else None
+
+
+def _active_schedule_conflict_fingerprint(*, appointment: Appointment) -> str | None:
+    # Local import keeps notifications independent from schedule service imports.
+    from apps.schedule.selectors import schedule_conflicts_for_partner_period
+
+    conflicts = schedule_conflicts_for_partner_period(
+        partner=appointment.partner,
+        booking_resource=appointment.booking_resource,
+        start_at=appointment.start_at,
+        end_at=appointment.end_at + timedelta(microseconds=1),
+    )
+    return next(
+        (
+            conflict.fingerprint
+            for conflict in conflicts
+            if conflict.appointment.id == appointment.id
+        ),
+        None,
+    )
 
 
 def _is_inside_quiet_hours(value: time, *, start: time, end: time) -> bool:

@@ -39,10 +39,15 @@ from apps.notifications.services import (
     dispatch_notification,
     get_or_create_notification_settings,
     retry_failed_notification,
+    schedule_client_schedule_conflict_reschedule_request,
     schedule_failed_delivery_to_master,
 )
 from apps.partners.services import create_partner_with_owner
-from apps.schedule.selectors import default_booking_resource_for_partner
+from apps.schedule.selectors import (
+    default_booking_resource_for_partner,
+    schedule_conflicts_for_partner_period,
+)
+from apps.schedule.services import create_availability_window
 from core.timezones import get_zone
 
 
@@ -797,6 +802,54 @@ def test_superseded_proposal_notification_becomes_stale_before_delivery(
     first_notice.refresh_from_db()
     assert status == ScheduledNotification.Status.SKIPPED
     assert first_notice.status == ScheduledNotification.Status.STALE
+
+
+@pytest.mark.django_db
+def test_schedule_conflict_reschedule_request_becomes_stale_when_conflict_is_resolved(
+    notification_context,
+    future_start,
+):
+    context = notification_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["telegram_client"],
+        start_at=future_start,
+        service_items=[_service_input(context["service"])],
+    )
+    conflict = schedule_conflicts_for_partner_period(
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=appointment.start_at,
+        end_at=appointment.end_at + timedelta(microseconds=1),
+    )[0]
+    notification = schedule_client_schedule_conflict_reschedule_request(
+        appointment=appointment,
+        conflict_fingerprint=conflict.fingerprint,
+    )
+    assert notification is not None
+    notification.due_at = timezone.now() - timedelta(seconds=1)
+    notification.save(update_fields=["due_at", "updated_at"])
+    create_availability_window(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        start_at=appointment.start_at,
+        end_at=appointment.end_at,
+    )
+
+    def deliver(_notification):
+        raise AssertionError("resolved schedule conflict should not be delivered")
+
+    status = dispatch_notification(
+        notification=notification,
+        deliver=deliver,
+    )
+
+    notification.refresh_from_db()
+    assert status == ScheduledNotification.Status.SKIPPED
+    assert notification.status == ScheduledNotification.Status.STALE
 
 
 @pytest.mark.django_db

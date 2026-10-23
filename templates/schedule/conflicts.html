@@ -340,11 +340,13 @@
 
         <form id="conflict-bulk-form" class="conflict-bulk-actions" method="post" action="{{ conflict_action_url }}">
           {% csrf_token %}
-          <input type="hidden" name="action" value="{% if conflict_mode == 'kept_as_is' %}reopen{% else %}keep_as_is{% endif %}">
           <strong>{% translate "Bulk action" %}</strong>
-          <button class="button" type="submit">
-            {% if conflict_mode == "kept_as_is" %}{% translate "Reopen selected" %}{% else %}{% translate "Keep selected as is" %}{% endif %}
-          </button>
+          {% if conflict_mode == "kept_as_is" %}
+            <button class="button" type="submit" name="action" value="reopen">{% translate "Reopen selected" %}</button>
+          {% else %}
+            <button class="button" type="submit" name="action" value="keep_as_is">{% translate "Keep selected as is" %}</button>
+            <button class="button default" type="submit" name="action" value="request_reschedule">{% translate "Ask selected clients to reschedule" %}</button>
+          {% endif %}
         </form>
 
         {% timezone selected_partner.timezone %}
@@ -426,6 +428,16 @@
                             {% if conflict_mode == "kept_as_is" %}{% translate "Reopen" %}{% else %}{% translate "Keep as is" %}{% endif %}
                           </button>
                         </form>
+                        {% if conflict_mode == "active" and row.conflict.appointment.client_profile.telegram_identity_id %}
+                          <form class="conflict-inline-form" method="post" action="{{ conflict_action_url }}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="request_reschedule">
+                            <input type="hidden" name="appointments" value="{{ row.conflict.appointment.pk }}">
+                            <button class="button default" type="submit">{% translate "Ask client to reschedule" %}</button>
+                          </form>
+                        {% elif conflict_mode == "active" %}
+                          <span class="conflict-detail">{% translate "No Telegram connection" %}</span>
+                        {% endif %}
                         {% if row.actions.proposal_url %}<a class="button default" href="{{ row.actions.proposal_url }}">{% translate "Propose time" %}</a>{% endif %}
                         {% if row.actions.cancel_url %}<a class="button" href="{{ row.actions.cancel_url }}">{% translate "Cancel" %}</a>{% endif %}
                         {% if row.actions.message_url %}<a class="button" href="{{ row.actions.message_url }}">{% translate "Message" %}</a>{% endif %}

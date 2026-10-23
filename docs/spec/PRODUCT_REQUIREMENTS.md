@@ -240,6 +240,12 @@ Superuser can:
 - Partner can send concrete alternative slots to clients.
 - If proposed slots do not fit, client can choose another available slot or cancel.
 - Bulk actions for schedule conflicts are part of MVP.
+- From active conflicts, the partner can ask selected Telegram-linked clients to choose another
+  time. The current appointment stays `confirmed` until the client completes the existing
+  reschedule flow; manual clients without a Telegram connection are reported and skipped.
+- A repeated request for the same conflict facts must not create duplicate notifications. A queued
+  request becomes stale if the conflict disappears or its relevant schedule facts change before
+  delivery.
 - `Leave as is` keeps the appointment unchanged and moves the current conflict out of active review; the decision can be reopened.
 - Active conflict indicators return when conflict-relevant schedule or appointment facts change after `leave as is`.
 - Active and `kept as is` conflict lists support bulk keep/reopen decisions.

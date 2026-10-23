@@ -20,6 +20,7 @@ from apps.clients.services import (
     link_client_profile_to_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import (
     AvailabilityWindow,
@@ -37,6 +38,7 @@ from apps.schedule.services import (
     acknowledge_schedule_conflicts,
     create_availability_window,
     create_blocked_time,
+    request_schedule_conflict_reschedules,
     update_blocked_time,
 )
 from core.timezones import get_zone
@@ -412,6 +414,149 @@ def test_conflict_list_keeps_and_reopens_selected_appointments(client) -> None:
         event_type="schedule.conflicts_reopened",
     ).exists()
     assert client.get(f"{conflict_url}{query}").context["conflict_count"] == 2
+
+
+@pytest.mark.django_db
+def test_conflict_list_requests_client_reschedules_idempotently(
+    client,
+    django_capture_on_commit_callbacks,
+) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Conflict Reschedule Studio",
+        username="conflict-reschedule-owner",
+        client_name="Telegram Conflict Client",
+        service_name="Conflict Reschedule Service",
+    )
+    telegram_identity = upsert_telegram_identity(
+        telegram_user_id=930001,
+        username="conflict-client",
+    )
+    context["client"] = link_client_profile_to_telegram_identity(
+        actor=context["created"].owner,
+        client_profile=context["client"],
+        telegram_identity=telegram_identity,
+    )
+    manual_client = create_manual_client_profile(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        name="Manual Conflict Client",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone) + timedelta(days=1)
+    availability_start = _local_datetime(
+        context["created"].partner.timezone,
+        target_day,
+        9,
+    )
+    create_availability_window(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=availability_start,
+        end_at=availability_start + timedelta(hours=4),
+    )
+    telegram_appointment = _create_appointment(
+        context,
+        start_at=availability_start + timedelta(hours=1),
+    )
+    manual_appointment = _create_appointment(
+        context,
+        client_profile=manual_client,
+        start_at=availability_start + timedelta(hours=2),
+    )
+    create_blocked_time(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=telegram_appointment.start_at + timedelta(minutes=15),
+        end_at=manual_appointment.end_at - timedelta(minutes=15),
+        reason="Schedule changed",
+    )
+    client.force_login(context["created"].owner)
+    conflict_url = reverse("schedule:conflicts")
+    url = (
+        f"{conflict_url}?partner={context['created'].partner.id}"
+        f"&resource={context['resource'].id}"
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = client.post(
+            url,
+            {
+                "action": "request_reschedule",
+                "appointments": [
+                    str(telegram_appointment.id),
+                    str(manual_appointment.id),
+                ],
+            },
+        )
+
+    assert response.status_code == 302
+    notice = ScheduledNotification.objects.get(
+        appointment=telegram_appointment,
+        type=ScheduledNotification.Type.CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST,
+    )
+    assert notice.status == ScheduledNotification.Status.QUEUED
+    assert ScheduledNotification.objects.filter(appointment=manual_appointment).exists() is False
+    assert Appointment.objects.filter(
+        id__in=(telegram_appointment.id, manual_appointment.id),
+        status=Appointment.Status.CONFIRMED,
+    ).count() == 2
+    audit_event = AuditEvent.objects.get(
+        partner=context["created"].partner,
+        event_type="schedule.conflict_reschedules_requested",
+    )
+    assert audit_event.payload_masked["requested_count"] == 1
+    assert audit_event.payload_masked["skipped_without_telegram_count"] == 1
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = request_schedule_conflict_reschedules(
+            actor=context["created"].owner,
+            partner=context["created"].partner,
+            appointment_ids=(telegram_appointment.id,),
+        )
+
+    assert result.requested_count == 1
+    assert ScheduledNotification.objects.filter(
+        appointment=telegram_appointment,
+        type=ScheduledNotification.Type.CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST,
+    ).count() == 1
+    content = client.get(url).content.decode()
+    assert "Ask client to reschedule" in content
+    assert "No Telegram connection" in content
+
+
+@pytest.mark.django_db
+def test_conflict_reschedule_request_rejects_foreign_partner_appointment() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    first = _create_calendar_context(
+        superuser=superuser,
+        partner_name="First Conflict Tenant",
+        username="first-conflict-tenant-owner",
+        client_name="First Conflict Client",
+        service_name="First Conflict Service",
+    )
+    second = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Second Conflict Tenant",
+        username="second-conflict-tenant-owner",
+        client_name="Second Conflict Client",
+        service_name="Second Conflict Service",
+    )
+    foreign_appointment = _create_appointment(
+        second,
+        start_at=timezone.now() + timedelta(days=3),
+    )
+
+    with pytest.raises(ValidationError, match="current confirmed appointments"):
+        request_schedule_conflict_reschedules(
+            actor=first["created"].owner,
+            partner=first["created"].partner,
+            appointment_ids=(foreign_appointment.id,),
+        )
+
+    assert ScheduledNotification.objects.filter(appointment=foreign_appointment).exists() is False
 
 
 @pytest.mark.django_db

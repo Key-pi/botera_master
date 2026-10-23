@@ -653,6 +653,9 @@ Rules:
   client confirmation/decline result; these are not inferred from reminder records.
 - penalty `created`, `paid`, and `waived` events use explicit durable client notification types;
   obsolete queued events become stale when the current penalty status no longer matches.
+- bulk schedule-conflict reschedule requests use an explicit client notification type. Its
+  idempotency key includes the conflict fingerprint, so the same conflict facts produce at most
+  one request and a changed/resolved conflict makes a queued request stale.
 - actionable master request and stale-request messages may carry the same compact confirm/decline
   callback controls, while appointment state remains authoritative.
 - if appointment is moved/cancelled/completed/no_show, old pending reminders become cancelled/stale.
