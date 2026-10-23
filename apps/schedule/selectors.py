@@ -28,6 +28,14 @@ CALENDAR_APPOINTMENT_STATUSES = (
     Appointment.Status.COMPLETED,
     Appointment.Status.NO_SHOW,
 )
+CALENDAR_VIEW_DAY = "day"
+CALENDAR_VIEW_WEEK = "week"
+CALENDAR_VIEW_MONTH = "month"
+CALENDAR_VIEWS = (
+    CALENDAR_VIEW_DAY,
+    CALENDAR_VIEW_WEEK,
+    CALENDAR_VIEW_MONTH,
+)
 CALENDAR_ENTRY_SORT_ORDER = {
     "availability": 0,
     "blocked": 1,
@@ -58,15 +66,18 @@ class CalendarDay:
 
 @dataclass(frozen=True, slots=True)
 class PartnerCalendarSnapshot:
-    """Bounded weekly read model for one partner booking resource."""
+    """Bounded calendar-period read model for one partner booking resource."""
 
     partner: Partner
     booking_resource: BookingResource
-    week_start: date
-    week_end: date
-    previous_week_start: date
-    next_week_start: date
-    current_week_start: date
+    view: str
+    focus_date: date
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    next_period_start: date
+    current_period_start: date
+    leading_blank_days: tuple[int, ...]
     days: tuple[CalendarDay, ...]
 
 
@@ -176,10 +187,11 @@ def partner_calendar_snapshot(
     *,
     partner: Partner,
     booking_resource: BookingResource,
-    week_start: date,
+    selected_date: date,
+    view: str = CALENDAR_VIEW_WEEK,
     now: datetime | None = None,
 ) -> PartnerCalendarSnapshot:
-    """Compose one resource's week without weakening tenant or timezone scope."""
+    """Compose one resource's selected period without weakening tenant scope."""
 
     # Appointment selectors already depend on schedule services. Importing the
     # owner selector here avoids turning that established dependency into an
@@ -188,14 +200,25 @@ def partner_calendar_snapshot(
 
     if booking_resource.partner_id != partner.id:
         raise ValueError("Booking resource must belong to the selected partner.")
+    if view not in CALENDAR_VIEWS:
+        raise ValueError("Unknown calendar view.")
 
-    normalized_week_start = week_start - timedelta(days=week_start.weekday())
-    week_end = normalized_week_start + timedelta(days=6)
     zone = get_zone(partner.timezone)
-    period_start = _local_midnight_utc(day=normalized_week_start, zone=zone)
-    period_end = _local_midnight_utc(day=week_end + timedelta(days=1), zone=zone)
     current_time = now or timezone.now()
     local_today = current_time.astimezone(zone).date()
+    (
+        period_start_date,
+        period_end_date,
+        previous_period_start,
+        next_period_start,
+        current_period_start,
+    ) = _calendar_period_dates(
+        view=view,
+        selected_date=selected_date,
+        local_today=local_today,
+    )
+    period_start = _local_midnight_utc(day=period_start_date, zone=zone)
+    period_end = _local_midnight_utc(day=period_end_date + timedelta(days=1), zone=zone)
 
     availability_windows = tuple(
         availability_windows_for_resource(
@@ -225,27 +248,78 @@ def partner_calendar_snapshot(
 
     days = tuple(
         _calendar_day(
-            day=normalized_week_start + timedelta(days=offset),
+            day=period_start_date + timedelta(days=offset),
             today=local_today,
             zone=zone,
             availability_windows=availability_windows,
             blocked_times=blocked_times,
             appointments=appointments,
         )
-        for offset in range(7)
+        for offset in range((period_end_date - period_start_date).days + 1)
     )
-    current_week_start = local_today - timedelta(days=local_today.weekday())
 
     return PartnerCalendarSnapshot(
         partner=partner,
         booking_resource=booking_resource,
-        week_start=normalized_week_start,
-        week_end=week_end,
-        previous_week_start=normalized_week_start - timedelta(days=7),
-        next_week_start=normalized_week_start + timedelta(days=7),
-        current_week_start=current_week_start,
+        view=view,
+        focus_date=selected_date,
+        period_start=period_start_date,
+        period_end=period_end_date,
+        previous_period_start=previous_period_start,
+        next_period_start=next_period_start,
+        current_period_start=current_period_start,
+        leading_blank_days=(
+            tuple(range(period_start_date.weekday()))
+            if view == CALENDAR_VIEW_MONTH
+            else ()
+        ),
         days=days,
     )
+
+
+def _calendar_period_dates(
+    *,
+    view: str,
+    selected_date: date,
+    local_today: date,
+) -> tuple[date, date, date, date, date]:
+    """Return inclusive period bounds and navigation anchors for a calendar view."""
+
+    if view == CALENDAR_VIEW_DAY:
+        return (
+            selected_date,
+            selected_date,
+            selected_date - timedelta(days=1),
+            selected_date + timedelta(days=1),
+            local_today,
+        )
+
+    if view == CALENDAR_VIEW_WEEK:
+        period_start = selected_date - timedelta(days=selected_date.weekday())
+        return (
+            period_start,
+            period_start + timedelta(days=6),
+            period_start - timedelta(days=7),
+            period_start + timedelta(days=7),
+            local_today - timedelta(days=local_today.weekday()),
+        )
+
+    period_start = selected_date.replace(day=1)
+    next_period_start = _next_month_start(period_start)
+    current_period_start = local_today.replace(day=1)
+    return (
+        period_start,
+        next_period_start - timedelta(days=1),
+        (period_start - timedelta(days=1)).replace(day=1),
+        next_period_start,
+        current_period_start,
+    )
+
+
+def _next_month_start(month_start: date) -> date:
+    if month_start.month == 12:
+        return date(month_start.year + 1, 1, 1)
+    return date(month_start.year, month_start.month + 1, 1)
 
 
 def _calendar_day(

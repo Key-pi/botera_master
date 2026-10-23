@@ -23,6 +23,8 @@ from apps.schedule.forms import (
     add_domain_errors_to_calendar_quick_create_form,
 )
 from apps.schedule.selectors import (
+    CALENDAR_VIEW_WEEK,
+    CALENDAR_VIEWS,
     active_booking_resources_for_partner,
     partner_calendar_snapshot,
 )
@@ -37,7 +39,7 @@ from core.timezones import get_zone
 
 @staff_member_required
 def calendar(request):
-    """Render a tenant-safe operational week for one booking resource."""
+    """Render a tenant-safe operational calendar for one booking resource."""
 
     partners = tuple(visible_partners_for_user(request.user).order_by("name", "id"))
     selected_partner = _selected_partner(request=request, partners=partners)
@@ -45,13 +47,15 @@ def calendar(request):
         tuple(active_booking_resources_for_partner(selected_partner)) if selected_partner else ()
     )
     selected_resource = _selected_resource(request=request, resources=resources)
-    selected_week = _selected_week(request=request, partner=selected_partner)
+    selected_view = _selected_calendar_view(request=request)
+    selected_date = _selected_calendar_date(request=request, partner=selected_partner)
     snapshot = None
     if selected_partner is not None and selected_resource is not None:
         snapshot = partner_calendar_snapshot(
             partner=selected_partner,
             booking_resource=selected_resource,
-            week_start=selected_week,
+            selected_date=selected_date,
+            view=selected_view,
         )
     selected_appointment = _selected_calendar_appointment(
         request=request,
@@ -77,7 +81,7 @@ def calendar(request):
             partner=selected_partner,
             initial={
                 "item_type": CalendarQuickCreateForm.AVAILABILITY,
-                "day": _selected_quick_create_day(request=request, fallback=selected_week),
+                "day": _selected_quick_create_day(request=request, fallback=selected_date),
             },
         )
         if quick_create_submission and quick_create_form.is_valid():
@@ -87,7 +91,8 @@ def calendar(request):
                     form=quick_create_form,
                     partner=selected_partner,
                     booking_resource=selected_resource,
-                    week_start=selected_week,
+                    calendar_view=selected_view,
+                    selected_date=selected_date,
                 )
             except ValidationError as exc:
                 add_domain_errors_to_calendar_quick_create_form(quick_create_form, exc)
@@ -101,7 +106,7 @@ def calendar(request):
         _selected_copy_source_date(
             request=request,
             scope=copy_scope,
-            fallback=selected_week,
+            fallback=selected_date,
         )
         if copy_scope is not None
         else None
@@ -135,6 +140,7 @@ def calendar(request):
                     source_date=copy_source_date,
                     partner=selected_partner,
                     booking_resource=selected_resource,
+                    calendar_view=selected_view,
                 )
             except ValidationError as exc:
                 add_domain_errors_to_calendar_copy_form(copy_schedule_form, exc)
@@ -149,6 +155,8 @@ def calendar(request):
         "selected_partner": selected_partner,
         "resources": resources,
         "selected_resource": selected_resource,
+        "selected_view": selected_view,
+        "selected_date": selected_date,
         "snapshot": snapshot,
         "quick_create_open": quick_create_open,
         "quick_create_form": quick_create_form,
@@ -161,7 +169,8 @@ def calendar(request):
             _calendar_url(
                 partner_id=selected_partner.id,
                 resource_id=selected_resource.id,
-                week_start=selected_week,
+                calendar_view=selected_view,
+                selected_date=selected_date,
             )
             if selected_partner is not None and selected_resource is not None
             else None
@@ -170,7 +179,15 @@ def calendar(request):
     return TemplateResponse(request, "schedule/calendar.html", context)
 
 
-def _run_quick_create(*, request, form, partner, booking_resource, week_start):
+def _run_quick_create(
+    *,
+    request,
+    form,
+    partner,
+    booking_resource,
+    calendar_view,
+    selected_date,
+):
     item_type = form.cleaned_data["item_type"]
     if item_type == CalendarQuickCreateForm.APPOINTMENT:
         query = urlencode(
@@ -207,7 +224,8 @@ def _run_quick_create(*, request, form, partner, booking_resource, week_start):
         _calendar_url(
             partner_id=partner.id,
             resource_id=booking_resource.id,
-            week_start=week_start,
+            calendar_view=calendar_view,
+            selected_date=selected_date,
         )
     )
 
@@ -220,6 +238,7 @@ def _run_schedule_copy(
     source_date,
     partner,
     booking_resource,
+    calendar_view,
 ):
     target_date = form.cleaned_data["target_date"]
     if scope == CalendarCopyScheduleForm.DAY:
@@ -253,12 +272,12 @@ def _run_schedule_copy(
     else:
         messages.info(request, "No availability or blocked time starts in the source period.")
 
-    target_week = target_date - timedelta(days=target_date.weekday())
     return HttpResponseRedirect(
         _calendar_url(
             partner_id=partner.id,
             resource_id=booking_resource.id,
-            week_start=target_week,
+            calendar_view=calendar_view,
+            selected_date=target_date,
         )
     )
 
@@ -377,22 +396,33 @@ def _calendar_appointment_actions(*, request, appointment):
     }
 
 
-def _selected_week(*, request, partner) -> date:
+def _selected_calendar_view(*, request) -> str:
+    selected_view = request.GET.get("view", CALENDAR_VIEW_WEEK).strip()
+    if selected_view not in CALENDAR_VIEWS:
+        raise Http404("Calendar view not found.")
+    return selected_view
+
+
+def _selected_calendar_date(*, request, partner) -> date:
     if partner is None:
         return timezone.localdate()
 
-    raw_week = request.GET.get("week", "").strip()
-    if raw_week:
+    # Keep legacy week links valid while all newly rendered links use date.
+    raw_date = request.GET.get("date", "").strip() or request.GET.get("week", "").strip()
+    if raw_date:
         try:
-            selected_day = date.fromisoformat(raw_week)
+            selected_day = date.fromisoformat(raw_date)
         except ValueError as exc:
-            raise Http404("Calendar week not found.") from exc
+            raise Http404("Calendar date not found.") from exc
     else:
         selected_day = timezone.localdate(timezone=get_zone(partner.timezone))
 
-    if selected_day < date.min + timedelta(days=7) or selected_day > date.max - timedelta(days=14):
-        raise Http404("Calendar week not found.")
-    return selected_day - timedelta(days=selected_day.weekday())
+    if (
+        selected_day < date.min + timedelta(days=31)
+        or selected_day > date.max - timedelta(days=31)
+    ):
+        raise Http404("Calendar date not found.")
+    return selected_day
 
 
 def _selected_quick_create_day(*, request, fallback: date) -> date:
@@ -438,12 +468,13 @@ def _default_copy_target_date(*, partner, scope: str, source_date: date) -> date
     return max(source_date + timedelta(days=7), current_week_start + timedelta(days=7))
 
 
-def _calendar_url(*, partner_id, resource_id, week_start: date) -> str:
+def _calendar_url(*, partner_id, resource_id, calendar_view: str, selected_date: date) -> str:
     query = urlencode(
         {
             "partner": partner_id,
             "resource": resource_id,
-            "week": week_start.isoformat(),
+            "view": calendar_view,
+            "date": selected_date.isoformat(),
         }
     )
     return f"{reverse('schedule:calendar')}?{query}"

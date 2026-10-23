@@ -26,7 +26,7 @@
     .calendar-actions,
     .calendar-filters,
     .calendar-selector,
-    .calendar-week-nav,
+    .calendar-period-nav,
     .calendar-legend {
       align-items: center;
       display: flex;
@@ -61,6 +61,29 @@
       display: flex;
       gap: 16px;
       justify-content: space-between;
+    }
+    .calendar-toolbar-actions {
+      align-items: flex-end;
+      display: grid;
+      gap: 8px;
+      justify-items: end;
+    }
+    .calendar-view-switch {
+      border: 1px solid var(--hairline-color);
+      display: inline-flex;
+    }
+    .calendar-view-switch a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 7px 12px;
+      text-decoration: none;
+    }
+    .calendar-view-switch a:last-child {
+      border-right: 0;
+    }
+    .calendar-view-switch a[aria-selected="true"] {
+      background: var(--selected-bg);
+      color: var(--body-fg);
     }
     .calendar-quick-create,
     .calendar-copy-schedule,
@@ -247,11 +270,34 @@
     .calendar-legend-swatch--confirmed {
       background: #dceaf7;
     }
-    .calendar-week {
+    .calendar-grid-scroll {
+      overflow-x: auto;
+    }
+    .calendar-grid {
       border-left: 1px solid var(--hairline-color);
       border-top: 1px solid var(--hairline-color);
       display: grid;
+    }
+    .calendar-grid--day {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .calendar-grid--week {
       grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+    .calendar-grid--month {
+      grid-template-columns: repeat(7, minmax(125px, 1fr));
+      min-width: 875px;
+    }
+    .calendar-grid--day .calendar-day {
+      min-height: 420px;
+    }
+    .calendar-grid--month .calendar-day {
+      min-height: 180px;
+    }
+    .calendar-month-blank {
+      border-bottom: 1px solid var(--hairline-color);
+      border-right: 1px solid var(--hairline-color);
+      min-height: 80px;
     }
     .calendar-day {
       border-bottom: 1px solid var(--hairline-color);
@@ -379,7 +425,7 @@
       margin: 0;
     }
     @media (max-width: 1199px) {
-      .calendar-week {
+      .calendar-grid--week {
         grid-template-columns: repeat(4, minmax(0, 1fr));
       }
     }
@@ -390,7 +436,7 @@
         flex-direction: column;
       }
       .calendar-actions .button,
-      .calendar-week-nav .button {
+      .calendar-period-nav .button {
         box-sizing: border-box;
         flex: 1 1 auto;
         text-align: center;
@@ -415,8 +461,25 @@
         border-bottom: 1px solid var(--hairline-color);
         overflow-wrap: anywhere;
       }
-      .calendar-week {
+      .calendar-toolbar-actions {
+        align-items: stretch;
+        justify-items: stretch;
+      }
+      .calendar-view-switch {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .calendar-view-switch a {
+        box-sizing: border-box;
+        text-align: center;
+      }
+      .calendar-grid--week,
+      .calendar-grid--month {
         grid-template-columns: minmax(0, 1fr);
+        min-width: 0;
+      }
+      .calendar-month-blank {
+        display: none;
       }
       .calendar-appointment-header {
         align-items: stretch;
@@ -476,7 +539,7 @@
         </div>
         <div class="calendar-actions">
           {% if selected_resource %}
-            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}{% if snapshot %}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;create=1&amp;date={{ snapshot.week_start|date:'Y-m-d' }}#quick-create{% endif %}">
+            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}{% if snapshot %}&amp;view={{ snapshot.view }}&amp;date={{ snapshot.focus_date|date:'Y-m-d' }}&amp;create=1#quick-create{% endif %}">
               {% translate "Quick add" %}
             </a>
             <a class="button" href="{% url 'admin:schedule_availabilitywindow_add' %}?partner={{ selected_partner.pk }}&amp;booking_resource={{ selected_resource.pk }}">
@@ -513,14 +576,20 @@
                 <option value="{{ partner.pk }}"{% if partner.pk == selected_partner.pk %} selected{% endif %}>{{ partner.name }}</option>
               {% endfor %}
             </select>
-            {% if snapshot %}<input type="hidden" name="week" value="{{ snapshot.week_start|date:'Y-m-d' }}">{% endif %}
+            {% if snapshot %}
+              <input type="hidden" name="view" value="{{ snapshot.view }}">
+              <input type="hidden" name="date" value="{{ snapshot.focus_date|date:'Y-m-d' }}">
+            {% endif %}
             <button type="submit">{% translate "Open" %}</button>
           </form>
         {% endif %}
         {% if resources|length > 1 %}
           <form class="calendar-selector" method="get">
             <input type="hidden" name="partner" value="{{ selected_partner.pk }}">
-            {% if snapshot %}<input type="hidden" name="week" value="{{ snapshot.week_start|date:'Y-m-d' }}">{% endif %}
+            {% if snapshot %}
+              <input type="hidden" name="view" value="{{ snapshot.view }}">
+              <input type="hidden" name="date" value="{{ snapshot.focus_date|date:'Y-m-d' }}">
+            {% endif %}
             <label for="calendar-resource">{% translate "Calendar resource" %}</label>
             <select id="calendar-resource" name="resource">
               {% for resource in resources %}
@@ -697,7 +766,7 @@
               </div>
               <div class="calendar-form-actions">
                 <button type="submit">{% translate "Continue" %}</button>
-                <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}">{% translate "Cancel" %}</a>
+                <a class="button" href="{{ calendar_url }}">{% translate "Cancel" %}</a>
               </div>
             </form>
           </section>
@@ -730,7 +799,7 @@
               </div>
               <div class="calendar-form-actions">
                 <button type="submit">{% translate "Copy schedule" %}</button>
-                <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}">{% translate "Cancel" %}</a>
+                <a class="button" href="{{ calendar_url }}">{% translate "Cancel" %}</a>
               </div>
             </form>
           </section>
@@ -739,7 +808,13 @@
         <div class="calendar-toolbar">
           <div>
             <p class="calendar-range">
-              {{ snapshot.week_start|date:"DATE_FORMAT" }} – {{ snapshot.week_end|date:"DATE_FORMAT" }}
+              {% if snapshot.view == "day" %}
+                {{ snapshot.period_start|date:"DATE_FORMAT" }}
+              {% elif snapshot.view == "month" %}
+                {{ snapshot.period_start|date:"F Y" }}
+              {% else %}
+                {{ snapshot.period_start|date:"DATE_FORMAT" }} – {{ snapshot.period_end|date:"DATE_FORMAT" }}
+              {% endif %}
             </p>
             <div class="calendar-legend" aria-label="{% translate 'Calendar legend' %}">
               <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--availability"></span>{% translate "Available" %}</span>
@@ -748,16 +823,35 @@
               <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--confirmed"></span>{% translate "Confirmed" %}</span>
             </div>
           </div>
-          <div class="calendar-week-nav">
-            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;copy=week&amp;source={{ snapshot.week_start|date:'Y-m-d' }}#copy-schedule">{% translate "Copy week" %}</a>
-            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.previous_week_start|date:'Y-m-d' }}">{% translate "Previous week" %}</a>
-            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.current_week_start|date:'Y-m-d' }}">{% translate "Today" %}</a>
-            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.next_week_start|date:'Y-m-d' }}">{% translate "Next week" %}</a>
+          <div class="calendar-toolbar-actions">
+            <nav class="calendar-view-switch" aria-label="{% translate 'Calendar view' %}" role="tablist">
+              <a role="tab" aria-selected="{% if snapshot.view == 'day' %}true{% else %}false{% endif %}" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view=day&amp;date={{ snapshot.focus_date|date:'Y-m-d' }}">{% translate "Day" %}</a>
+              <a role="tab" aria-selected="{% if snapshot.view == 'week' %}true{% else %}false{% endif %}" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view=week&amp;date={{ snapshot.focus_date|date:'Y-m-d' }}">{% translate "Week" %}</a>
+              <a role="tab" aria-selected="{% if snapshot.view == 'month' %}true{% else %}false{% endif %}" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view=month&amp;date={{ snapshot.focus_date|date:'Y-m-d' }}">{% translate "Month" %}</a>
+            </nav>
+            <div class="calendar-period-nav">
+              {% if snapshot.view == "week" %}
+                <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view=week&amp;date={{ snapshot.period_start|date:'Y-m-d' }}&amp;copy=week&amp;source={{ snapshot.period_start|date:'Y-m-d' }}#copy-schedule">{% translate "Copy week" %}</a>
+              {% endif %}
+              <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view={{ snapshot.view }}&amp;date={{ snapshot.previous_period_start|date:'Y-m-d' }}">
+                {% if snapshot.view == "day" %}{% translate "Previous day" %}{% elif snapshot.view == "month" %}{% translate "Previous month" %}{% else %}{% translate "Previous week" %}{% endif %}
+              </a>
+              <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view={{ snapshot.view }}&amp;date={{ snapshot.current_period_start|date:'Y-m-d' }}">{% translate "Today" %}</a>
+              <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view={{ snapshot.view }}&amp;date={{ snapshot.next_period_start|date:'Y-m-d' }}">
+                {% if snapshot.view == "day" %}{% translate "Next day" %}{% elif snapshot.view == "month" %}{% translate "Next month" %}{% else %}{% translate "Next week" %}{% endif %}
+              </a>
+            </div>
           </div>
         </div>
 
         {% timezone selected_partner.timezone %}
-          <section class="calendar-week" aria-label="{% translate 'Weekly calendar' %}">
+          <div class="calendar-grid-scroll">
+          <section class="calendar-grid calendar-grid--{{ snapshot.view }}" aria-label="{% translate 'Calendar period' %}">
+            {% if snapshot.view == "month" %}
+              {% for blank_day in snapshot.leading_blank_days %}
+                <div class="calendar-month-blank" aria-hidden="true"></div>
+              {% endfor %}
+            {% endif %}
             {% for calendar_day in snapshot.days %}
               <article class="calendar-day{% if calendar_day.is_today %} calendar-day--today{% endif %}">
                 <header class="calendar-day-header">
@@ -767,8 +861,8 @@
                   </span>
                   <span class="calendar-day-controls">
                     {% if calendar_day.is_today %}<span class="calendar-today-label">{% translate "Today" %}</span>{% endif %}
-                    <a class="calendar-day-action" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;create=1&amp;date={{ calendar_day.day|date:'Y-m-d' }}#quick-create">{% translate "Add" %}</a>
-                    <a class="calendar-day-action" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;copy=day&amp;source={{ calendar_day.day|date:'Y-m-d' }}#copy-schedule">{% translate "Copy" %}</a>
+                    <a class="calendar-day-action" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view={{ snapshot.view }}&amp;date={{ calendar_day.day|date:'Y-m-d' }}&amp;create=1#quick-create">{% translate "Add" %}</a>
+                    <a class="calendar-day-action" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view={{ snapshot.view }}&amp;date={{ calendar_day.day|date:'Y-m-d' }}&amp;copy=day&amp;source={{ calendar_day.day|date:'Y-m-d' }}#copy-schedule">{% translate "Copy" %}</a>
                   </span>
                 </header>
                 {% if calendar_day.entries %}
@@ -801,7 +895,7 @@
                             {{ entry.display_start_at|date:"H:i" }}–{{ entry.display_end_at|date:"H:i" }}
                             {% if entry.continues_after %}&rarr;{% endif %}
                           </span>
-                          <a class="calendar-entry-title" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.week_start|date:'Y-m-d' }}&amp;appointment={{ entry.record.pk }}#appointment-detail">{{ entry.record.client_profile.display_name }}</a>
+                          <a class="calendar-entry-title" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;view={{ snapshot.view }}&amp;date={{ snapshot.focus_date|date:'Y-m-d' }}&amp;appointment={{ entry.record.pk }}#appointment-detail">{{ entry.record.client_profile.display_name }}</a>
                           <span class="calendar-entry-detail">
                             {% for item in entry.record.service_items.all %}{{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "No service lines" %}{% endfor %}
                           </span>
@@ -819,6 +913,7 @@
               </article>
             {% endfor %}
           </section>
+          </div>
         {% endtimezone %}
       {% else %}
         <section class="calendar-warning">

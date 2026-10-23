@@ -70,7 +70,8 @@ def test_partner_calendar_surfaces_only_selected_tenant_week(client) -> None:
     snapshot = response.context["snapshot"]
     assert snapshot.partner == first["created"].partner
     assert snapshot.booking_resource == first["resource"]
-    assert snapshot.week_start == week_start
+    assert snapshot.view == "week"
+    assert snapshot.period_start == week_start
     assert {entry.record for entry in snapshot.days[0].entries} == {
         window,
         blocked,
@@ -82,6 +83,82 @@ def test_partner_calendar_surfaces_only_selected_tenant_week(client) -> None:
     assert "Lunch break" in content
     assert "Foreign Calendar Client" not in content
     assert "Foreign Calendar Service" not in content
+
+
+@pytest.mark.django_db
+def test_partner_calendar_switches_between_day_week_and_month(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Calendar Views Studio",
+        username="calendar-views-owner",
+        client_name="Calendar Views Client",
+        service_name="Calendar Views Service",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone) + timedelta(days=2)
+    appointment = _create_appointment(
+        context,
+        start_at=_local_datetime(context["created"].partner.timezone, target_day, 11),
+    )
+    client.force_login(context["created"].owner)
+    url = reverse("schedule:calendar")
+    base_query = {
+        "partner": str(context["created"].partner.id),
+        "resource": str(context["resource"].id),
+        "date": target_day.isoformat(),
+    }
+
+    responses = {
+        calendar_view: client.get(url, {**base_query, "view": calendar_view})
+        for calendar_view in ("day", "week", "month")
+    }
+
+    assert all(response.status_code == 200 for response in responses.values())
+    day_snapshot = responses["day"].context["snapshot"]
+    assert day_snapshot.period_start == target_day
+    assert day_snapshot.period_end == target_day
+    assert len(day_snapshot.days) == 1
+
+    week_snapshot = responses["week"].context["snapshot"]
+    week_start = target_day - timedelta(days=target_day.weekday())
+    assert week_snapshot.period_start == week_start
+    assert week_snapshot.period_end == week_start + timedelta(days=6)
+    assert len(week_snapshot.days) == 7
+
+    month_snapshot = responses["month"].context["snapshot"]
+    month_start = target_day.replace(day=1)
+    next_month_probe = month_start.replace(day=28) + timedelta(days=4)
+    next_month_start = next_month_probe.replace(day=1)
+    assert month_snapshot.period_start == month_start
+    assert month_snapshot.period_end == next_month_start - timedelta(days=1)
+    assert len(month_snapshot.days) == month_snapshot.period_end.day
+    assert len(month_snapshot.leading_blank_days) == month_start.weekday()
+
+    for response in responses.values():
+        snapshot = response.context["snapshot"]
+        assert appointment.id in {
+            entry.record.id for day in snapshot.days for entry in day.entries
+        }
+    assert 'aria-selected="true"' in responses["day"].content.decode()
+    assert "Previous month" in responses["month"].content.decode()
+    assert "Next month" in responses["month"].content.decode()
+
+
+@pytest.mark.django_db
+def test_partner_calendar_rejects_unknown_view(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Unknown View Studio",
+        username="unknown-view-owner",
+        client_name="Unknown View Client",
+        service_name="Unknown View Service",
+    )
+    client.force_login(context["created"].owner)
+
+    response = client.get(reverse("schedule:calendar"), {"view": "agenda"})
+
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db
