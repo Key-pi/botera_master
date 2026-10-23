@@ -44,6 +44,10 @@ Status: discovery approved on 2026-08-07.
 - 2026-10-22: Master cancellation of a confirmed appointment, completion, and no-show each queue an idempotent durable client notification after commit. Request rejection keeps its separate message, manual clients without Telegram do not receive delivery records, and final-status corrections stale the superseded notice before queuing the corrected status.
 - 2026-10-22: Exhausted client appointment reminders now create one durable master-facing failure marker linked to the source notification. The linked master receives business-safe Retry, Message client, and View client actions; callbacks re-resolve the source inside trusted partner scope, explicit retries reuse its delivery history, and obsolete markers become stale without duplicate delivery.
 - 2026-10-22: Internal broadcast buttons are wired to existing client flows: `book` starts a fresh partner-scoped booking selection, while `my_appointments` opens the client's future appointments. The router answers with a new message instead of editing the campaign message so the actions work for both text and photo broadcasts.
+- 2026-10-24: The partner appointment changelist is an operational view with partner-local
+  start/end times, service snapshots, major-unit totals, local-date presets, and filters for
+  service, category, and penalty state. Related filter choices remain constrained to the actor's
+  trusted appointment queryset.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

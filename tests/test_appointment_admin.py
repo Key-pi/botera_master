@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -30,6 +30,8 @@ from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.finance.models import Penalty
+from apps.finance.services import apply_penalties_to_appointment, create_penalty
 from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import BookingResource
@@ -615,6 +617,167 @@ def test_future_appointment_cannot_be_completed_or_marked_no_show(
 
 
 @pytest.mark.django_db
+def test_appointment_changelist_supports_operational_filters(
+    appointment_admin_context,
+) -> None:
+    client, _superuser, created, resource, manicure = appointment_admin_context
+    pedicure_category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Pedicure category",
+    )
+    pedicure = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=pedicure_category,
+        name="Pedicure service",
+        price_amount=60_000,
+        duration_minutes=75,
+    )
+    manicure_client = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Tomorrow manicure client",
+    )
+    pedicure_client = create_manual_client_profile(
+        actor=created.owner,
+        partner=created.partner,
+        name="Later pedicure client",
+    )
+    partner_zone = get_zone(created.partner.timezone)
+    local_today = timezone.now().astimezone(partner_zone).date()
+    tomorrow_start = datetime.combine(
+        local_today + timedelta(days=1),
+        time(10, 0),
+        tzinfo=partner_zone,
+    )
+    later_start = datetime.combine(
+        local_today + timedelta(days=10),
+        time(15, 30),
+        tzinfo=partner_zone,
+    )
+    tomorrow_appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=manicure_client,
+        start_at=tomorrow_start,
+        service_items=[AppointmentServiceItemInput(service=manicure)],
+    )
+    later_appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=resource,
+        client_profile=pedicure_client,
+        start_at=later_start,
+        service_items=[AppointmentServiceItemInput(service=pedicure)],
+    )
+    penalty = create_penalty(
+        actor=created.owner,
+        partner=created.partner,
+        client_profile=manicure_client,
+        reason=Penalty.Reason.LATE_CANCEL,
+        amount=5_000,
+    )
+    apply_penalties_to_appointment(
+        actor=created.owner,
+        appointment=tomorrow_appointment,
+        penalties=(penalty,),
+    )
+    changelist_url = reverse("admin:appointments_appointment_changelist")
+
+    tomorrow_response = client.get(changelist_url, {"period": "tomorrow"})
+    next_month_response = client.get(changelist_url, {"period": "next_30_days"})
+    service_response = client.get(
+        changelist_url,
+        {"service_items__service__id__exact": str(manicure.id)},
+    )
+    category_response = client.get(
+        changelist_url,
+        {"service_items__service__category__id__exact": str(pedicure_category.id)},
+    )
+    outstanding_response = client.get(
+        changelist_url,
+        {"penalty_state": "outstanding"},
+    )
+    no_penalty_response = client.get(
+        changelist_url,
+        {"penalty_state": "none"},
+    )
+    search_response = client.get(changelist_url, {"q": "Pedicure service"})
+
+    assert _admin_result_ids(tomorrow_response) == [tomorrow_appointment.id]
+    assert set(_admin_result_ids(next_month_response)) == {
+        tomorrow_appointment.id,
+        later_appointment.id,
+    }
+    assert _admin_result_ids(service_response) == [tomorrow_appointment.id]
+    assert _admin_result_ids(category_response) == [later_appointment.id]
+    assert _admin_result_ids(outstanding_response) == [tomorrow_appointment.id]
+    assert _admin_result_ids(no_penalty_response) == [later_appointment.id]
+    assert _admin_result_ids(search_response) == [later_appointment.id]
+    tomorrow_content = tomorrow_response.content.decode()
+    assert "Manicure" in tomorrow_content
+    assert tomorrow_start.strftime("%Y-%m-%d %H:%M") in tomorrow_content
+    assert "550.00 UAH" in tomorrow_content
+
+
+@pytest.mark.django_db
+def test_appointment_changelist_filter_choices_remain_tenant_scoped(
+    appointment_admin_context,
+) -> None:
+    client, superuser, created, _resource, _service = appointment_admin_context
+    foreign = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Foreign appointment partner",
+        owner_username="foreign-appointment-filter-owner",
+        owner_password="secret",
+    )
+    foreign_resource = BookingResource.objects.get(partner=foreign.partner, is_default=True)
+    foreign_category = create_service_category(
+        actor=foreign.owner,
+        partner=foreign.partner,
+        name="Foreign secret category",
+    )
+    foreign_service = create_service(
+        actor=foreign.owner,
+        partner=foreign.partner,
+        category=foreign_category,
+        name="Foreign secret service",
+        price_amount=10_000,
+        duration_minutes=30,
+    )
+    foreign_client = create_manual_client_profile(
+        actor=foreign.owner,
+        partner=foreign.partner,
+        name="Foreign secret client",
+    )
+    create_confirmed_appointment(
+        actor=foreign.owner,
+        partner=foreign.partner,
+        booking_resource=foreign_resource,
+        client_profile=foreign_client,
+        start_at=_future_hour(days=8),
+        service_items=[AppointmentServiceItemInput(service=foreign_service)],
+    )
+    changelist_url = reverse("admin:appointments_appointment_changelist")
+
+    response = client.get(changelist_url)
+    forged_filter_response = client.get(
+        changelist_url,
+        {"service_items__service__id__exact": str(foreign_service.id)},
+    )
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Foreign appointment partner" not in content
+    assert "Foreign secret category" not in content
+    assert "Foreign secret service" not in content
+    assert _admin_result_ids(forged_filter_response) == []
+    assert Appointment.objects.filter(partner=created.partner).exists() is False
+
+
+@pytest.mark.django_db
 def test_status_flow_does_not_expose_other_partner_appointment(
     appointment_admin_context,
 ) -> None:
@@ -691,3 +854,8 @@ def _proposal_formset_management(*, total_forms: int) -> dict[str, str]:
         "options-MIN_NUM_FORMS": "0",
         "options-MAX_NUM_FORMS": "1000",
     }
+
+
+def _admin_result_ids(response) -> list:
+    assert response.status_code == 200
+    return [appointment.id for appointment in response.context["cl"].result_list]

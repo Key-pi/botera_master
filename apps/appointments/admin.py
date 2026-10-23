@@ -31,6 +31,19 @@ from apps.appointments.proposals import (
     create_appointment_proposal,
     decline_appointment_proposal_as_partner,
 )
+from apps.appointments.selectors import (
+    APPOINTMENT_PENALTY_ANY,
+    APPOINTMENT_PENALTY_NONE,
+    APPOINTMENT_PENALTY_OUTSTANDING,
+    APPOINTMENT_PERIOD_NEXT_7_DAYS,
+    APPOINTMENT_PERIOD_NEXT_30_DAYS,
+    APPOINTMENT_PERIOD_PAST,
+    APPOINTMENT_PERIOD_TODAY,
+    APPOINTMENT_PERIOD_TOMORROW,
+    APPOINTMENT_PERIOD_UPCOMING,
+    filter_appointments_by_operational_period,
+    filter_appointments_by_penalty_state,
+)
 from apps.appointments.services import (
     available_appointment_status_targets,
     correct_final_appointment_status,
@@ -57,6 +70,7 @@ from apps.finance.services import (
 )
 from apps.schedule.models import BookingResource
 from core.admin import PartnerScopedAdminMixin
+from core.money import Money
 from core.timezones import to_partner_time
 
 
@@ -139,21 +153,83 @@ class AppointmentProposalOptionInline(admin.TabularInline):
         return False
 
 
+class AppointmentOperationalPeriodFilter(admin.SimpleListFilter):
+    """Expose useful date presets using each appointment partner's timezone."""
+
+    title = "appointment period"
+    parameter_name = "period"
+
+    def lookups(self, request, model_admin):
+        return (
+            (APPOINTMENT_PERIOD_TODAY, "Today"),
+            (APPOINTMENT_PERIOD_TOMORROW, "Tomorrow"),
+            (APPOINTMENT_PERIOD_NEXT_7_DAYS, "Next 7 days"),
+            (APPOINTMENT_PERIOD_NEXT_30_DAYS, "Next 30 days"),
+            (APPOINTMENT_PERIOD_UPCOMING, "All upcoming"),
+            (APPOINTMENT_PERIOD_PAST, "Past"),
+        )
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        return filter_appointments_by_operational_period(
+            queryset,
+            period=self.value(),
+        )
+
+
+class AppointmentPenaltyStateFilter(admin.SimpleListFilter):
+    """Filter appointments by incident or applied penalty state."""
+
+    title = "penalties"
+    parameter_name = "penalty_state"
+
+    def lookups(self, request, model_admin):
+        return (
+            (APPOINTMENT_PENALTY_ANY, "Has a penalty"),
+            (APPOINTMENT_PENALTY_OUTSTANDING, "Has an outstanding penalty"),
+            (APPOINTMENT_PENALTY_NONE, "No penalties"),
+        )
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        return filter_appointments_by_penalty_state(
+            queryset,
+            penalty_state=self.value(),
+        )
+
+
 @admin.register(Appointment)
 class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     change_form_template = "admin/appointments/appointment/change_form.html"
     list_display = [
         "client_profile",
+        "services_summary",
         "partner",
         "booking_resource",
         "status",
-        "start_at",
-        "end_at",
-        "total_amount",
-        "currency",
+        "start_at_partner_time",
+        "end_at_partner_time",
+        "total_display",
     ]
-    list_filter = ["partner", "booking_resource", "status", "source", "is_near_fit"]
-    search_fields = ["client_profile__name", "client_profile__phone"]
+    list_filter = [
+        AppointmentOperationalPeriodFilter,
+        "status",
+        "is_near_fit",
+        ("partner", admin.RelatedOnlyFieldListFilter),
+        ("booking_resource", admin.RelatedOnlyFieldListFilter),
+        "source",
+        ("service_items__service__category", admin.RelatedOnlyFieldListFilter),
+        ("service_items__service", admin.RelatedOnlyFieldListFilter),
+        AppointmentPenaltyStateFilter,
+    ]
+    search_fields = [
+        "client_profile__name",
+        "client_profile__phone",
+        "client_profile__telegram_identity__username",
+        "service_items__service_name_snapshot",
+    ]
     autocomplete_fields = ["partner", "booking_resource", "client_profile", "created_by"]
     readonly_fields = [
         "partner",
@@ -187,6 +263,27 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     ]
     inlines = [AppointmentServiceItemInline]
     actions = ["confirm_requested", "mark_completed", "mark_no_show", "cancel_by_master"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("service_items")
+
+    @admin.display(description="Services")
+    def services_summary(self, obj):
+        names = [item.service_name_snapshot for item in obj.service_items.all()]
+        return ", ".join(names) if names else "-"
+
+    @admin.display(description="Start (partner time)", ordering="start_at")
+    def start_at_partner_time(self, obj):
+        return _partner_datetime(obj.start_at, obj.partner.timezone)
+
+    @admin.display(description="End (partner time)", ordering="end_at")
+    def end_at_partner_time(self, obj):
+        return _partner_datetime(obj.end_at, obj.partner.timezone)
+
+    @admin.display(description="Total", ordering="total_amount")
+    def total_display(self, obj):
+        amount = Money(amount=obj.total_amount, currency=obj.currency)
+        return f"{amount.to_major_decimal()} {amount.currency}"
 
     def get_urls(self):
         custom_urls = [
