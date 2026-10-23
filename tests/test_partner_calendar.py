@@ -1,6 +1,7 @@
 from datetime import datetime, time, timedelta
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import timezone
 
@@ -12,6 +13,7 @@ from apps.appointments.services import (
     create_confirmed_appointment,
     create_requested_appointment,
 )
+from apps.audit.models import AuditEvent
 from apps.catalog.models import Service, ServiceCategory
 from apps.clients.services import (
     create_manual_client_profile,
@@ -19,14 +21,24 @@ from apps.clients.services import (
     upsert_telegram_identity,
 )
 from apps.partners.services import create_partner_with_owner
-from apps.schedule.models import AvailabilityWindow, BlockedTime, BookingResource
+from apps.schedule.models import (
+    AvailabilityWindow,
+    BlockedTime,
+    BookingResource,
+    ScheduleConflictAcknowledgement,
+)
 from apps.schedule.selectors import (
     SCHEDULE_CONFLICT_BLOCKED_TIME,
     SCHEDULE_CONFLICT_INACTIVE_RESOURCE,
     SCHEDULE_CONFLICT_OUTSIDE_AVAILABILITY,
     schedule_conflicts_for_partner_period,
 )
-from apps.schedule.services import create_availability_window, create_blocked_time
+from apps.schedule.services import (
+    acknowledge_schedule_conflicts,
+    create_availability_window,
+    create_blocked_time,
+    update_blocked_time,
+)
 from core.timezones import get_zone
 
 
@@ -288,6 +300,219 @@ def test_calendar_and_conflict_list_surface_blocked_confirmed_appointment(client
     assert dashboard_response.status_code == 200
     assert dashboard_response.context["snapshot"].schedule_conflict_count == 1
     assert reverse("schedule:conflicts") in dashboard_response.content.decode()
+
+
+@pytest.mark.django_db
+def test_conflict_list_keeps_and_reopens_selected_appointments(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Conflict Decisions Studio",
+        username="conflict-decisions-owner",
+        client_name="Conflict Decisions Client",
+        service_name="Conflict Decisions Service",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone) + timedelta(days=1)
+    availability_start = _local_datetime(
+        context["created"].partner.timezone,
+        target_day,
+        9,
+    )
+    create_availability_window(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=availability_start,
+        end_at=availability_start + timedelta(hours=4),
+    )
+    appointments = (
+        _create_appointment(
+            context,
+            start_at=availability_start + timedelta(hours=1),
+        ),
+        _create_appointment(
+            context,
+            start_at=availability_start + timedelta(hours=2),
+        ),
+    )
+    create_blocked_time(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=appointments[0].start_at + timedelta(minutes=30),
+        end_at=appointments[1].start_at + timedelta(minutes=30),
+        reason="Unexpected break",
+    )
+    client.force_login(context["created"].owner)
+    conflict_url = reverse("schedule:conflicts")
+    query = (
+        f"?partner={context['created'].partner.id}"
+        f"&resource={context['resource'].id}"
+    )
+
+    keep_response = client.post(
+        f"{conflict_url}{query}",
+        {
+            "action": "keep_as_is",
+            "appointments": [str(appointment.id) for appointment in appointments],
+        },
+    )
+
+    assert keep_response.status_code == 302
+    assert ScheduleConflictAcknowledgement.objects.filter(
+        partner=context["created"].partner,
+        appointment__in=appointments,
+    ).count() == 2
+    assert AuditEvent.objects.filter(
+        partner=context["created"].partner,
+        event_type="schedule.conflicts_kept_as_is",
+    ).exists()
+
+    active_response = client.get(f"{conflict_url}{query}")
+    kept_response = client.get(f"{conflict_url}{query}&show=kept_as_is")
+    dashboard_response = client.get(
+        reverse("partners:dashboard"),
+        {"partner": str(context["created"].partner.id)},
+    )
+    calendar_response = client.get(
+        reverse("schedule:calendar"),
+        {
+            "partner": str(context["created"].partner.id),
+            "resource": str(context["resource"].id),
+            "view": "week",
+            "date": target_day.isoformat(),
+        },
+    )
+
+    assert active_response.context["conflict_count"] == 0
+    assert active_response.context["kept_conflict_count"] == 2
+    assert kept_response.context["conflict_count"] == 2
+    assert all(
+        row["conflict"].is_acknowledged
+        for row in kept_response.context["conflict_rows"]
+    )
+    assert dashboard_response.context["snapshot"].schedule_conflict_count == 0
+    assert calendar_response.context["snapshot"].conflicts == ()
+
+    reopen_response = client.post(
+        f"{conflict_url}{query}&show=kept_as_is",
+        {
+            "action": "reopen",
+            "appointments": [str(appointment.id) for appointment in appointments],
+        },
+    )
+
+    assert reopen_response.status_code == 302
+    assert ScheduleConflictAcknowledgement.objects.filter(
+        partner=context["created"].partner,
+        appointment__in=appointments,
+    ).exists() is False
+    assert AuditEvent.objects.filter(
+        partner=context["created"].partner,
+        event_type="schedule.conflicts_reopened",
+    ).exists()
+    assert client.get(f"{conflict_url}{query}").context["conflict_count"] == 2
+
+
+@pytest.mark.django_db
+def test_kept_conflict_returns_when_relevant_schedule_facts_change() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    context = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Conflict Fingerprint Studio",
+        username="conflict-fingerprint-owner",
+        client_name="Conflict Fingerprint Client",
+        service_name="Conflict Fingerprint Service",
+    )
+    target_day = _future_week_start(context["created"].partner.timezone) + timedelta(days=2)
+    availability_start = _local_datetime(
+        context["created"].partner.timezone,
+        target_day,
+        9,
+    )
+    create_availability_window(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=availability_start,
+        end_at=availability_start + timedelta(hours=3),
+    )
+    appointment = _create_appointment(
+        context,
+        start_at=availability_start + timedelta(hours=1),
+    )
+    blocked_time = create_blocked_time(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        booking_resource=context["resource"],
+        start_at=appointment.start_at + timedelta(minutes=20),
+        end_at=appointment.end_at,
+        reason="Original break",
+    )
+    period_end = appointment.end_at + timedelta(hours=1)
+
+    acknowledge_schedule_conflicts(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        appointment_ids=(appointment.id,),
+    )
+    assert schedule_conflicts_for_partner_period(
+        partner=context["created"].partner,
+        start_at=availability_start,
+        end_at=period_end,
+    ) == ()
+
+    update_blocked_time(
+        actor=context["created"].owner,
+        blocked_time=blocked_time,
+        booking_resource=context["resource"],
+        start_at=appointment.start_at + timedelta(minutes=10),
+        end_at=appointment.end_at - timedelta(minutes=10),
+        reason="Changed break",
+    )
+
+    conflicts = schedule_conflicts_for_partner_period(
+        partner=context["created"].partner,
+        start_at=availability_start,
+        end_at=period_end,
+    )
+    assert len(conflicts) == 1
+    assert conflicts[0].appointment == appointment
+    assert conflicts[0].is_acknowledged is False
+    assert ScheduleConflictAcknowledgement.objects.filter(appointment=appointment).exists()
+
+
+@pytest.mark.django_db
+def test_schedule_conflict_decision_rejects_foreign_appointment() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    first = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Scoped Conflict Studio",
+        username="scoped-conflict-owner",
+        client_name="Scoped Conflict Client",
+        service_name="Scoped Conflict Service",
+    )
+    second = _create_calendar_context(
+        superuser=superuser,
+        partner_name="Foreign Conflict Studio",
+        username="foreign-conflict-owner",
+        client_name="Foreign Conflict Client",
+        service_name="Foreign Conflict Service",
+    )
+    target_day = _future_week_start(second["created"].partner.timezone)
+    foreign_appointment = _create_appointment(
+        second,
+        start_at=_local_datetime(second["created"].partner.timezone, target_day, 10),
+    )
+
+    with pytest.raises(ValidationError):
+        acknowledge_schedule_conflicts(
+            actor=first["created"].owner,
+            partner=first["created"].partner,
+            appointment_ids=(foreign_appointment.id,),
+        )
+
+    assert ScheduleConflictAcknowledgement.objects.exists() is False
 
 
 @pytest.mark.django_db

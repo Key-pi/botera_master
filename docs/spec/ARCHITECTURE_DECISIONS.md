@@ -158,6 +158,9 @@ This document records approved architecture-preparation decisions and deferred t
 - Overnight template window rules are not supported in MVP; split them into two day-local rules if needed.
 - Booking horizon is configurable per partner.
 - Changing availability does not silently move confirmed appointments; conflicts are shown for partner resolution.
+- Schedule conflicts remain computed read models. The partner's `leave as is` decision is persisted separately as one acknowledgement per appointment with a fingerprint of the conflict-relevant facts.
+- Matching acknowledgements suppress active conflict markers and counts without mutating the appointment. If relevant appointment/schedule facts change, the fingerprint mismatch returns the conflict to active review; explicit reopen removes the acknowledgement.
+- Conflict acknowledgement mutations are tenant-scoped owner services, run transactionally, and create partner-visible audit events. Bulk keep/reopen is bounded to 100 selected conflicts per operation.
 - Confirmed appointment overlap prevention is a critical invariant and must be enforced transactionally/concurrency-safely, not only through UI filtering.
 - Confirmed appointment overlap protection is scoped to a booking resource, not directly to the whole partner.
 - Solo-master MVP has one default booking resource per partner; future studios can add multiple booking resources under one partner.

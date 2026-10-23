@@ -258,3 +258,30 @@ class BlockedTime(PartnerBoundModel):
 
     def __str__(self) -> str:
         return f"{self.booking_resource} blocked {self.start_at} - {self.end_at}"
+
+
+class ScheduleConflictAcknowledgement(PartnerBoundModel):
+    """Partner decision to keep one appointment for one conflict fingerprint."""
+
+    appointment = models.OneToOneField(
+        "appointments.Appointment",
+        on_delete=models.CASCADE,
+        related_name="schedule_conflict_acknowledgement",
+    )
+    fingerprint = models.CharField(max_length=64)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="acknowledged_schedule_conflicts",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["partner", "updated_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.appointment} kept as is"

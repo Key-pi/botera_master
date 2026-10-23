@@ -125,6 +125,8 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-06: For schedule conflicts, the master should see a list of conflict appointments and actions: leave as is, propose reschedule, cancel, or message the client.
 - 2026-08-06: When proposing a reschedule, the master can send concrete alternative slots; if they do not fit, the client can choose another available slot or cancel.
 - 2026-08-06: Bulk actions for conflict appointments are included in MVP.
+- 2026-10-23: `Leave as is` persists a partner-scoped acknowledgement for the current schedule-conflict fingerprint rather than changing the appointment. Matching acknowledgements hide active markers/counts, explicit reopen removes the decision, and relevant schedule/appointment changes make a stale decision visible again.
+- 2026-10-23: Schedule conflict keep/reopen actions support bounded bulk selection in MVP and create partner-visible audit events.
 - 2026-08-06: Client reminder intervals are configurable by the partner in MVP.
 - 2026-08-06: Master reminders before appointments are configurable by the partner in MVP; the partner may enable/disable them and choose timing.
 - 2026-08-06: If a client reminder is not delivered, the master should see/know about it so they can act.

@@ -994,6 +994,10 @@ When schedule changes create conflicts:
 - Partner can cancel appointment.
 - Partner can message client.
 - Partner can perform bulk conflict actions.
+- `Leave as is` persists a partner decision for the current conflict fingerprint and removes that conflict from active review, calendar warning markers, and dashboard counts without changing the appointment.
+- Partner can reopen a `leave as is` decision so the conflict returns to active review.
+- A conflict returns to active review automatically when relevant appointment or schedule facts change and the stored fingerprint no longer matches.
+- Active and `kept as is` conflicts remain separate views; keep/reopen actions support selecting multiple appointments from the current page.
 
 ## Deferred Architecture And Design Questions
 

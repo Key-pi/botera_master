@@ -346,6 +346,25 @@ Suggested constraints/indexes:
 - index `partner + end_at`.
 - index `booking_resource + start_at`.
 
+### ScheduleConflictAcknowledgement
+
+Persistent partner decision to keep one confirmed appointment unchanged for the
+currently observed schedule conflict.
+
+Implemented fields:
+- `partner`
+- `appointment`, one-to-one
+- `fingerprint`, SHA-256 of the conflict-relevant appointment and schedule facts
+- `acknowledged_by`, nullable when the actor is later removed
+- timestamps
+
+Rules:
+- the conflict itself remains a computed read model; only the partner decision is persisted.
+- a matching fingerprint hides the conflict from active review, calendar warning markers, and dashboard conflict counts.
+- if conflict-relevant appointment, resource, availability, blocked-time, or near-fit facts change, the old fingerprint no longer matches and the conflict returns to active review.
+- the partner can explicitly reopen a matching decision by deleting the acknowledgement through the owner service.
+- acknowledgement writes and deletes are partner-scoped, transactional, and audit logged.
+
 ### AvailabilityTemplate
 
 Reusable partner-defined template for applying availability windows.

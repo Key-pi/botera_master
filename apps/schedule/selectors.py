@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from datetime import timezone as datetime_timezone
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -17,6 +21,7 @@ from apps.schedule.models import (
     BlockedTime,
     BookingResource,
     PartnerScheduleSettings,
+    ScheduleConflictAcknowledgement,
 )
 from core.timezones import get_zone
 
@@ -76,6 +81,12 @@ class ScheduleConflict:
     appointment: Appointment
     reasons: tuple[str, ...]
     overlapping_blocked_times: tuple[BlockedTime, ...]
+    fingerprint: str
+    acknowledgement: ScheduleConflictAcknowledgement | None = None
+
+    @property
+    def is_acknowledged(self) -> bool:
+        return self.acknowledgement is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +146,7 @@ def upcoming_schedule_conflicts_for_partner(
     partner: Partner,
     booking_resource: BookingResource | None = None,
     now: datetime | None = None,
+    include_acknowledged: bool = False,
 ) -> tuple[ScheduleConflict, ...]:
     """Return bounded future conflicts for the partner operations screen."""
 
@@ -144,6 +156,7 @@ def upcoming_schedule_conflicts_for_partner(
         booking_resource=booking_resource,
         start_at=current_time,
         end_at=current_time + timedelta(days=MAX_BOOKING_HORIZON_DAYS),
+        include_acknowledged=include_acknowledged,
     )
 
 
@@ -153,6 +166,7 @@ def schedule_conflicts_for_partner_period(
     start_at: datetime,
     end_at: datetime,
     booking_resource: BookingResource | None = None,
+    include_acknowledged: bool = False,
 ) -> tuple[ScheduleConflict, ...]:
     """Compute confirmed appointments made invalid by the current schedule."""
 
@@ -205,6 +219,11 @@ def schedule_conflicts_for_partner_period(
         availability_windows=tuple(windows.order_by("start_at", "end_at")),
         blocked_times=tuple(blocked_times.order_by("start_at", "end_at")),
         near_fit_tolerance_minutes=tolerance_minutes,
+        acknowledgements_by_appointment=_acknowledgements_by_appointment(
+            partner=partner,
+            appointment_ids=(appointment.id for appointment in appointment_records),
+        ),
+        include_acknowledged=include_acknowledged,
     )
 
 
@@ -366,6 +385,10 @@ def partner_calendar_snapshot(
             if settings is not None
             else DEFAULT_NEAR_FIT_TOLERANCE_MINUTES
         ),
+        acknowledgements_by_appointment=_acknowledgements_by_appointment(
+            partner=partner,
+            appointment_ids=(appointment.id for appointment in appointments),
+        ),
     )
 
     days = tuple(
@@ -507,6 +530,11 @@ def _schedule_conflicts_from_records(
     availability_windows: tuple[AvailabilityWindow, ...],
     blocked_times: tuple[BlockedTime, ...],
     near_fit_tolerance_minutes: int,
+    acknowledgements_by_appointment: dict[
+        object,
+        ScheduleConflictAcknowledgement,
+    ] | None = None,
+    include_acknowledged: bool = False,
 ) -> tuple[ScheduleConflict, ...]:
     windows_by_resource: dict[object, list[AvailabilityWindow]] = {}
     for window in availability_windows:
@@ -545,14 +573,96 @@ def _schedule_conflicts_from_records(
             reasons.append(SCHEDULE_CONFLICT_OUTSIDE_AVAILABILITY)
 
         if reasons:
+            fingerprint = _schedule_conflict_fingerprint(
+                appointment=appointment,
+                reasons=tuple(reasons),
+                merged_windows=merged_windows,
+                overlapping_blocks=overlapping_blocks,
+                near_fit_tolerance_minutes=near_fit_tolerance_minutes,
+            )
+            acknowledgement = (acknowledgements_by_appointment or {}).get(appointment.id)
+            if acknowledgement is not None and acknowledgement.fingerprint != fingerprint:
+                acknowledgement = None
+            if acknowledgement is not None and not include_acknowledged:
+                continue
             conflicts.append(
                 ScheduleConflict(
                     appointment=appointment,
                     reasons=tuple(reasons),
                     overlapping_blocked_times=overlapping_blocks,
+                    fingerprint=fingerprint,
+                    acknowledgement=acknowledgement,
                 )
             )
     return tuple(conflicts)
+
+
+def _acknowledgements_by_appointment(
+    *,
+    partner: Partner,
+    appointment_ids: Iterable[UUID],
+) -> dict[object, ScheduleConflictAcknowledgement]:
+    ids = tuple(appointment_ids)
+    if not ids:
+        return {}
+    return {
+        acknowledgement.appointment_id: acknowledgement
+        for acknowledgement in ScheduleConflictAcknowledgement.objects.filter(
+            partner=partner,
+            appointment_id__in=ids,
+        )
+    }
+
+
+def _schedule_conflict_fingerprint(
+    *,
+    appointment: Appointment,
+    reasons: tuple[str, ...],
+    merged_windows: tuple[tuple[datetime, datetime], ...],
+    overlapping_blocks: tuple[BlockedTime, ...],
+    near_fit_tolerance_minutes: int,
+) -> str:
+    """Hash only schedule facts that can change this appointment's conflict."""
+
+    tolerance = (
+        timedelta(minutes=near_fit_tolerance_minutes)
+        if appointment.is_near_fit
+        else timedelta(0)
+    )
+    relevant_windows = tuple(
+        (window_start, window_end)
+        for window_start, window_end in merged_windows
+        if window_start <= appointment.end_at + tolerance
+        and window_end >= appointment.start_at - tolerance
+    )
+    payload = {
+        "version": 1,
+        "appointment": str(appointment.id),
+        "resource": str(appointment.booking_resource_id),
+        "resource_active": appointment.booking_resource.is_active,
+        "start_at": _fingerprint_datetime(appointment.start_at),
+        "end_at": _fingerprint_datetime(appointment.end_at),
+        "is_near_fit": appointment.is_near_fit,
+        "near_fit_tolerance_minutes": near_fit_tolerance_minutes,
+        "reasons": reasons,
+        "availability": tuple(
+            (_fingerprint_datetime(start_at), _fingerprint_datetime(end_at))
+            for start_at, end_at in relevant_windows
+        ),
+        "blocked": tuple(
+            (
+                _fingerprint_datetime(blocked_time.start_at),
+                _fingerprint_datetime(blocked_time.end_at),
+            )
+            for blocked_time in overlapping_blocks
+        ),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _fingerprint_datetime(value: datetime) -> str:
+    return value.astimezone(datetime_timezone.utc).isoformat()
 
 
 def _merge_availability_windows(

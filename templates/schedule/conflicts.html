@@ -27,7 +27,8 @@
     .conflict-header-actions,
     .conflict-filter,
     .conflict-actions,
-    .conflict-pagination {
+    .conflict-pagination,
+    .conflict-bulk-actions {
       align-items: center;
       display: flex;
       flex-wrap: wrap;
@@ -55,9 +56,28 @@
     .conflict-workspace-nav a[aria-current="page"] {
       background: var(--selected-bg);
     }
+    .conflict-view-tabs {
+      border-bottom: 1px solid var(--hairline-color);
+      display: flex;
+      gap: 0;
+    }
+    .conflict-view-tabs a {
+      border: 1px solid transparent;
+      border-bottom: 0;
+      font-weight: 600;
+      padding: 9px 13px;
+      text-decoration: none;
+    }
+    .conflict-view-tabs a[aria-current="page"] {
+      background: var(--selected-bg);
+      border-color: var(--hairline-color);
+    }
     .conflict-summary {
       border-left: 4px solid #b54848;
       padding: 3px 0 3px 14px;
+    }
+    .conflict-summary--kept {
+      border-left-color: #417690;
     }
     .conflict-summary h2 {
       font-size: 1rem;
@@ -82,6 +102,9 @@
       color: var(--body-quiet-color);
       font-size: 0.72rem;
       text-transform: uppercase;
+    }
+    .conflict-select-cell {
+      width: 32px;
     }
     .conflict-client,
     .conflict-time {
@@ -109,6 +132,25 @@
     }
     .conflict-actions .button {
       white-space: nowrap;
+    }
+    .conflict-inline-form {
+      display: inline;
+      margin: 0;
+    }
+    .conflict-bulk-actions {
+      background: var(--darkened-bg);
+      justify-content: space-between;
+      padding: 10px 12px;
+    }
+    .conflict-bulk-actions p {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .conflict-form-errors {
+      border-left: 4px solid var(--error-fg);
+      color: var(--error-fg);
+      margin: 0;
+      padding: 4px 0 4px 14px;
     }
     .conflict-empty {
       border-left: 4px solid #39865b;
@@ -171,6 +213,14 @@
         grid-template-columns: minmax(92px, 0.35fr) minmax(0, 1fr);
         padding: 6px 10px;
       }
+      .conflict-table td.conflict-select-cell {
+        display: block;
+        padding-bottom: 0;
+        width: auto;
+      }
+      .conflict-table td.conflict-select-cell::before {
+        content: none;
+      }
       .conflict-table td::before {
         color: var(--body-quiet-color);
         content: attr(data-label);
@@ -182,6 +232,13 @@
         box-sizing: border-box;
         flex: 1 1 140px;
         text-align: center;
+      }
+      .conflict-bulk-actions {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .conflict-bulk-actions .button {
+        width: 100%;
       }
     }
   </style>
@@ -202,6 +259,7 @@
           {% if partners|length > 1 %}
             <form class="conflict-filter" method="get">
               <label for="conflict-partner">{% translate "Partner" %}</label>
+              {% if conflict_mode != "active" %}<input type="hidden" name="show" value="{{ conflict_mode }}">{% endif %}
               <select id="conflict-partner" name="partner">
                 {% for partner in partners %}
                   <option value="{{ partner.pk }}"{% if partner.pk == selected_partner.pk %} selected{% endif %}>{{ partner.name }}</option>
@@ -212,6 +270,7 @@
           {% endif %}
           <form class="conflict-filter" method="get">
             <input type="hidden" name="partner" value="{{ selected_partner.pk }}">
+            {% if conflict_mode != "active" %}<input type="hidden" name="show" value="{{ conflict_mode }}">{% endif %}
             <label for="conflict-resource">{% translate "Resource" %}</label>
             <select id="conflict-resource" name="resource">
               <option value="">{% translate "All resources" %}</option>
@@ -238,23 +297,64 @@
         <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Activity Log" %}</a>
       </nav>
 
+      <nav class="conflict-view-tabs" aria-label="{% translate 'Conflict state' %}">
+        <a{% if conflict_mode == "active" %} aria-current="page"{% endif %} href="{% url 'schedule:conflicts' %}?partner={{ selected_partner.pk }}{% if selected_resource %}&amp;resource={{ selected_resource.pk }}{% endif %}">
+          {% translate "Active" %} ({{ active_conflict_count }})
+        </a>
+        <a{% if conflict_mode == "kept_as_is" %} aria-current="page"{% endif %} href="{% url 'schedule:conflicts' %}?partner={{ selected_partner.pk }}{% if selected_resource %}&amp;resource={{ selected_resource.pk }}{% endif %}&amp;show=kept_as_is">
+          {% translate "Kept as is" %} ({{ kept_conflict_count }})
+        </a>
+      </nav>
+
+      {% if action_form.non_field_errors or action_form.action.errors or action_form.appointments.errors %}
+        <div class="conflict-form-errors" role="alert">
+          {% for error in action_form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+          {% for error in action_form.action.errors %}<p>{{ error }}</p>{% endfor %}
+          {% for error in action_form.appointments.errors %}<p>{{ error }}</p>{% endfor %}
+        </div>
+      {% endif %}
+
       {% if conflict_count %}
-        <section class="conflict-summary">
+        <section class="conflict-summary{% if conflict_mode == 'kept_as_is' %} conflict-summary--kept{% endif %}">
           <h2>
-            {% blocktranslate count counter=conflict_count %}
-              One appointment needs schedule review
-            {% plural %}
-              {{ counter }} appointments need schedule review
-            {% endblocktranslate %}
+            {% if conflict_mode == "kept_as_is" %}
+              {% blocktranslate count counter=conflict_count %}
+                One appointment is kept as is
+              {% plural %}
+                {{ counter }} appointments are kept as is
+              {% endblocktranslate %}
+            {% else %}
+              {% blocktranslate count counter=conflict_count %}
+                One appointment needs schedule review
+              {% plural %}
+                {{ counter }} appointments need schedule review
+              {% endblocktranslate %}
+            {% endif %}
           </h2>
-          <p>{% translate "Appointments stay unchanged until you cancel them or the client accepts a proposed time. Leaving a row untouched keeps the current appointment." %}</p>
+          {% if conflict_mode == "kept_as_is" %}
+            <p>{% translate "These appointments remain unchanged. Reopen a decision when the conflict should return to active review." %}</p>
+          {% else %}
+            <p>{% translate "Appointments stay unchanged until you cancel them or the client accepts a proposed time. Keep as is removes the current conflict from active review." %}</p>
+          {% endif %}
         </section>
+
+        <form id="conflict-bulk-form" class="conflict-bulk-actions" method="post" action="{{ conflict_action_url }}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="{% if conflict_mode == 'kept_as_is' %}reopen{% else %}keep_as_is{% endif %}">
+          <strong>{% translate "Bulk action" %}</strong>
+          <button class="button" type="submit">
+            {% if conflict_mode == "kept_as_is" %}{% translate "Reopen selected" %}{% else %}{% translate "Keep selected as is" %}{% endif %}
+          </button>
+        </form>
 
         {% timezone selected_partner.timezone %}
           <div class="conflict-table-wrap">
             <table class="conflict-table">
               <thead>
                 <tr>
+                  <th class="conflict-select-cell">
+                    <input id="conflict-select-all" type="checkbox" aria-label="{% translate 'Select all conflicts on this page' %}">
+                  </th>
                   <th>{% translate "Date and time" %}</th>
                   <th>{% translate "Client and services" %}</th>
                   <th>{% translate "Resource" %}</th>
@@ -265,6 +365,9 @@
               <tbody>
                 {% for row in conflict_rows %}
                   <tr>
+                    <td class="conflict-select-cell">
+                      <input class="conflict-row-checkbox" type="checkbox" name="appointments" value="{{ row.conflict.appointment.pk }}" form="conflict-bulk-form" aria-label="{% blocktranslate with client=row.conflict.appointment.client_profile.display_name %}Select conflict for {{ client }}{% endblocktranslate %}">
+                    </td>
                     <td data-label="{% translate 'Date and time' %}">
                       <div>
                         {% if row.calendar_url %}
@@ -315,6 +418,14 @@
                     </td>
                     <td data-label="{% translate 'Actions' %}">
                       <nav class="conflict-actions" aria-label="{% translate 'Conflict actions' %}">
+                        <form class="conflict-inline-form" method="post" action="{{ conflict_action_url }}">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="{% if conflict_mode == 'kept_as_is' %}reopen{% else %}keep_as_is{% endif %}">
+                          <input type="hidden" name="appointments" value="{{ row.conflict.appointment.pk }}">
+                          <button class="button" type="submit">
+                            {% if conflict_mode == "kept_as_is" %}{% translate "Reopen" %}{% else %}{% translate "Keep as is" %}{% endif %}
+                          </button>
+                        </form>
                         {% if row.actions.proposal_url %}<a class="button default" href="{{ row.actions.proposal_url }}">{% translate "Propose time" %}</a>{% endif %}
                         {% if row.actions.cancel_url %}<a class="button" href="{{ row.actions.cancel_url }}">{% translate "Cancel" %}</a>{% endif %}
                         {% if row.actions.message_url %}<a class="button" href="{{ row.actions.message_url }}">{% translate "Message" %}</a>{% endif %}
@@ -337,8 +448,13 @@
         {% endtimezone %}
       {% else %}
         <section class="conflict-empty">
-          <h2>{% translate "No active schedule conflicts" %}</h2>
-          <p>{% translate "Future confirmed appointments fit the current availability and blocked-time rules." %}</p>
+          {% if conflict_mode == "kept_as_is" %}
+            <h2>{% translate "No appointments kept as is" %}</h2>
+            <p>{% translate "Keep an active conflict as is when the current appointment should remain unchanged." %}</p>
+          {% else %}
+            <h2>{% translate "No active schedule conflicts" %}</h2>
+            <p>{% translate "Future confirmed appointments fit the current availability and blocked-time rules, or their current conflicts were already kept as is." %}</p>
+          {% endif %}
         </section>
       {% endif %}
     {% else %}
@@ -348,4 +464,23 @@
       </section>
     {% endif %}
   </main>
+
+  <script>
+    (() => {
+      const selectAll = document.getElementById("conflict-select-all");
+      if (!selectAll) return;
+      const rows = Array.from(document.querySelectorAll(".conflict-row-checkbox"));
+      selectAll.addEventListener("change", () => {
+        rows.forEach((checkbox) => {
+          checkbox.checked = selectAll.checked;
+        });
+      });
+      rows.forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          selectAll.checked = rows.length > 0 && rows.every((item) => item.checked);
+          selectAll.indeterminate = rows.some((item) => item.checked) && !selectAll.checked;
+        });
+      });
+    })();
+  </script>
 {% endblock %}

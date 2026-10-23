@@ -240,6 +240,9 @@ Superuser can:
 - Partner can send concrete alternative slots to clients.
 - If proposed slots do not fit, client can choose another available slot or cancel.
 - Bulk actions for schedule conflicts are part of MVP.
+- `Leave as is` keeps the appointment unchanged and moves the current conflict out of active review; the decision can be reopened.
+- Active conflict indicators return when conflict-relevant schedule or appointment facts change after `leave as is`.
+- Active and `kept as is` conflict lists support bulk keep/reopen decisions.
 - A convenient calendar-like admin experience for weekly/monthly planning is desired.
 
 ### Booking Flow

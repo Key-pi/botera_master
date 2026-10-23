@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from uuid import UUID
 
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -134,6 +135,36 @@ class CalendarCopyScheduleForm(forms.Form):
         if self.scope == self.WEEK:
             return value - timedelta(days=value.weekday())
         return value
+
+
+class ScheduleConflictActionForm(forms.Form):
+    """Validate tenant-scoped selections from the schedule conflict screen."""
+
+    KEEP_AS_IS = "keep_as_is"
+    REOPEN = "reopen"
+
+    action = forms.ChoiceField(
+        choices=(
+            (KEEP_AS_IS, "Keep as is"),
+            (REOPEN, "Reopen"),
+        ),
+        widget=forms.HiddenInput,
+    )
+    appointments = forms.MultipleChoiceField(
+        choices=(),
+        error_messages={"required": "Select at least one schedule conflict."},
+    )
+
+    def __init__(self, *args, conflicts, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["appointments"].choices = tuple(
+            (str(conflict.appointment.id), conflict.appointment.client_profile.display_name)
+            for conflict in conflicts
+        )
+
+    @property
+    def appointment_ids(self) -> tuple[UUID, ...]:
+        return tuple(UUID(value) for value in self.cleaned_data["appointments"])
 
 
 class AvailabilityWindowAdminForm(forms.ModelForm):

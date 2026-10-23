@@ -4,6 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from datetime import timezone as datetime_timezone
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError
@@ -12,6 +13,8 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.services import ensure_partner_access
+from apps.appointments.models import Appointment
+from apps.audit.services import record_audit_event
 from apps.catalog.models import Service
 from apps.partners.models import Partner
 from apps.schedule.models import (
@@ -27,6 +30,7 @@ from apps.schedule.models import (
     BlockedTime,
     BookingResource,
     PartnerScheduleSettings,
+    ScheduleConflictAcknowledgement,
     generate_advisory_lock_key,
 )
 from apps.schedule.selectors import (
@@ -34,7 +38,10 @@ from apps.schedule.selectors import (
     availability_windows_starting_in_period,
     blocked_times_for_resource,
     blocked_times_starting_in_period,
+    schedule_conflicts_for_partner_period,
 )
+
+MAX_SCHEDULE_CONFLICT_BULK_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -278,6 +285,134 @@ def delete_blocked_time(*, actor: User, blocked_time: BlockedTime) -> None:
 
     ensure_partner_access(actor, blocked_time.partner)
     blocked_time.delete()
+
+
+def acknowledge_schedule_conflicts(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment_ids: Sequence[UUID],
+    now: datetime | None = None,
+) -> tuple[ScheduleConflictAcknowledgement, ...]:
+    """Keep selected active conflicts as-is for their current schedule facts."""
+
+    ensure_partner_access(actor, partner)
+    normalized_ids = _normalize_conflict_appointment_ids(appointment_ids)
+    current_time = now or timezone.now()
+    with transaction.atomic():
+        appointments = tuple(
+            Appointment.objects.select_for_update()
+            .select_related("partner", "booking_resource")
+            .filter(
+                partner=partner,
+                id__in=normalized_ids,
+                status=Appointment.Status.CONFIRMED,
+                end_at__gt=current_time,
+            )
+            .order_by("start_at", "created_at")
+        )
+        if len(appointments) != len(normalized_ids):
+            raise ValidationError(
+                {"appointments": "Select current confirmed appointments from this partner."}
+            )
+
+        conflicts = schedule_conflicts_for_partner_period(
+            partner=partner,
+            start_at=min(current_time, min(appointment.start_at for appointment in appointments)),
+            end_at=max(appointment.end_at for appointment in appointments)
+            + timedelta(microseconds=1),
+            include_acknowledged=True,
+        )
+        conflicts_by_appointment = {
+            conflict.appointment.id: conflict for conflict in conflicts
+        }
+        if any(appointment_id not in conflicts_by_appointment for appointment_id in normalized_ids):
+            raise ValidationError(
+                {"appointments": "One or more selected schedule conflicts are no longer active."}
+            )
+
+        acknowledgements: list[ScheduleConflictAcknowledgement] = []
+        for appointment in appointments:
+            conflict = conflicts_by_appointment[appointment.id]
+            acknowledgement, _created = ScheduleConflictAcknowledgement.objects.update_or_create(
+                appointment=appointment,
+                defaults={
+                    "partner": partner,
+                    "fingerprint": conflict.fingerprint,
+                    "acknowledged_by": actor,
+                },
+            )
+            acknowledgements.append(acknowledgement)
+
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="schedule.conflicts_kept_as_is",
+            target_type="schedule_conflict",
+            message=f"Kept {len(acknowledgements)} schedule conflict(s) as is.",
+            payload={
+                "appointment_ids": [str(appointment.id) for appointment in appointments],
+                "count": len(acknowledgements),
+            },
+        )
+    return tuple(acknowledgements)
+
+
+def reopen_schedule_conflicts(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment_ids: Sequence[UUID],
+) -> int:
+    """Remove current keep-as-is decisions so conflicts return to active review."""
+
+    ensure_partner_access(actor, partner)
+    normalized_ids = _normalize_conflict_appointment_ids(appointment_ids)
+    with transaction.atomic():
+        acknowledgements = tuple(
+            ScheduleConflictAcknowledgement.objects.select_for_update()
+            .filter(partner=partner, appointment_id__in=normalized_ids)
+            .order_by("appointment_id")
+        )
+        if len(acknowledgements) != len(normalized_ids):
+            raise ValidationError(
+                {"appointments": "Select conflicts currently kept as is for this partner."}
+            )
+        ScheduleConflictAcknowledgement.objects.filter(
+            id__in=(acknowledgement.id for acknowledgement in acknowledgements)
+        ).delete()
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="schedule.conflicts_reopened",
+            target_type="schedule_conflict",
+            message=f"Reopened {len(acknowledgements)} schedule conflict(s).",
+            payload={
+                "appointment_ids": [
+                    str(acknowledgement.appointment_id)
+                    for acknowledgement in acknowledgements
+                ],
+                "count": len(acknowledgements),
+            },
+        )
+    return len(acknowledgements)
+
+
+def _normalize_conflict_appointment_ids(
+    appointment_ids: Sequence[UUID],
+) -> tuple[UUID, ...]:
+    normalized_ids = tuple(dict.fromkeys(appointment_ids))
+    if not normalized_ids:
+        raise ValidationError({"appointments": "Select at least one schedule conflict."})
+    if len(normalized_ids) > MAX_SCHEDULE_CONFLICT_BULK_SIZE:
+        raise ValidationError(
+            {
+                "appointments": (
+                    f"Select no more than {MAX_SCHEDULE_CONFLICT_BULK_SIZE} conflicts at once."
+                )
+            }
+        )
+    return normalized_ids
 
 
 def validate_blocked_time_input(

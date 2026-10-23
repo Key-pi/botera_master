@@ -20,6 +20,7 @@ from apps.partners.selectors import visible_partners_for_user
 from apps.schedule.forms import (
     CalendarCopyScheduleForm,
     CalendarQuickCreateForm,
+    ScheduleConflictActionForm,
     add_domain_errors_to_calendar_copy_form,
     add_domain_errors_to_calendar_quick_create_form,
 )
@@ -32,12 +33,18 @@ from apps.schedule.selectors import (
     upcoming_schedule_conflicts_for_partner,
 )
 from apps.schedule.services import (
+    acknowledge_schedule_conflicts,
     copy_schedule_day,
     copy_schedule_week,
     create_availability_window,
     create_blocked_time,
+    reopen_schedule_conflicts,
 )
 from core.timezones import get_zone
+
+CONFLICT_MODE_ACTIVE = "active"
+CONFLICT_MODE_KEPT_AS_IS = "kept_as_is"
+CONFLICT_MODES = (CONFLICT_MODE_ACTIVE, CONFLICT_MODE_KEPT_AS_IS)
 
 
 @staff_member_required
@@ -192,14 +199,62 @@ def conflict_list(request):
         tuple(booking_resources_for_partner(selected_partner)) if selected_partner else ()
     )
     selected_resource = _selected_optional_resource(request=request, resources=resources)
-    conflicts = (
+    all_conflicts = (
         upcoming_schedule_conflicts_for_partner(
             partner=selected_partner,
             booking_resource=selected_resource,
+            include_acknowledged=True,
         )
         if selected_partner is not None
         else ()
     )
+    active_conflicts = tuple(
+        conflict for conflict in all_conflicts if not conflict.is_acknowledged
+    )
+    kept_conflicts = tuple(
+        conflict for conflict in all_conflicts if conflict.is_acknowledged
+    )
+    conflict_mode = _selected_conflict_mode(request=request)
+    conflicts = (
+        kept_conflicts if conflict_mode == CONFLICT_MODE_KEPT_AS_IS else active_conflicts
+    )
+    action_form = ScheduleConflictActionForm(
+        request.POST if request.method == "POST" else None,
+        conflicts=all_conflicts,
+    )
+    if request.method == "POST" and selected_partner is not None and action_form.is_valid():
+        try:
+            if action_form.cleaned_data["action"] == ScheduleConflictActionForm.KEEP_AS_IS:
+                changed_count = len(
+                    acknowledge_schedule_conflicts(
+                        actor=request.user,
+                        partner=selected_partner,
+                        appointment_ids=action_form.appointment_ids,
+                    )
+                )
+                success_message = f"Kept {changed_count} schedule conflict(s) as is."
+                redirect_mode = CONFLICT_MODE_ACTIVE
+            else:
+                changed_count = reopen_schedule_conflicts(
+                    actor=request.user,
+                    partner=selected_partner,
+                    appointment_ids=action_form.appointment_ids,
+                )
+                success_message = f"Reopened {changed_count} schedule conflict(s)."
+                redirect_mode = CONFLICT_MODE_KEPT_AS_IS
+        except ValidationError as exc:
+            for error in exc.messages:
+                action_form.add_error(None, error)
+        else:
+            messages.success(request, success_message)
+            return HttpResponseRedirect(
+                _conflict_list_url(
+                    partner_id=selected_partner.id,
+                    resource_id=(selected_resource.id if selected_resource else None),
+                    mode=redirect_mode,
+                )
+            )
+
     paginator = Paginator(conflicts, 20)
     page_obj = paginator.get_page(request.GET.get("page"))
     conflict_rows = tuple(
@@ -216,6 +271,8 @@ def conflict_list(request):
     filter_query = {"partner": selected_partner.id} if selected_partner is not None else {}
     if selected_resource is not None:
         filter_query["resource"] = selected_resource.id
+    if conflict_mode != CONFLICT_MODE_ACTIVE:
+        filter_query["show"] = conflict_mode
 
     context = {
         **admin.site.each_context(request),
@@ -225,8 +282,19 @@ def conflict_list(request):
         "selected_partner": selected_partner,
         "resources": resources,
         "selected_resource": selected_resource,
+        "conflict_mode": conflict_mode,
+        "active_conflict_count": len(active_conflicts),
+        "kept_conflict_count": len(kept_conflicts),
         "conflict_count": len(conflicts),
         "conflict_rows": conflict_rows,
+        "action_form": action_form,
+        "conflict_action_url": _conflict_list_url(
+            partner_id=selected_partner.id,
+            resource_id=(selected_resource.id if selected_resource else None),
+            mode=conflict_mode,
+        )
+        if selected_partner is not None
+        else "",
         "page_obj": page_obj,
         "pagination_query": urlencode(filter_query),
     }
@@ -373,6 +441,13 @@ def _selected_optional_resource(*, request, resources):
         if resource.id == selected_id:
             return resource
     raise Http404("Calendar resource not found.")
+
+
+def _selected_conflict_mode(*, request) -> str:
+    mode = request.GET.get("show", CONFLICT_MODE_ACTIVE).strip()
+    if mode not in CONFLICT_MODES:
+        raise Http404("Schedule conflict view not found.")
+    return mode
 
 
 def _selected_calendar_appointment(*, request, partner, booking_resource):
@@ -561,6 +636,15 @@ def _calendar_appointment_url(appointment: Appointment) -> str | None:
         )
         + f"&appointment={appointment.id}#appointment-detail"
     )
+
+
+def _conflict_list_url(*, partner_id, resource_id=None, mode: str) -> str:
+    query = {"partner": partner_id}
+    if resource_id is not None:
+        query["resource"] = resource_id
+    if mode != CONFLICT_MODE_ACTIVE:
+        query["show"] = mode
+    return f"{reverse('schedule:conflicts')}?{urlencode(query)}"
 
 
 def _parse_uuid(raw_value: str, *, message: str) -> UUID:
