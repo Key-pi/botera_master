@@ -246,13 +246,15 @@ Content shape:
   - `booking.date_select`: `{booking_horizon_days}`.
   - `booking.time_select`: `{date}`, `{services}`, `{duration}`.
   - `booking.near_fit_notice`: `{tolerance_minutes}`.
-  - `booking.final_confirm`: `{services}`, `{date}`, `{time}`, `{duration}`, `{service_total}`, `{currency}`.
+  - `booking.comment_prompt`: `{max_length}`.
+  - `booking.final_confirm`: `{services}`, `{date}`, `{time}`, `{duration}`, `{service_total}`, `{currency}`, `{comment}`.
   - `booking.requested_created`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.confirmed_created`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.request_cancelled_by_client`: `{date}`, `{time}`.
   - `booking.request_confirmed_by_master`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `booking.request_declined_by_master`: `{partner_name}`, `{date}`, `{time}`, `{reason}`.
-- `booking.slot_taken` and "no available slots" remain system-only localized service texts in MVP.
+- `booking.slot_taken`, `booking.selection_changed`, `booking.month_select`,
+  and "no available slots" remain system-only localized service texts in MVP.
 - Ordinary client booking summary/final confirmation does not show penalties unless penalties have already been explicitly applied to that appointment.
 - Initial editable `cancellation/reschedule` keys:
   - `appointment.cancel_confirm_prompt`: `{date}`, `{time}`, `{services}`.
@@ -268,7 +270,7 @@ Content shape:
   - `appointment.reschedule_proposal_declined`: `{date}`, `{time}`, `{services}`.
   - `appointment.reschedule_proposal_expired`: `{date}`, `{time}`, `{services}`.
 - `appointment.late_cancel_blocked` remains system-only localized in MVP.
-- Initial editable master notification keys for this group: `master.client_cancelled_appointment`, `master.client_requested_reschedule`, `master.client_accepted_reschedule`, and `master.client_declined_reschedule`.
+- Initial editable master notification keys for this group: `master.client_cancelled_appointment`, `master.client_requested_reschedule`, `master.client_accepted_reschedule`, `master.client_declined_reschedule`, and `master.appointment_proposal_expired`.
 - Cancellation/reschedule `{reason}` is optional; templates must render cleanly when it is empty.
 - Initial editable `reminders` keys:
   - `reminder.client_before_appointment`: `{partner_name}`, `{date}`, `{time}`, `{services}`.
@@ -441,6 +443,7 @@ Partner setting bounds:
 - Master reminder offset: min 5 minutes, max 7 days, default 45 minutes, can be disabled.
 - `near_fit_tolerance_minutes`: min 0, max 30, default 10.
 - `cancellation_deadline_hours`: min 0, max 168, default 6. `0` means clients may cancel until appointment start without late-cancel penalty.
+- `require_phone_for_booking`: boolean, default false. When enabled, client booking pauses until the partner-scoped client profile has a valid normalized phone.
 - Quiet hours: local start/end times in partner timezone, default 22:00-08:00, can be disabled, and overnight quiet hours are supported.
 - Morning digest time: local time in partner timezone, any time from 00:00 to 23:59, default 08:00, can be disabled. If it falls inside quiet hours, still send at the configured digest time.
 - Stale requested reminder base interval: min 10 minutes, max 72 hours, default 3 hours. Repeated reminders halve the interval down to a 5-minute floor.
@@ -578,9 +581,34 @@ Rules:
 - Client business event notifications are required for appointment created/confirmed, appointment change proposed, change accepted/declined/expired, appointment cancelled, appointment completed, no-show marked, and penalty created/paid/waived.
 - For manual clients without Telegram identity, Telegram notifications are not created; admin should show that no Telegram connection exists.
 - If Telegram reports that the client blocked the partner bot, the event is logged, the client is marked unavailable for that partner bot, and partner-visible delivery failure is shown where action is useful.
+- Terminal delivery state is applied to the actual recipient class: a master-facing failure may update the master contact, but must never mark the appointment client unreachable merely because the notification also references that client for rendering context.
 - Failed appointment change proposal delivery should expose a manual notify/resend action for the master.
 - Reminder scheduling happens when appointment becomes confirmed.
+- Creating a manual-confirmation `requested` appointment creates two independent durable
+  master-facing records: an immediate actionable booking-request notification and the first
+  delayed stale-request reminder. Both become stale when the request is resolved.
+- Master confirm/decline Telegram callbacks resolve the active partner contact from trusted bot
+  and Telegram context, then call the appointment owner service. Confirm still acquires the
+  booking-resource advisory lock and runs a fresh overlap check.
+- Confirming or declining a request creates a separate durable client notification after commit;
+  Telegram delivery never runs inside the appointment transaction.
+- The actionable master request also exposes a Telegram proposal flow backed by FSM-only selection
+  state. Dates and slots come from current appointment snapshots, availability, blocks, booking
+  horizon, and confirmed busy intervals; final send freshly validates every selected slot before
+  creating one durable `requested_alternatives` proposal with up to five options.
+- Pending requested alternatives stale queued master request notices. If the client declines or the
+  master cancels the proposal, stale reminders resume at the next sequence instead of reusing an
+  already-staled idempotency key.
+- The client proposal view also supports choosing a different generated slot. Final confirmation
+  re-resolves the partner/client/proposal, revalidates the slot, and supersedes the old proposal.
+  Auto-confirm runs under the booking-resource advisory lock; manual-confirm and near-fit choices
+  retain `requested` status and enqueue a revision-specific actionable master request plus the next
+  stale-reminder sequence.
 - Old pending reminders are cancelled/staled on reschedule, cancellation, completion, or no-show.
+- The pilot admin exposes a service-backed time-proposal action for requested and confirmed appointments; proposal and option records remain read-only operational history.
+- A time proposal may contain multiple alternatives. Client callbacks carry only opaque record identifiers and re-resolve partner/client ownership before calling the proposal owner service.
+- Proposal creation, client response, and expiry notifications are durable `ScheduledNotification` records linked to the exact proposal. Superseded or otherwise non-matching proposal notifications become stale before delivery.
+- Celery beat expires due proposals through the maintenance queue. Requested-alternative expiry may cancel the still-requested appointment, while confirmed appointments remain unchanged.
 - Jobs are idempotent by business key, not just queue id.
 - Quiet hours defer sending until quiet hours end.
 - If deferred reminder becomes useless because appointment passed, skip it.
@@ -765,6 +793,13 @@ Rules:
 
 - MVP messaging is not tied to a specific appointment.
 - Master and client both use the partner bot as the delivery channel.
+- Client free-text composition may use short-lived in-memory bot state, but a
+  message becomes business data only after validated text is stored through the
+  messaging owner service.
+- MVP text messages are limited to 3500 characters so localized/template
+  wrappers remain within Telegram's practical message limit.
+- Conversation records are immutable in partner admin. Master replies use a
+  dedicated service-backed action instead of direct model creation/editing.
 - If client blocks bot, master sees delivery failure and client becomes unreachable for this partner bot.
 - Superuser access is support/incident-only.
 
@@ -880,6 +915,13 @@ Tenant strategy:
 Time-range strategy:
 
 - Availability windows, blocked time, and appointments all need indexed start/end timestamps.
+- Client date selection shows seven nearest available dates per page and a
+  month picker containing only months/dates with valid slots inside the partner
+  booking horizon.
+- Wide-horizon date discovery should preload availability, blocked time, and
+  confirmed busy intervals for the requested range once, then generate each
+  local date from that bounded in-memory context instead of issuing queries per
+  day.
 - Confirmed appointment overlap is the critical protected case and is explicitly confirmed as impossible for one booking resource.
 - Solo-master MVP has one default booking resource per partner.
 - Future studio support can add multiple booking resources under one partner, allowing parallel appointments for different masters/resources.

@@ -1,0 +1,18 @@
+{% load i18n %}
+{% if page.paginator.num_pages > 1 %}
+  <nav class="client-page-controls" aria-label="{% translate 'Pagination' %}">
+    {% if page.has_previous %}
+      <a class="button" href="?{{ page_param }}={{ page.previous_page_number }}&amp;{{ other_param }}={{ other_page }}&amp;{{ third_param }}={{ third_page }}#{{ anchor }}">
+        {% translate "Previous" %}
+      </a>
+    {% endif %}
+    <span>
+      {% blocktranslate with current=page.number total=page.paginator.num_pages %}Page {{ current }} of {{ total }}{% endblocktranslate %}
+    </span>
+    {% if page.has_next %}
+      <a class="button" href="?{{ page_param }}={{ page.next_page_number }}&amp;{{ other_param }}={{ other_page }}&amp;{{ third_param }}={{ third_page }}#{{ anchor }}">
+        {% translate "Next" %}
+      </a>
+    {% endif %}
+  </nav>
+{% endif %}

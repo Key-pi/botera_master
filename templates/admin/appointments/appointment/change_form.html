@@ -1,0 +1,31 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  {% if no_show_penalty_action_url and change %}
+    <li>
+      <a href="{{ no_show_penalty_action_url }}">{% translate "Create no-show penalty" %}</a>
+    </li>
+  {% endif %}
+  {% if late_arrival_penalty_action_url and change %}
+    <li>
+      <a href="{{ late_arrival_penalty_action_url }}">{% translate "Record late arrival" %}</a>
+    </li>
+  {% endif %}
+  {% if penalty_action_url and change %}
+    <li>
+      <a href="{{ penalty_action_url }}">{% translate "Manage penalties" %}</a>
+    </li>
+  {% endif %}
+  {% if proposal_action_url and change %}
+    <li>
+      <a href="{{ proposal_action_url }}">{% translate "Propose another time" %}</a>
+    </li>
+  {% endif %}
+  {% if status_action_url and change %}
+    <li>
+      <a href="{{ status_action_url }}">{% translate "Change status" %}</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

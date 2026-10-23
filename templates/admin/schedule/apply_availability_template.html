@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls i18n %}
+
+{% block content %}
+  <p>
+    Apply <strong>{{ template_object }}</strong> to concrete availability windows.
+    Existing identical windows from this template are kept and are not duplicated.
+  </p>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <input type="hidden" name="action" value="{{ action_name }}">
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ template_object.pk }}">
+    <input type="hidden" name="select_across" value="0">
+    <input type="hidden" name="confirm_apply" value="1">
+    <div class="submit-row">
+      <input type="submit" value="Apply template" class="default">
+      <a href="{% url opts|admin_urlname:'changelist' %}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

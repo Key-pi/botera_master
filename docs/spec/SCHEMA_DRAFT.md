@@ -113,6 +113,7 @@ Key fields:
 - `booking_horizon_days`: min 1, max 365; default 30
 - `near_fit_tolerance_minutes`: min 0, max 30; default 10
 - `cancellation_deadline_hours`: min 0, max 168; default 6
+- `require_phone_for_booking`: default false
 - `quiet_hours_enabled`
 - `quiet_hours_start_local`: default 22:00
 - `quiet_hours_end_local`: default 08:00
@@ -128,9 +129,32 @@ Key fields:
 - `late_arrival_penalty_amount`: default 2000 UAH
 
 Notes:
+- schedule-specific settings are implemented in `PartnerScheduleSettings` under the `schedule` module. A future Bot settings admin UI may expose these fields, but the schedule domain owns their persistence and validation.
 - client reminder offsets should be separate rules, with default 24h and 2h before appointment.
 - max 5 client reminder rules per partner.
 - invalid saved settings use safe defaults plus warnings when possible.
+
+### PartnerTelegramContact
+
+Partner-scoped Telegram recipient for master-facing delivery.
+
+Key fields:
+- `partner`
+- `telegram_identity`
+- `user`: optional linked admin account
+- `role`: owner/master/admin recipient, initially owner/master
+- `is_primary`
+- `is_active`
+- `linked_at`
+- `last_delivery_failure_code`
+- `last_delivery_failure_at`
+
+Rules:
+- bot token validation identifies the bot only, not the master's personal Telegram account.
+- contact binding is created through a signed deep link opened in the partner's own bot.
+- a normal client `/start` or arbitrary callback payload must not create or grant a master contact binding.
+- MVP UI may expose one primary owner/master contact, but the schema should not prevent extra recipients later.
+- master-facing notifications, stale requested reminders, morning digest, failed-delivery notices, and client-master messages target this contact.
 
 ### SystemTemplate
 
@@ -255,6 +279,24 @@ Rules:
 
 ## Schedule
 
+### PartnerScheduleSettings
+
+Partner-owned schedule behavior settings.
+
+Implemented fields:
+- `partner`
+- `confirmation_mode`: blank/setup-required, auto, manual
+- `slot_step_minutes`: allowed 5, 10, 15, 20, 30, 60; default 15
+- `booking_horizon_days`: min 1, max 365; default 30
+- `near_fit_tolerance_minutes`: min 0, max 30; default 10
+- `cancellation_deadline_hours`: min 0, max 168; default 6
+- `require_phone_for_booking`: default false
+
+Rules:
+- `confirmation_mode` completes the booking confirmation setup step only when set to auto or manual.
+- when `require_phone_for_booking` is enabled, client booking cannot be created until the partner-scoped client profile has a phone.
+- schedule settings may be shown in a Bot settings UI later, but persistence and validation belong to the schedule module.
+
 ### AvailabilityWindow
 
 Concrete available time interval for a booking resource.
@@ -303,6 +345,25 @@ Suggested constraints/indexes:
 - index `partner + start_at`.
 - index `partner + end_at`.
 - index `booking_resource + start_at`.
+
+### ScheduleConflictAcknowledgement
+
+Persistent partner decision to keep one confirmed appointment unchanged for the
+currently observed schedule conflict.
+
+Implemented fields:
+- `partner`
+- `appointment`, one-to-one
+- `fingerprint`, SHA-256 of the conflict-relevant appointment and schedule facts
+- `acknowledged_by`, nullable when the actor is later removed
+- timestamps
+
+Rules:
+- the conflict itself remains a computed read model; only the partner decision is persisted.
+- a matching fingerprint hides the conflict from active review, calendar warning markers, and dashboard conflict counts.
+- if conflict-relevant appointment, resource, availability, blocked-time, or near-fit facts change, the old fingerprint no longer matches and the conflict returns to active review.
+- the partner can explicitly reopen a matching decision by deleting the acknowledgement through the owner service.
+- acknowledgement writes and deletes are partner-scoped, transactional, and audit logged.
 
 ### AvailabilityTemplate
 
@@ -429,6 +490,8 @@ Rules:
 - if a new pending proposal is created for the same appointment, older pending proposal becomes superseded.
 - if proposal expires, both sides are notified when relevant.
 - requested alternatives expire by automatically cancelling the requested appointment.
+- a pending `requested_alternatives` proposal suppresses queued initial/stale master request notices; declining or cancelling it resumes the stale sequence with a new idempotency key.
+- if the client selects a different available time instead of an offered option, the proposal becomes `superseded`; auto-confirm may confirm the same appointment under the booking-resource lock, while manual-confirm/near-fit keeps it `requested` and creates a revision-specific master request notification.
 
 ### AppointmentProposalOption
 
@@ -442,6 +505,7 @@ Key fields:
 - `penalties_total_amount`
 - `total_amount`
 - `currency`
+- `is_near_fit`: whether this option extends past availability within configured tolerance
 - `sort_order`
 - `selected_at`
 
@@ -494,6 +558,7 @@ Key fields:
 - `status`
 - `amount`
 - `currency`: MVP UAH
+- `late_by_minutes`: structured lateness value for a late-arrival penalty; null for other reasons
 - `note`
 - `created_by`
 - `paid_at`
@@ -501,6 +566,9 @@ Key fields:
 
 Rules:
 - partner may waive/forgive manually.
+- one `source_appointment` may produce at most one penalty per `reason`.
+- source-appointment penalty creation locks the appointment and rechecks existing debt inside the service transaction so repeated submissions do not create duplicates.
+- a late-arrival penalty may be created only after the source appointment's planned start time.
 - penalties are shown separately in reports as one line group.
 - client can see active unpaid penalties if penalties are enabled.
 - client can write master about penalties through generic contact master flow.
@@ -566,7 +634,11 @@ Durable record for service notification/reminder jobs.
 Key fields:
 - `partner`
 - `appointment`
+- `appointment_proposal`
 - `client_profile`
+- `penalty`: required only for client penalty lifecycle notifications
+- `source_notification`: set only for a `failed_delivery_to_master` marker and points to the
+  exhausted client reminder it represents
 - `type`
 - `due_at`
 - `status`: queued, sent, failed, skipped, cancelled, stale
@@ -577,9 +649,19 @@ Key fields:
 - `retain_until`
 
 Rules:
+- booking-request lifecycle uses explicit durable types for the initial master request and the
+  client confirmation/decline result; these are not inferred from reminder records.
+- penalty `created`, `paid`, and `waived` events use explicit durable client notification types;
+  obsolete queued events become stale when the current penalty status no longer matches.
+- actionable master request and stale-request messages may carry the same compact confirm/decline
+  callback controls, while appointment state remains authoritative.
 - if appointment is moved/cancelled/completed/no_show, old pending reminders become cancelled/stale.
 - if quiet hours delay makes a reminder useless because appointment already passed, skip it.
 - failed reminder becomes visible to master only after configured retry exhaustion.
+- each failed-reminder marker references exactly one still-failed source reminder; the source
+  remains authoritative for retry state, failure code, appointment, and client context.
+- if the source reminder is sent, skipped, cancelled, or otherwise stops being partner-visible,
+  a queued marker becomes stale instead of delivering an obsolete alert.
 - manual retry is allowed from master UI/bot actions.
 
 ### DeliveryAttempt

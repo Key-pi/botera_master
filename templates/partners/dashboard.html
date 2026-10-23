@@ -1,0 +1,461 @@
+{% extends "admin/base_site.html" %}
+{% load client_admin i18n tz %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .partner-dashboard {
+      display: grid;
+      gap: 20px;
+      max-width: 1440px;
+    }
+    .partner-dashboard-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 20px;
+      justify-content: space-between;
+    }
+    .partner-dashboard-header h1 {
+      font-size: 1.5rem;
+      margin: 0 0 6px;
+    }
+    .partner-dashboard-subtitle {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .partner-dashboard-actions,
+    .partner-selector {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .partner-selector label {
+      font-weight: 600;
+    }
+    .partner-selector select {
+      max-width: 280px;
+      min-width: 180px;
+    }
+    .dashboard-status {
+      border: 1px solid var(--hairline-color);
+      border-radius: 4px;
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 8px;
+      padding: 2px 7px;
+      vertical-align: middle;
+    }
+    .dashboard-nav {
+      border-bottom: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      display: flex;
+      flex-wrap: wrap;
+      padding: 0;
+    }
+    .dashboard-nav a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+    .dashboard-nav a:first-child {
+      background: var(--selected-bg);
+    }
+    .dashboard-metrics {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+    .dashboard-metric {
+      background: var(--darkened-bg);
+      border: 1px solid var(--hairline-color);
+      border-radius: 6px;
+      min-width: 0;
+      padding: 14px;
+    }
+    .dashboard-metric dt {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .dashboard-metric dd {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .dashboard-attention {
+      border-left: 4px solid #ba8b00;
+      padding: 2px 0 2px 14px;
+    }
+    .dashboard-attention h2 {
+      font-size: 1rem;
+      margin: 0 0 8px;
+    }
+    .dashboard-attention p,
+    .dashboard-attention ul {
+      margin-bottom: 0;
+      margin-top: 0;
+    }
+    .dashboard-attention ul {
+      padding-left: 20px;
+    }
+    .dashboard-attention li + li {
+      margin-top: 5px;
+    }
+    .dashboard-attention--clear {
+      border-left-color: #2e8b57;
+    }
+    .dashboard-grid {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .dashboard-section {
+      margin: 0;
+      min-width: 0;
+    }
+    .dashboard-section-heading {
+      align-items: center;
+      background: var(--primary);
+      color: var(--header-color);
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 8px 12px;
+    }
+    .dashboard-section-heading h2 {
+      background: none;
+      color: inherit;
+      margin: 0;
+      padding: 0;
+    }
+    .dashboard-section-heading a {
+      color: var(--header-link-color);
+    }
+    .dashboard-table-wrap {
+      overflow-x: auto;
+    }
+    .dashboard-table {
+      width: 100%;
+    }
+    .dashboard-table th,
+    .dashboard-table td {
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    .dashboard-table .dashboard-services,
+    .dashboard-table .dashboard-failure {
+      white-space: normal;
+    }
+    .dashboard-empty {
+      color: var(--body-quiet-color);
+      margin: 0;
+      padding: 16px;
+    }
+    .dashboard-no-access {
+      border-left: 4px solid var(--error-fg);
+      padding-left: 14px;
+    }
+    @media (max-width: 1180px) {
+      .dashboard-metrics {
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+      }
+    }
+    @media (max-width: 767px) {
+      .partner-dashboard-header,
+      .dashboard-section-heading {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .dashboard-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .dashboard-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .dashboard-nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .dashboard-nav a {
+        border-bottom: 1px solid var(--hairline-color);
+        overflow-wrap: anywhere;
+      }
+      .partner-selector select {
+        max-width: 100%;
+        width: 100%;
+      }
+      .dashboard-table-wrap {
+        overflow: visible;
+      }
+      .dashboard-table,
+      .dashboard-table tbody,
+      .dashboard-table tr,
+      .dashboard-table td {
+        display: block;
+        width: 100%;
+      }
+      .dashboard-table thead {
+        display: none;
+      }
+      .dashboard-table tr {
+        border-bottom: 1px solid var(--hairline-color);
+        box-sizing: border-box;
+        padding: 8px 0;
+      }
+      .dashboard-table td,
+      .dashboard-table .dashboard-services,
+      .dashboard-table .dashboard-failure {
+        box-sizing: border-box;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(88px, 0.4fr) minmax(0, 1fr);
+        padding: 5px 12px;
+        white-space: normal;
+      }
+      .dashboard-table td::before {
+        color: var(--body-quiet-color);
+        content: attr(data-label);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <main class="partner-dashboard">
+    {% if snapshot %}
+      <header class="partner-dashboard-header">
+        <div>
+          <h1>
+            {{ snapshot.partner.name }}
+            <span class="dashboard-status">{{ snapshot.partner.get_status_display }}</span>
+          </h1>
+          <p class="partner-dashboard-subtitle">
+            {% translate "Operational dashboard" %} · {{ snapshot.partner.timezone }}
+          </p>
+        </div>
+
+        <div class="partner-dashboard-actions">
+          {% if partners|length > 1 %}
+            <form class="partner-selector" method="get">
+              <label for="partner-select">{% translate "Partner" %}</label>
+              <select id="partner-select" name="partner">
+                {% for partner in partners %}
+                  <option value="{{ partner.pk }}"{% if partner.pk == snapshot.partner.pk %} selected{% endif %}>
+                    {{ partner.name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button type="submit">{% translate "Open" %}</button>
+            </form>
+          {% endif %}
+          <a class="button" href="{% url 'admin:appointments_appointment_add' %}">
+            {% translate "Create appointment" %}
+          </a>
+        </div>
+      </header>
+
+      <nav class="dashboard-nav" aria-label="{% translate 'Partner workspace' %}">
+        <a href="{% url 'partners:dashboard' %}?partner={{ snapshot.partner.pk }}">{% translate "Dashboard" %}</a>
+        <a href="{% url 'schedule:calendar' %}?partner={{ snapshot.partner.pk }}">{% translate "Calendar" %}</a>
+        <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Appointments" %}</a>
+        <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Clients" %}</a>
+        <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Catalog" %}</a>
+        <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Broadcasts" %}</a>
+        <a href="{% url 'admin:finance_expense_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Finance" %}</a>
+        <a href="{% url 'admin:bot_botinstance_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Bot" %}</a>
+        <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Activity Log" %}</a>
+      </nav>
+
+      <dl class="dashboard-metrics">
+        <div class="dashboard-metric">
+          <dt>{% translate "Appointments today" %}</dt>
+          <dd>{{ snapshot.today_appointment_count }}</dd>
+        </div>
+        <div class="dashboard-metric">
+          <dt>{% translate "Appointments tomorrow" %}</dt>
+          <dd>{{ snapshot.tomorrow_appointment_count }}</dd>
+        </div>
+        <div class="dashboard-metric">
+          <dt>{% translate "Pending requests" %}</dt>
+          <dd>{{ snapshot.pending_request_count }}</dd>
+        </div>
+        <div class="dashboard-metric">
+          <dt>{% translate "Failed notifications" %}</dt>
+          <dd>{{ snapshot.failed_notification_count }}</dd>
+        </div>
+        <div class="dashboard-metric">
+          <dt>{% translate "Schedule conflicts" %}</dt>
+          <dd>
+            <a href="{% url 'schedule:conflicts' %}?partner={{ snapshot.partner.pk }}">{{ snapshot.schedule_conflict_count }}</a>
+          </dd>
+        </div>
+        <div class="dashboard-metric">
+          <dt>{% translate "Actual revenue today" %}</dt>
+          <dd>{{ snapshot.today_finance.actual_revenue_amount|money_amount }} {{ snapshot.today_finance.currency }}</dd>
+        </div>
+        <div class="dashboard-metric">
+          <dt>{% translate "Expected revenue today" %}</dt>
+          <dd>{{ snapshot.today_finance.expected_revenue_amount|money_amount }} {{ snapshot.today_finance.currency }}</dd>
+        </div>
+      </dl>
+
+      {% if snapshot.missing_setup_labels or not snapshot.bot_instance or snapshot.bot_instance.status == "error" or snapshot.bot_instance.status == "suspended" or snapshot.bot_instance.status == "paused" or snapshot.failed_notification_count or snapshot.schedule_conflict_count %}
+        <section class="dashboard-attention" aria-labelledby="attention-heading">
+          <h2 id="attention-heading">{% translate "Needs attention" %}</h2>
+          <ul>
+            {% if snapshot.missing_setup_labels %}
+              <li>
+                {% translate "Setup is incomplete:" %}
+                {{ snapshot.missing_setup_labels|join:", " }}.
+              </li>
+            {% endif %}
+            {% if not snapshot.bot_instance %}
+              <li>{% translate "Telegram bot is not configured yet." %}</li>
+            {% elif snapshot.bot_instance.status == "error" %}
+              <li>
+                {% translate "Telegram bot has an error." %}
+                {% if snapshot.bot_instance.last_error_code %}
+                  {% translate "Code:" %} {{ snapshot.bot_instance.last_error_code }}.
+                {% endif %}
+              </li>
+            {% elif snapshot.bot_instance.status == "suspended" %}
+              <li>{% translate "Telegram bot is suspended by the platform." %}</li>
+            {% elif snapshot.bot_instance.status == "paused" %}
+              <li>{% translate "Telegram bot is paused; client flows are unavailable." %}</li>
+            {% endif %}
+            {% if snapshot.failed_notification_count %}
+              <li>
+                {% blocktranslate count counter=snapshot.failed_notification_count %}
+                  One notification needs delivery review.
+                {% plural %}
+                  {{ counter }} notifications need delivery review.
+                {% endblocktranslate %}
+              </li>
+            {% endif %}
+            {% if snapshot.schedule_conflict_count %}
+              <li>
+                <a href="{% url 'schedule:conflicts' %}?partner={{ snapshot.partner.pk }}">
+                  {% blocktranslate count counter=snapshot.schedule_conflict_count %}
+                    One confirmed appointment needs schedule review.
+                  {% plural %}
+                    {{ counter }} confirmed appointments need schedule review.
+                  {% endblocktranslate %}
+                </a>
+              </li>
+            {% endif %}
+          </ul>
+        </section>
+      {% else %}
+        <section class="dashboard-attention dashboard-attention--clear">
+          <h2>{% translate "Operational state" %}</h2>
+          <p>{% translate "No setup or delivery problems need attention." %}</p>
+        </section>
+      {% endif %}
+
+      {% timezone snapshot.partner.timezone %}
+        <div class="dashboard-grid">
+          <section class="module dashboard-section">
+            <div class="dashboard-section-heading">
+              <h2>{% translate "Today" %} · {{ snapshot.today|date:"DATE_FORMAT" }}</h2>
+              <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">
+                {% translate "View appointments" %}
+              </a>
+            </div>
+            {% include "partners/includes/appointment_table.html" with appointments=snapshot.today_appointments only %}
+          </section>
+
+          <section class="module dashboard-section">
+            <div class="dashboard-section-heading">
+              <h2>{% translate "Tomorrow" %} · {{ snapshot.tomorrow|date:"DATE_FORMAT" }}</h2>
+              <a href="{% url 'schedule:calendar' %}?partner={{ snapshot.partner.pk }}">
+                {% translate "Open calendar" %}
+              </a>
+            </div>
+            {% include "partners/includes/appointment_table.html" with appointments=snapshot.tomorrow_appointments only %}
+          </section>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="module dashboard-section">
+            <div class="dashboard-section-heading">
+              <h2>{% translate "Pending requests" %}</h2>
+              <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}&amp;status__exact=requested">
+                {% translate "View all" %}
+              </a>
+            </div>
+            {% include "partners/includes/appointment_table.html" with appointments=snapshot.pending_requests only %}
+          </section>
+
+          <section class="module dashboard-section">
+            <div class="dashboard-section-heading">
+              <h2>{% translate "Failed notifications" %}</h2>
+              <a href="{% url 'admin:notifications_schedulednotification_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}&amp;status__exact=failed&amp;failed_visible_to_partner__exact=1">
+                {% translate "View all" %}
+              </a>
+            </div>
+            {% if snapshot.failed_notifications %}
+              <div class="dashboard-table-wrap">
+                <table class="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>{% translate "Updated" %}</th>
+                      <th>{% translate "Notification" %}</th>
+                      <th>{% translate "Target" %}</th>
+                      <th>{% translate "Failure" %}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for notification in snapshot.failed_notifications %}
+                      <tr>
+                        <td data-label="{% translate 'Updated' %}">
+                          <a href="{% url 'admin:notifications_schedulednotification_change' notification.pk %}">
+                            {{ notification.updated_at|date:"SHORT_DATETIME_FORMAT" }}
+                          </a>
+                        </td>
+                        <td data-label="{% translate 'Notification' %}">{{ notification.get_type_display }}</td>
+                        <td data-label="{% translate 'Target' %}">
+                          {% if notification.client_profile %}
+                            {{ notification.client_profile.display_name }}
+                          {% elif notification.appointment %}
+                            {{ notification.appointment.client_profile.display_name }}
+                          {% else %}
+                            {% translate "Master" %}
+                          {% endif %}
+                        </td>
+                        <td class="dashboard-failure" data-label="{% translate 'Failure' %}">
+                          {% if notification.last_failure_code %}
+                            {{ notification.last_failure_code }}
+                          {% else %}
+                            {% translate "Delivery failed" %}
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p class="dashboard-empty">{% translate "No failed notifications." %}</p>
+            {% endif %}
+          </section>
+        </div>
+      {% endtimezone %}
+    {% else %}
+      <section class="dashboard-no-access">
+        <h1>{% translate "No partner access" %}</h1>
+        <p>{% translate "This account does not have an active partner membership." %}</p>
+      </section>
+    {% endif %}
+  </main>
+{% endblock %}

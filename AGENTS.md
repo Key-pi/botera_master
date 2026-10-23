@@ -1,8 +1,25 @@
 # BoteraMaster repository instructions
 
 Status: approved project rules after `PROJECT_RULES_APPROVED` on 2026-10-11.
-Application code remains blocked until the user explicitly starts implementation
-work for an approved milestone.
+Foundation milestone implementation started on 2026-10-12 after explicit user
+approval. Tenant And Admin milestone implementation started on 2026-10-12
+after explicit user approval. Bot Runtime milestone implementation started on
+2026-10-12 after explicit user approval. Identity And Catalog milestone
+implementation started on 2026-10-12 after explicit user approval. Schedule
+milestone implementation started on 2026-10-12 after explicit user approval.
+Appointment Core milestone implementation started on 2026-10-12 after explicit
+user approval. Client Booking Flow milestone implementation started on
+2026-10-12 after explicit user approval. Notifications milestone
+implementation started on 2026-10-12 after explicit user approval.
+Reschedule And Proposal milestone implementation started on 2026-10-13
+after explicit user approval. Penalties And Finance milestone implementation
+started on 2026-10-13 after explicit user approval. Content, Messaging, and
+Broadcasts milestone implementation started on 2026-10-13 after explicit user
+approval. Audit, Diagnostics, and Cleanup milestone implementation started on
+2026-10-13 after explicit user approval.
+Pilot Wiring milestone implementation started on 2026-10-13 after explicit
+user approval with `PILOT_WIRING_APPROVED`.
+Application code is allowed only within the currently approved milestone scope.
 
 ## System summary
 
@@ -15,10 +32,10 @@ project, not a codebase to copy wholesale. Partnership and Discovery are future
 separate products/projects. BoteraMaster may publish integration events for
 them, but it must not own their business logic.
 
-This repository currently contains planning/specification documents. Do not
-create application code, Django apps, models, migrations, dependencies, project
-skills, or deployment files until the user explicitly approves implementation
-after these project rules.
+This repository contains planning/specification documents and approved early
+implementation. Do not create application code, Django apps, models,
+migrations, dependencies, project skills, or deployment files outside the
+currently approved milestone scope.
 
 ## Canonical documents
 
@@ -36,8 +53,8 @@ Read these before implementation work:
   `docs/discovery/OPEN_QUESTIONS.md`
 
 `docs/spec/IMPLEMENTATION_PLAN.md` is approved as an implementation plan, but
-application code remains gated by the next explicit approval. Do not treat draft
-or advisory text as stronger than approved decisions.
+future milestone implementation remains gated by explicit approval. Do not
+treat draft or advisory text as stronger than approved decisions.
 
 ## Mandatory workflow
 

@@ -162,6 +162,24 @@ Do not treat bot blocking as a global Telegram identity field. Blocking is scope
 
 The TableOS shared Telegram account plus partner-specific guest profile pattern is a relevant reference, but BoteraMaster should keep partner-bot reachability/blocking scoped to the specific partner bot.
 
+### Master Telegram Contact
+
+Partner-scoped Telegram contact used for master-facing delivery.
+
+Purpose:
+
+- Give the system a real Telegram chat to send master reminders, stale requested reminders, morning digests, client messages, and failed-delivery notices.
+- Keep the partner/admin web account separate from Telegram chat identity.
+- Avoid treating the bot token as proof of who owns the bot.
+
+MVP rules:
+
+- The master contact is linked through a signed deep link opened in the partner's own bot.
+- A normal client `/start` does not create a master contact binding.
+- A manually submitted Telegram user id or chat id is not trusted by itself.
+- MVP can start with one primary owner/master contact per partner.
+- The model should allow additional active recipients later for salons, assistants, or alternate Telegram accounts.
+
 ### Client Profile
 
 Partner-scoped representation of a person as a client of one specific partner/master.
@@ -488,9 +506,12 @@ Post-create booking messages/actions:
 - When master confirms a `requested` appointment, appointment becomes `confirmed`, client receives a confirmed message, and reminders are created.
 - When master declines/cancels a `requested` appointment, client-facing reason is optional.
 - When master proposes another time for a `requested` appointment, master may propose multiple alternative slots.
+- The MVP Telegram adapter exposes up to five alternatives per proposal while the proposal model remains adapter-neutral and extensible.
 - When master proposes alternative slots for a `requested` appointment, the original appointment remains `requested` until the client chooses a slot, cancels the request, or the proposal expires.
+- While such a proposal is pending, stale-request reminders are paused because the next action belongs to the client; decline/cancel resumes the reminder sequence.
 - If the client chooses one of the master-proposed slots, the system re-checks availability, then the appointment becomes `confirmed` and reminders are created.
 - If none of the proposed slots works for the client, the client may choose another available time; that choice follows the partner's normal auto-confirm/manual-confirm mode.
+- A client-selected replacement time supersedes the pending master proposal. Auto-confirm uses the booking-resource lock before confirming; manual-confirm or near-fit updates the same request and starts a fresh actionable request/reminder cycle for the master.
 - Requested appointment alternative proposals expire after 48 hours.
 - If a requested appointment alternative proposal expires, the appointment is automatically cancelled and both client and master are notified.
 - If client cancels a `requested` appointment, master receives a notification that the request was cancelled by the client.
@@ -597,7 +618,7 @@ MVP appointment total:
 
 ### Penalty
 
-Monetary add-on caused by late cancellation.
+Partner-scoped monetary debt caused by a configured appointment incident.
 
 Rules:
 
@@ -621,7 +642,9 @@ Rules:
 - The cancelled application should remain available as historical/audit information, while the penalty itself becomes available to apply again.
 - Penalties should be tied to a concrete business reason rather than arbitrary free-form charges.
 - Confirmed MVP penalty reasons are late cancellation, no-show, and being late by more than partner-configured X minutes.
+- One source appointment can create at most one penalty for each reason. Repeated submissions and retries must not duplicate client debt.
 - Late-arrival penalty threshold is partner-configurable.
+- Late arrival can be recorded only after the appointment's planned start time.
 - Default late-arrival penalty threshold is 15 minutes.
 - Default no-show penalty amount is `50.00 UAH`, stored as `5000` minor units.
 - Default late-arrival penalty amount is `20.00 UAH`, stored as `2000` minor units.
@@ -886,7 +909,7 @@ MVP rules:
 - Conversation is scoped to `partner + client`.
 - Conversation is not tied to a specific appointment in MVP.
 - Client initiates contact from the client personal area.
-- Master receives the message through the partner bot/admin Telegram context.
+- Master receives the message through the partner's linked master Telegram contact.
 - Master replies through the bot.
 - Client receives the reply from the partner/master bot.
 - If delivery to the client fails because the client blocked the bot, show "message not delivered" to the master and mark the client unavailable for this partner bot.
@@ -971,6 +994,10 @@ When schedule changes create conflicts:
 - Partner can cancel appointment.
 - Partner can message client.
 - Partner can perform bulk conflict actions.
+- `Leave as is` persists a partner decision for the current conflict fingerprint and removes that conflict from active review, calendar warning markers, and dashboard counts without changing the appointment.
+- Partner can reopen a `leave as is` decision so the conflict returns to active review.
+- A conflict returns to active review automatically when relevant appointment or schedule facts change and the stored fingerprint no longer matches.
+- Active and `kept as is` conflicts remain separate views; keep/reopen actions support selecting multiple appointments from the current page.
 
 ## Deferred Architecture And Design Questions
 

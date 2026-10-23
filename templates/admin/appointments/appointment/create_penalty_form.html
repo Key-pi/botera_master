@@ -1,0 +1,108 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls client_admin i18n tz %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; <a href="{{ change_url }}">{{ appointment }}</a>
+    &rsaquo; {{ title }}
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .source-penalty-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0 0 24px;
+    }
+    .source-penalty-summary > div,
+    .source-penalty-form .form-row {
+      border-bottom: 1px solid var(--hairline-color);
+      min-width: 0;
+      padding: 12px 16px;
+    }
+    .source-penalty-summary dt {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .source-penalty-summary dd {
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .source-penalty-form .help,
+    .source-penalty-warning {
+      color: var(--body-quiet-color);
+      margin: 6px 0 0;
+    }
+    .source-penalty-warning {
+      padding: 12px 16px;
+    }
+    @media (max-width: 767px) {
+      .source-penalty-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {% timezone appointment.partner.timezone %}
+    <fieldset class="module">
+      <h2>{% translate "Appointment" %}</h2>
+      <dl class="source-penalty-summary">
+        <div>
+          <dt>{% translate "Client" %}</dt>
+          <dd>{{ appointment.client_profile }}</dd>
+        </div>
+        <div>
+          <dt>{% translate "Starts" %}</dt>
+          <dd>{{ appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}</dd>
+        </div>
+        <div>
+          <dt>{% translate "Status" %}</dt>
+          <dd>{{ appointment.get_status_display }}</dd>
+        </div>
+        <div>
+          <dt>{% translate "Configured penalty" %}</dt>
+          <dd>{{ penalty_amount|money_amount }} {{ penalty_currency }}</dd>
+        </div>
+        {% if threshold_minutes %}
+          <div>
+            <dt>{% translate "Late-arrival threshold" %}</dt>
+            <dd>{{ threshold_minutes }} {% translate "minutes" %}</dd>
+          </div>
+        {% endif %}
+      </dl>
+      <p class="source-penalty-warning">
+        {% translate "Creating this penalty adds it to the client's outstanding debt. A client notification is queued when the client has a Telegram connection." %}
+      </p>
+    </fieldset>
+  {% endtimezone %}
+
+  <form method="post" class="source-penalty-form" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <fieldset class="module">
+      <h2>{{ title }}</h2>
+      {% for field in form %}
+        <div class="form-row{% if field.errors %} errors{% endif %}">
+          {{ field.errors }}
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+        </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="{% translate 'Create penalty' %}" class="default">
+      <a href="{{ change_url }}">{% translate "Cancel" %}</a>
+    </div>
+  </form>
+{% endblock %}

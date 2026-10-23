@@ -1,0 +1,11 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  {% if reply_action_url and change %}
+    <li>
+      <a href="{{ reply_action_url }}">{% translate "Reply to client" %}</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

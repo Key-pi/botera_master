@@ -240,6 +240,9 @@ Superuser can:
 - Partner can send concrete alternative slots to clients.
 - If proposed slots do not fit, client can choose another available slot or cancel.
 - Bulk actions for schedule conflicts are part of MVP.
+- `Leave as is` keeps the appointment unchanged and moves the current conflict out of active review; the decision can be reopened.
+- Active conflict indicators return when conflict-relevant schedule or appointment facts change after `leave as is`.
+- Active and `kept as is` conflict lists support bulk keep/reopen decisions.
 - A convenient calendar-like admin experience for weekly/monthly planning is desired.
 
 ### Booking Flow
@@ -282,9 +285,12 @@ Superuser can:
 - When master confirms a `requested` appointment, appointment becomes `confirmed`, client receives a confirmed message, and reminders are created.
 - When master declines/cancels a `requested` appointment, client-facing reason is optional.
 - When master proposes another time for a `requested` appointment, master may propose multiple alternative slots.
+- The MVP Telegram master flow allows up to five alternatives in one proposal; proposal storage remains capable of supporting more options in future adapters.
 - When master proposes alternative slots for a `requested` appointment, the original appointment remains `requested` until the client chooses a slot, cancels the request, or the proposal expires.
+- Stale-request reminders pause while a requested-alternatives proposal is pending and resume on the next sequence if the client declines it or the master cancels it.
 - If the client chooses one of the master-proposed slots, the system re-checks availability, then the appointment becomes `confirmed` and reminders are created.
 - If none of the proposed slots works for the client, the client may choose another available time; that choice follows the partner's normal auto-confirm/manual-confirm mode.
+- Choosing another time supersedes the pending master proposal. A normal slot in auto-confirm mode becomes `confirmed` after a lock-protected availability re-check; manual-confirm and near-fit choices remain `requested` and create a fresh actionable master notification.
 - Requested appointment alternative proposals expire after 48 hours.
 - If a requested appointment alternative proposal expires, the appointment is automatically cancelled and both client and master are notified.
 - If client cancels a `requested` appointment, master receives a notification that the request was cancelled by the client.
@@ -473,7 +479,7 @@ The partner can require a minimal configurable set of fields for booking. If dat
 - Client can initiate a message to master from the client personal area.
 - MVP messages are scoped to `partner + client`.
 - MVP messages do not need to be tied to a specific appointment.
-- Master receives client messages through the partner bot/admin Telegram context.
+- Master receives client messages through a partner-scoped linked master Telegram contact.
 - Master replies through the bot, and the client receives the answer from the partner/master bot.
 - Partner/master can see conversations with own clients.
 - Superuser may access conversations for support and incident investigation.
@@ -482,6 +488,14 @@ The partner can require a minimal configurable set of fields for booking. If dat
 - Marketing unsubscribe is separate from service/manual messages.
 
 Exact moderation/abuse handling and detailed privacy/support policies remain design questions.
+
+### Master Telegram Contact
+
+- Bot token validation identifies the bot only; it does not identify the master's personal Telegram account.
+- Master-facing Telegram delivery requires an explicit partner-scoped master contact binding.
+- Binding is created through a signed admin/deep link opened in the partner's own bot.
+- A normal client `/start` must never grant master-contact privileges.
+- MVP can expose one primary master contact, with room to add extra notification recipients later.
 
 ### Multilingual Content
 
@@ -528,6 +542,8 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   - `appointment.cancel_confirm_prompt` with `{date}`, `{time}`, `{services}`.
   - `appointment.cancelled_by_client` with `{date}`, `{time}`, `{services}`.
   - `appointment.cancelled_by_master` with `{partner_name}`, `{date}`, `{time}`, `{services}`, `{reason}`.
+  - `appointment.completed` with `{partner_name}`, `{date}`, `{time}`, `{services}`.
+  - `appointment.no_show` with `{partner_name}`, `{date}`, `{time}`, `{services}`.
   - `appointment.late_cancel_penalty_warning` with `{penalty_amount}`, `{currency}`, `{deadline_hours}`.
   - `appointment.late_cancelled_with_penalty` with `{penalty_amount}`, `{currency}`.
   - `appointment.reschedule_start` with `{date}`, `{time}`, `{services}`.
@@ -538,7 +554,8 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   - `appointment.reschedule_proposal_declined` with `{date}`, `{time}`, `{services}`.
   - `appointment.reschedule_proposal_expired` with `{date}`, `{time}`, `{services}`.
 - `appointment.late_cancel_blocked` remains system-only localized in MVP.
-- Master notifications for cancellation/reschedule events are partner-editable in MVP:
+- Master booking and cancellation/reschedule notifications are partner-editable in MVP:
+  - `master.client_booked_appointment` with `{client_name}`, `{client_phone}`, `{date}`, `{time}`, `{services}`, `{comment}`.
   - `master.client_cancelled_appointment`.
   - `master.client_requested_reschedule`.
   - `master.client_accepted_reschedule`.

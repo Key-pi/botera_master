@@ -1,0 +1,44 @@
+{% load client_admin i18n %}
+
+{% if appointments %}
+  <div class="dashboard-table-wrap">
+    <table class="dashboard-table">
+      <thead>
+        <tr>
+          <th>{% translate "Time" %}</th>
+          <th>{% translate "Client" %}</th>
+          <th>{% translate "Services" %}</th>
+          <th>{% translate "Status" %}</th>
+          <th>{% translate "Total" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appointment in appointments %}
+          <tr>
+            <td data-label="{% translate 'Time' %}">
+              <a href="{% url 'admin:appointments_appointment_change' appointment.pk %}">
+                {{ appointment.start_at|date:"SHORT_DATETIME_FORMAT" }}
+              </a>
+            </td>
+            <td data-label="{% translate 'Client' %}">
+              <a href="{% url 'admin:clients_clientprofile_change' appointment.client_profile_id %}">
+                {{ appointment.client_profile.display_name }}
+              </a>
+            </td>
+            <td class="dashboard-services" data-label="{% translate 'Services' %}">
+              {% for item in appointment.service_items.all %}
+                {{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                {% translate "No service lines" %}
+              {% endfor %}
+            </td>
+            <td data-label="{% translate 'Status' %}">{{ appointment.get_status_display }}</td>
+            <td data-label="{% translate 'Total' %}">{{ appointment.total_amount|money_amount }} {{ appointment.currency }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="dashboard-empty">{% translate "Nothing scheduled." %}</p>
+{% endif %}

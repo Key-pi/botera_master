@@ -1,0 +1,94 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls i18n %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{{ changelist_url }}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; {% translate "Message client" %}
+  </div>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .message-client-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0 0 24px;
+    }
+    .message-client-summary > div {
+      border-bottom: 1px solid var(--hairline-color);
+      min-width: 0;
+      padding: 12px 16px;
+    }
+    .message-client-summary dt {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .message-client-summary dd {
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .message-client-form .form-row {
+      border-bottom: 1px solid var(--hairline-color);
+      padding: 12px 16px;
+    }
+    .message-client-form .form-row label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .message-client-form textarea {
+      box-sizing: border-box;
+      max-width: 720px;
+      width: 100%;
+    }
+    .message-client-form .help {
+      color: var(--body-quiet-color);
+      margin: 6px 0 0;
+    }
+    @media (max-width: 767px) {
+      .message-client-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <fieldset class="module">
+    <h2>{% translate "Client" %}</h2>
+    <dl class="message-client-summary">
+      <div>
+        <dt>{% translate "Name" %}</dt>
+        <dd>{{ client_profile.display_name }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Telegram" %}</dt>
+        <dd>{{ client_profile.telegram_identity }}</dd>
+      </div>
+    </dl>
+  </fieldset>
+
+  <form method="post" class="message-client-form">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+      <div class="form-row{% if field.errors %} errors{% endif %}">
+        {{ field.errors }}
+        {{ field.label_tag }}
+        {{ field }}
+        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+      </div>
+    {% endfor %}
+    <div class="submit-row">
+      <input type="submit" value="{% translate 'Send through bot' %}" class="default">
+      <a href="{{ changelist_url }}">{% translate "Cancel" %}</a>
+    </div>
+  </form>
+{% endblock %}

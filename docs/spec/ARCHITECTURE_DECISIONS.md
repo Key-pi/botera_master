@@ -60,6 +60,10 @@ This document records approved architecture-preparation decisions and deferred t
 - Token/configuration that later fails at runtime should move bot to `error`, show the problem to partner, and make it visible to superuser.
 - Partner can trigger a check/revalidate action from admin after fixing token/configuration.
 - Critical settings require a normal confirmation modal before save; typed confirmation is not required in MVP.
+- A bot token identifies the bot, not the master's personal Telegram account.
+- Master-facing delivery requires an explicit partner-scoped Telegram contact binding created through a signed deep link opened in the partner's own bot.
+- A normal client `/start` or arbitrary callback payload must never grant master/contact delivery privileges.
+- MVP can expose one primary owner/master Telegram contact, while the data model should allow additional notification recipients later.
 
 ### AD-004 Bot Runtime
 
@@ -130,7 +134,14 @@ This document records approved architecture-preparation decisions and deferred t
 - Calendar range selection supports creating availability windows, blocked time, and manual appointments.
 - Calendar event/layer types such as availability windows, blocked time, appointments, conflicts, and near-fit/request markers should be visually distinguishable.
 - Clicking an appointment opens a detail panel/modal with actions to edit, propose reschedule, cancel, mark completed, mark no-show, and message client.
+- The Pilot Wiring week view opens that appointment detail as an inline, mobile-adapted panel resolved through the selected partner and booking resource. Its actions delegate to the existing tenant-scoped appointment, proposal, client, and messaging admin adapters; status shortcuts only preselect a target on the existing confirmation form.
 - Calendar supports quick copy day/week actions in addition to saved availability templates.
+- Quick day/week copy is scoped to one booking resource and copies only concrete
+  availability and blocked-time records whose start belongs to the source period;
+  appointments are never copied.
+- Copy preserves partner-local calendar days and wall-clock times across timezone/DST
+  changes, keeps existing target records, and skips exact duplicates instead of
+  clearing or overwriting the target period.
 - Calendar admin should be usable on mobile with adapted interactions, while dense editing can remain more comfortable on desktop/tablet in MVP.
 - Partner can create multiple reusable availability templates and apply them to future weeks/date ranges.
 - Weekly schedules are treated as reusable templates, not the only scheduling model.
@@ -147,6 +158,9 @@ This document records approved architecture-preparation decisions and deferred t
 - Overnight template window rules are not supported in MVP; split them into two day-local rules if needed.
 - Booking horizon is configurable per partner.
 - Changing availability does not silently move confirmed appointments; conflicts are shown for partner resolution.
+- Schedule conflicts remain computed read models. The partner's `leave as is` decision is persisted separately as one acknowledgement per appointment with a fingerprint of the conflict-relevant facts.
+- Matching acknowledgements suppress active conflict markers and counts without mutating the appointment. If relevant appointment/schedule facts change, the fingerprint mismatch returns the conflict to active review; explicit reopen removes the acknowledgement.
+- Conflict acknowledgement mutations are tenant-scoped owner services, run transactionally, and create partner-visible audit events. Bulk keep/reopen is bounded to 100 selected conflicts per operation.
 - Confirmed appointment overlap prevention is a critical invariant and must be enforced transactionally/concurrency-safely, not only through UI filtering.
 - Confirmed appointment overlap protection is scoped to a booking resource, not directly to the whole partner.
 - Solo-master MVP has one default booking resource per partner; future studios can add multiple booking resources under one partner.
