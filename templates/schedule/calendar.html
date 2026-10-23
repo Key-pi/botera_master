@@ -1,0 +1,426 @@
+{% extends "admin/base_site.html" %}
+{% load i18n tz %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .partner-calendar {
+      display: grid;
+      gap: 18px;
+      max-width: 1600px;
+    }
+    .calendar-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 20px;
+      justify-content: space-between;
+    }
+    .calendar-header h1 {
+      font-size: 1.5rem;
+      margin: 0 0 6px;
+    }
+    .calendar-subtitle {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .calendar-actions,
+    .calendar-filters,
+    .calendar-selector,
+    .calendar-week-nav,
+    .calendar-legend {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .calendar-selector label {
+      font-weight: 600;
+    }
+    .calendar-selector select {
+      max-width: 280px;
+      min-width: 180px;
+    }
+    .calendar-workspace-nav {
+      border-bottom: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      display: flex;
+      flex-wrap: wrap;
+      padding: 0;
+    }
+    .calendar-workspace-nav a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+    .calendar-workspace-nav a[aria-current="page"] {
+      background: var(--selected-bg);
+    }
+    .calendar-toolbar {
+      align-items: center;
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+    }
+    .calendar-range {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .calendar-legend {
+      color: var(--body-quiet-color);
+      font-size: 0.8rem;
+    }
+    .calendar-legend-item {
+      align-items: center;
+      display: inline-flex;
+      gap: 5px;
+    }
+    .calendar-legend-swatch {
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      display: inline-block;
+      height: 10px;
+      width: 10px;
+    }
+    .calendar-legend-swatch--availability {
+      background: #d9efe2;
+    }
+    .calendar-legend-swatch--blocked {
+      background: #eee4e4;
+    }
+    .calendar-legend-swatch--requested {
+      background: #f8e7b2;
+    }
+    .calendar-legend-swatch--confirmed {
+      background: #dceaf7;
+    }
+    .calendar-week {
+      border-left: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+    .calendar-day {
+      border-bottom: 1px solid var(--hairline-color);
+      border-right: 1px solid var(--hairline-color);
+      min-height: 280px;
+      min-width: 0;
+    }
+    .calendar-day--today {
+      background: color-mix(in srgb, var(--selected-bg) 35%, transparent);
+    }
+    .calendar-day-header {
+      align-items: baseline;
+      border-bottom: 1px solid var(--hairline-color);
+      display: flex;
+      gap: 7px;
+      justify-content: space-between;
+      padding: 9px 10px;
+    }
+    .calendar-day-header strong {
+      font-size: 0.84rem;
+    }
+    .calendar-day-date {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+    }
+    .calendar-today-label {
+      background: var(--primary);
+      color: var(--header-color);
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 5px;
+      text-transform: uppercase;
+    }
+    .calendar-day-body {
+      display: grid;
+      gap: 7px;
+      padding: 8px;
+    }
+    .calendar-entry {
+      border-left: 4px solid;
+      min-width: 0;
+      padding: 7px 8px;
+    }
+    .calendar-entry--availability {
+      background: #edf8f1;
+      border-color: #39865b;
+    }
+    .calendar-entry--blocked {
+      background: #f7eeee;
+      border-color: #9b5a5a;
+    }
+    .calendar-entry--requested {
+      background: #fff6dc;
+      border-color: #aa7a00;
+    }
+    .calendar-entry--confirmed {
+      background: #edf4fb;
+      border-color: #3678a8;
+    }
+    .calendar-entry--completed {
+      background: #edf7ef;
+      border-color: #3f8250;
+    }
+    .calendar-entry--no_show {
+      background: #f9eaea;
+      border-color: #b54848;
+    }
+    .calendar-entry-time {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .calendar-entry-title,
+    .calendar-entry-detail {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+    .calendar-entry-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .calendar-entry-detail {
+      color: var(--body-quiet-color);
+      font-size: 0.72rem;
+      margin-top: 2px;
+    }
+    .calendar-entry-flags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+    .calendar-entry-flag {
+      border: 1px solid currentColor;
+      font-size: 0.65rem;
+      padding: 1px 4px;
+    }
+    .calendar-day-empty {
+      color: var(--body-quiet-color);
+      font-size: 0.78rem;
+      margin: 0;
+      padding: 16px 10px;
+    }
+    .calendar-warning {
+      border-left: 4px solid #ba8b00;
+      padding-left: 14px;
+    }
+    .calendar-warning h2 {
+      font-size: 1rem;
+      margin: 0 0 6px;
+    }
+    .calendar-warning p {
+      margin: 0;
+    }
+    @media (max-width: 1199px) {
+      .calendar-week {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 767px) {
+      .calendar-header,
+      .calendar-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .calendar-actions .button,
+      .calendar-week-nav .button {
+        box-sizing: border-box;
+        flex: 1 1 auto;
+        text-align: center;
+      }
+      .calendar-filters,
+      .calendar-selector {
+        align-items: stretch;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+      }
+      .calendar-selector select,
+      .calendar-selector button {
+        max-width: 100%;
+        width: 100%;
+      }
+      .calendar-workspace-nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .calendar-workspace-nav a {
+        border-bottom: 1px solid var(--hairline-color);
+        overflow-wrap: anywhere;
+      }
+      .calendar-week {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .calendar-day {
+        min-height: 0;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <main class="partner-calendar">
+    {% if selected_partner %}
+      <header class="calendar-header">
+        <div>
+          <h1>{{ selected_partner.name }} · {% translate "Calendar" %}</h1>
+          <p class="calendar-subtitle">
+            {{ selected_partner.timezone }}
+            {% if selected_resource %} · {{ selected_resource.name }}{% endif %}
+          </p>
+        </div>
+        <div class="calendar-actions">
+          {% if selected_resource %}
+            <a class="button" href="{% url 'admin:schedule_availabilitywindow_add' %}?partner={{ selected_partner.pk }}&amp;booking_resource={{ selected_resource.pk }}">
+              {% translate "Open availability" %}
+            </a>
+            <a class="button" href="{% url 'admin:schedule_blockedtime_add' %}?partner={{ selected_partner.pk }}&amp;booking_resource={{ selected_resource.pk }}">
+              {% translate "Block time" %}
+            </a>
+            <a class="button" href="{% url 'admin:appointments_appointment_add' %}?partner={{ selected_partner.pk }}&amp;booking_resource={{ selected_resource.pk }}">
+              {% translate "Create appointment" %}
+            </a>
+          {% endif %}
+        </div>
+      </header>
+
+      <nav class="calendar-workspace-nav" aria-label="{% translate 'Partner workspace' %}">
+        <a href="{% url 'partners:dashboard' %}?partner={{ selected_partner.pk }}">{% translate "Dashboard" %}</a>
+        <a href="{% url 'schedule:calendar' %}?partner={{ selected_partner.pk }}" aria-current="page">{% translate "Calendar" %}</a>
+        <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Appointments" %}</a>
+        <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Clients" %}</a>
+        <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Catalog" %}</a>
+        <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Broadcasts" %}</a>
+        <a href="{% url 'admin:finance_expense_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Finance" %}</a>
+        <a href="{% url 'admin:bot_botinstance_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Bot" %}</a>
+        <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Activity Log" %}</a>
+      </nav>
+
+      <div class="calendar-filters">
+        {% if partners|length > 1 %}
+          <form class="calendar-selector" method="get">
+            <label for="calendar-partner">{% translate "Partner" %}</label>
+            <select id="calendar-partner" name="partner">
+              {% for partner in partners %}
+                <option value="{{ partner.pk }}"{% if partner.pk == selected_partner.pk %} selected{% endif %}>{{ partner.name }}</option>
+              {% endfor %}
+            </select>
+            {% if snapshot %}<input type="hidden" name="week" value="{{ snapshot.week_start|date:'Y-m-d' }}">{% endif %}
+            <button type="submit">{% translate "Open" %}</button>
+          </form>
+        {% endif %}
+        {% if resources|length > 1 %}
+          <form class="calendar-selector" method="get">
+            <input type="hidden" name="partner" value="{{ selected_partner.pk }}">
+            {% if snapshot %}<input type="hidden" name="week" value="{{ snapshot.week_start|date:'Y-m-d' }}">{% endif %}
+            <label for="calendar-resource">{% translate "Calendar resource" %}</label>
+            <select id="calendar-resource" name="resource">
+              {% for resource in resources %}
+                <option value="{{ resource.pk }}"{% if resource.pk == selected_resource.pk %} selected{% endif %}>{{ resource.name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">{% translate "Open" %}</button>
+          </form>
+        {% endif %}
+      </div>
+
+      {% if snapshot %}
+        <div class="calendar-toolbar">
+          <div>
+            <p class="calendar-range">
+              {{ snapshot.week_start|date:"DATE_FORMAT" }} – {{ snapshot.week_end|date:"DATE_FORMAT" }}
+            </p>
+            <div class="calendar-legend" aria-label="{% translate 'Calendar legend' %}">
+              <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--availability"></span>{% translate "Available" %}</span>
+              <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--blocked"></span>{% translate "Blocked" %}</span>
+              <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--requested"></span>{% translate "Requested" %}</span>
+              <span class="calendar-legend-item"><span class="calendar-legend-swatch calendar-legend-swatch--confirmed"></span>{% translate "Confirmed" %}</span>
+            </div>
+          </div>
+          <div class="calendar-week-nav">
+            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.previous_week_start|date:'Y-m-d' }}">{% translate "Previous week" %}</a>
+            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.current_week_start|date:'Y-m-d' }}">{% translate "Today" %}</a>
+            <a class="button" href="?partner={{ selected_partner.pk }}&amp;resource={{ selected_resource.pk }}&amp;week={{ snapshot.next_week_start|date:'Y-m-d' }}">{% translate "Next week" %}</a>
+          </div>
+        </div>
+
+        {% timezone selected_partner.timezone %}
+          <section class="calendar-week" aria-label="{% translate 'Weekly calendar' %}">
+            {% for calendar_day in snapshot.days %}
+              <article class="calendar-day{% if calendar_day.is_today %} calendar-day--today{% endif %}">
+                <header class="calendar-day-header">
+                  <span>
+                    <strong>{{ calendar_day.day|date:"D" }}</strong>
+                    <span class="calendar-day-date">{{ calendar_day.day|date:"j M" }}</span>
+                  </span>
+                  {% if calendar_day.is_today %}<span class="calendar-today-label">{% translate "Today" %}</span>{% endif %}
+                </header>
+                {% if calendar_day.entries %}
+                  <div class="calendar-day-body">
+                    {% for entry in calendar_day.entries %}
+                      {% if entry.kind == "availability" %}
+                        <div class="calendar-entry calendar-entry--availability">
+                          <span class="calendar-entry-time">
+                            {% if entry.continues_before %}&larr;{% endif %}
+                            {{ entry.display_start_at|date:"H:i" }}–{{ entry.display_end_at|date:"H:i" }}
+                            {% if entry.continues_after %}&rarr;{% endif %}
+                          </span>
+                          <a class="calendar-entry-title" href="{% url 'admin:schedule_availabilitywindow_change' entry.record.pk %}">{% translate "Available" %}</a>
+                          {% if entry.record.source_template %}<span class="calendar-entry-detail">{{ entry.record.source_template.name }}</span>{% endif %}
+                        </div>
+                      {% elif entry.kind == "blocked" %}
+                        <div class="calendar-entry calendar-entry--blocked">
+                          <span class="calendar-entry-time">
+                            {% if entry.continues_before %}&larr;{% endif %}
+                            {{ entry.display_start_at|date:"H:i" }}–{{ entry.display_end_at|date:"H:i" }}
+                            {% if entry.continues_after %}&rarr;{% endif %}
+                          </span>
+                          <a class="calendar-entry-title" href="{% url 'admin:schedule_blockedtime_change' entry.record.pk %}">{% translate "Blocked" %}</a>
+                          {% if entry.record.reason %}<span class="calendar-entry-detail">{{ entry.record.reason }}</span>{% endif %}
+                        </div>
+                      {% else %}
+                        <div class="calendar-entry calendar-entry--{{ entry.record.status }}">
+                          <span class="calendar-entry-time">
+                            {% if entry.continues_before %}&larr;{% endif %}
+                            {{ entry.display_start_at|date:"H:i" }}–{{ entry.display_end_at|date:"H:i" }}
+                            {% if entry.continues_after %}&rarr;{% endif %}
+                          </span>
+                          <a class="calendar-entry-title" href="{% url 'admin:appointments_appointment_change' entry.record.pk %}">{{ entry.record.client_profile.display_name }}</a>
+                          <span class="calendar-entry-detail">
+                            {% for item in entry.record.service_items.all %}{{ item.service_name_snapshot }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "No service lines" %}{% endfor %}
+                          </span>
+                          <span class="calendar-entry-flags">
+                            <span class="calendar-entry-flag">{{ entry.record.get_status_display }}</span>
+                            {% if entry.record.is_near_fit %}<span class="calendar-entry-flag">{% translate "Near-fit" %}</span>{% endif %}
+                          </span>
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="calendar-day-empty">{% translate "No calendar entries." %}</p>
+                {% endif %}
+              </article>
+            {% endfor %}
+          </section>
+        {% endtimezone %}
+      {% else %}
+        <section class="calendar-warning">
+          <h2>{% translate "No active calendar resource" %}</h2>
+          <p>{% translate "Activate a calendar resource before planning availability or appointments." %}</p>
+        </section>
+      {% endif %}
+    {% else %}
+      <section class="calendar-warning">
+        <h1>{% translate "No partner access" %}</h1>
+        <p>{% translate "This account does not have an active partner membership." %}</p>
+      </section>
+    {% endif %}
+  </main>
+{% endblock %}

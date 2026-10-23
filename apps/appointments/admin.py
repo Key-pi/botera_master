@@ -258,6 +258,15 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         form = ManualAppointmentAdminForm(
             request.POST or None,
             actor=request.user,
+            initial=(
+                {
+                    field_name: request.GET[field_name]
+                    for field_name in ("partner", "booking_resource")
+                    if request.GET.get(field_name)
+                }
+                if request.method == "GET"
+                else None
+            ),
         )
         service_formset = ManualAppointmentServiceItemFormSet(
             request.POST or None,

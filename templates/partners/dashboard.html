@@ -267,7 +267,7 @@
 
       <nav class="dashboard-nav" aria-label="{% translate 'Partner workspace' %}">
         <a href="{% url 'partners:dashboard' %}?partner={{ snapshot.partner.pk }}">{% translate "Dashboard" %}</a>
-        <a href="{% url 'admin:schedule_availabilitywindow_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Calendar" %}</a>
+        <a href="{% url 'schedule:calendar' %}?partner={{ snapshot.partner.pk }}">{% translate "Calendar" %}</a>
         <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Appointments" %}</a>
         <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Clients" %}</a>
         <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Catalog" %}</a>
@@ -361,7 +361,7 @@
           <section class="module dashboard-section">
             <div class="dashboard-section-heading">
               <h2>{% translate "Tomorrow" %} · {{ snapshot.tomorrow|date:"DATE_FORMAT" }}</h2>
-              <a href="{% url 'admin:schedule_availabilitywindow_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">
+              <a href="{% url 'schedule:calendar' %}?partner={{ snapshot.partner.pk }}">
                 {% translate "Open calendar" %}
               </a>
             </div>

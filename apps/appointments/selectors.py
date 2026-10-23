@@ -50,6 +50,30 @@ def appointments_for_partner_period(
     return queryset.order_by("start_at", "created_at")
 
 
+def appointments_for_booking_resource_period(
+    *,
+    partner: Partner,
+    booking_resource: BookingResource,
+    start_at: datetime,
+    end_at: datetime,
+    statuses: Sequence[str] | None = None,
+) -> QuerySet[Appointment]:
+    """Return appointments overlapping one resource calendar period."""
+
+    queryset = (
+        appointments_for_partner(partner)
+        .filter(
+            booking_resource=booking_resource,
+            start_at__lt=end_at,
+            end_at__gt=start_at,
+        )
+        .prefetch_related("service_items")
+    )
+    if statuses is not None:
+        queryset = queryset.filter(status__in=statuses)
+    return queryset.order_by("start_at", "created_at")
+
+
 def requested_appointments_for_partner(*, partner: Partner) -> QuerySet[Appointment]:
     """Return outstanding booking requests that need this partner's attention."""
 
