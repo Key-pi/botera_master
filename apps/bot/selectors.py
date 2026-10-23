@@ -15,6 +15,12 @@ def active_polling_bot_instances() -> QuerySet[BotInstance]:
     )
 
 
+def bot_instance_for_partner(partner: Partner) -> BotInstance | None:
+    """Return the technical bot state for one partner without creating it."""
+
+    return BotInstance.objects.filter(partner=partner).first()
+
+
 def active_master_telegram_contacts(partner: Partner) -> QuerySet[PartnerTelegramContact]:
     """Return active partner contacts for master-facing Telegram delivery."""
 

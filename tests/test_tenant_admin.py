@@ -281,7 +281,7 @@ def test_partner_admin_queryset_is_partner_scoped() -> None:
 
 
 @pytest.mark.django_db
-def test_partner_dashboard_placeholder_is_partner_scoped(client) -> None:
+def test_partner_dashboard_is_partner_scoped(client) -> None:
     superuser = User.objects.create_superuser(username="root", password="secret")
     first = create_partner_with_owner(
         actor=superuser,

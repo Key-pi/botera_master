@@ -55,11 +55,15 @@ def due_notifications(
 def failed_notifications_visible_to_partner(partner: Partner) -> QuerySet[ScheduledNotification]:
     """Return failed delivery markers that need partner attention."""
 
-    return ScheduledNotification.objects.filter(
-        partner=partner,
-        status=ScheduledNotification.Status.FAILED,
-        failed_visible_to_partner=True,
-    ).order_by("-updated_at")
+    return (
+        ScheduledNotification.objects.filter(
+            partner=partner,
+            status=ScheduledNotification.Status.FAILED,
+            failed_visible_to_partner=True,
+        )
+        .select_related("appointment", "appointment__client_profile", "client_profile")
+        .order_by("-updated_at")
+    )
 
 
 def notification_for_partner_by_id(

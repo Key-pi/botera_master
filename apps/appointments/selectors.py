@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -27,6 +28,36 @@ def appointments_for_partner(partner: Partner) -> QuerySet[Appointment]:
         "booking_resource",
         "client_profile",
         "created_by",
+    )
+
+
+def appointments_for_partner_period(
+    *,
+    partner: Partner,
+    start_at: datetime,
+    end_at: datetime,
+    statuses: Sequence[str] | None = None,
+) -> QuerySet[Appointment]:
+    """Return appointment summaries for one tenant and half-open time period."""
+
+    queryset = (
+        appointments_for_partner(partner)
+        .filter(start_at__gte=start_at, start_at__lt=end_at)
+        .prefetch_related("service_items")
+    )
+    if statuses is not None:
+        queryset = queryset.filter(status__in=statuses)
+    return queryset.order_by("start_at", "created_at")
+
+
+def requested_appointments_for_partner(*, partner: Partner) -> QuerySet[Appointment]:
+    """Return outstanding booking requests that need this partner's attention."""
+
+    return (
+        appointments_for_partner(partner)
+        .filter(status=Appointment.Status.REQUESTED)
+        .prefetch_related("service_items")
+        .order_by("start_at", "created_at")
     )
 
 
