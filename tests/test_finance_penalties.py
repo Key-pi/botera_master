@@ -240,7 +240,15 @@ def test_configured_late_cancel_no_show_and_late_arrival_penalties(finance_conte
         appointment=no_show_appointment,
     )
 
-    late_arrival_appointment = _confirmed(context, timezone.now() + timedelta(days=4))
+    future_appointment = _confirmed(context, timezone.now() + timedelta(days=4))
+    with pytest.raises(ValidationError, match="only be recorded after"):
+        create_late_arrival_penalty_for_appointment(
+            actor=context["owner"],
+            appointment=future_appointment,
+            late_by_minutes=15,
+        )
+
+    late_arrival_appointment = _confirmed(context, timezone.now() - timedelta(days=2))
     with pytest.raises(ValidationError):
         create_late_arrival_penalty_for_appointment(
             actor=context["owner"],
@@ -252,6 +260,12 @@ def test_configured_late_cancel_no_show_and_late_arrival_penalties(finance_conte
         appointment=late_arrival_appointment,
         late_by_minutes=15,
     )
+    with pytest.raises(ValidationError, match="already has a penalty"):
+        create_late_arrival_penalty_for_appointment(
+            actor=context["owner"],
+            appointment=late_arrival_appointment,
+            late_by_minutes=20,
+        )
 
     assert late_cancel.reason == Penalty.Reason.LATE_CANCEL
     assert late_cancel.amount == 5000
@@ -260,6 +274,13 @@ def test_configured_late_cancel_no_show_and_late_arrival_penalties(finance_conte
     assert late_arrival.reason == Penalty.Reason.LATE_ARRIVAL
     assert late_arrival.amount == 2000
     assert late_arrival.late_by_minutes == 15
+    assert (
+        Penalty.objects.filter(
+            source_appointment=late_arrival_appointment,
+            reason=Penalty.Reason.LATE_ARRIVAL,
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db
@@ -281,7 +302,15 @@ def test_penalty_lifecycle_schedules_client_notifications_once_after_commit(
         partner=context["partner"],
         booking_resource=context["resource"],
         client_profile=client_profile,
-        start_at=timezone.now() + timedelta(days=2),
+        start_at=timezone.now() - timedelta(days=3),
+        service_items=[_service_input(context["service"])],
+    )
+    waived_appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=client_profile,
+        start_at=timezone.now() - timedelta(days=2),
         service_items=[_service_input(context["service"])],
     )
     update_penalty_settings(
@@ -321,7 +350,7 @@ def test_penalty_lifecycle_schedules_client_notifications_once_after_commit(
     with django_capture_on_commit_callbacks(execute=True):
         waived_penalty = create_late_arrival_penalty_for_appointment(
             actor=context["owner"],
-            appointment=appointment,
+            appointment=waived_appointment,
             late_by_minutes=20,
         )
     with django_capture_on_commit_callbacks(execute=True):

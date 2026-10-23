@@ -547,6 +547,9 @@ Key fields:
 
 Rules:
 - partner may waive/forgive manually.
+- one `source_appointment` may produce at most one penalty per `reason`.
+- source-appointment penalty creation locks the appointment and rechecks existing debt inside the service transaction so repeated submissions do not create duplicates.
+- a late-arrival penalty may be created only after the source appointment's planned start time.
 - penalties are shown separately in reports as one line group.
 - client can see active unpaid penalties if penalties are enabled.
 - client can write master about penalties through generic contact master flow.

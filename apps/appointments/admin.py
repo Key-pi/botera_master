@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
+from django.utils import timezone
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.forms import (
@@ -34,9 +35,23 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.clients.models import ClientProfile
-from apps.finance.forms import AppointmentPenaltyAdminForm, add_domain_errors_to_form
-from apps.finance.selectors import penalty_applications_for_appointment
-from apps.finance.services import apply_penalties_to_appointment
+from apps.finance.forms import (
+    AppointmentPenaltyAdminForm,
+    LateArrivalPenaltyAdminForm,
+    NoShowPenaltyAdminForm,
+    add_domain_errors_to_form,
+)
+from apps.finance.models import Penalty
+from apps.finance.selectors import (
+    penalty_applications_for_appointment,
+    penalty_exists_for_appointment_reason,
+    penalty_settings_for_partner,
+)
+from apps.finance.services import (
+    apply_penalties_to_appointment,
+    create_late_arrival_penalty_for_appointment,
+    create_no_show_penalty_for_appointment,
+)
 from apps.schedule.models import BookingResource
 from core.admin import PartnerScopedAdminMixin
 from core.timezones import to_partner_time
@@ -187,6 +202,16 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.penalty_application_view),
                 name="appointments_appointment_penalties",
             ),
+            path(
+                "<path:object_id>/penalties/no-show/",
+                self.admin_site.admin_view(self.no_show_penalty_view),
+                name="appointments_appointment_no_show_penalty",
+            ),
+            path(
+                "<path:object_id>/penalties/late-arrival/",
+                self.admin_site.admin_view(self.late_arrival_penalty_view),
+                name="appointments_appointment_late_arrival_penalty",
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -290,6 +315,8 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     def change_view(self, request, object_id, form_url="", extra_context=None):
         appointment = self.get_object(request, object_id)
         proposal_action_url = None
+        no_show_penalty_action_url = None
+        late_arrival_penalty_action_url = None
         if (
             appointment is not None
             and appointment.client_profile.telegram_identity_id
@@ -303,6 +330,23 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 "admin:appointments_appointment_propose_time",
                 args=[object_id],
             )
+        if appointment is not None:
+            if self._can_create_source_penalty(
+                appointment=appointment,
+                reason=Penalty.Reason.NO_SHOW,
+            ):
+                no_show_penalty_action_url = reverse(
+                    "admin:appointments_appointment_no_show_penalty",
+                    args=[object_id],
+                )
+            if self._can_create_source_penalty(
+                appointment=appointment,
+                reason=Penalty.Reason.LATE_ARRIVAL,
+            ):
+                late_arrival_penalty_action_url = reverse(
+                    "admin:appointments_appointment_late_arrival_penalty",
+                    args=[object_id],
+                )
         extra_context = {
             **(extra_context or {}),
             "status_action_url": reverse(
@@ -314,6 +358,8 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 "admin:appointments_appointment_penalties",
                 args=[object_id],
             ),
+            "no_show_penalty_action_url": no_show_penalty_action_url,
+            "late_arrival_penalty_action_url": late_arrival_penalty_action_url,
         }
         return super().change_view(
             request,
@@ -363,6 +409,20 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                     request,
                     f"Appointment status changed to {stored.get_status_display()}.",
                 )
+                if self._can_create_source_penalty(
+                    appointment=stored,
+                    reason=Penalty.Reason.NO_SHOW,
+                ):
+                    self.message_user(
+                        request,
+                        "Review the optional no-show penalty before returning to the appointment.",
+                    )
+                    return HttpResponseRedirect(
+                        reverse(
+                            "admin:appointments_appointment_no_show_penalty",
+                            args=[stored.id],
+                        )
+                    )
                 return HttpResponseRedirect(
                     reverse(
                         "admin:appointments_appointment_change",
@@ -535,6 +595,153 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             "admin/appointments/appointment/penalty_form.html",
             context,
         )
+
+    def no_show_penalty_view(self, request, object_id):
+        """Offer the configured no-show debt after an explicit no-show status."""
+
+        return self._source_penalty_view(
+            request,
+            object_id,
+            reason=Penalty.Reason.NO_SHOW,
+        )
+
+    def late_arrival_penalty_view(self, request, object_id):
+        """Collect lateness and offer the configured late-arrival debt."""
+
+        return self._source_penalty_view(
+            request,
+            object_id,
+            reason=Penalty.Reason.LATE_ARRIVAL,
+        )
+
+    def _source_penalty_view(self, request, object_id, *, reason: str):
+        appointment = self.get_object(request, object_id)
+        if appointment is None:
+            raise Http404("Appointment not found.")
+        if not self.has_change_permission(request, appointment):
+            raise PermissionDenied
+
+        change_url = reverse(
+            "admin:appointments_appointment_change",
+            args=[appointment.id],
+        )
+        settings = penalty_settings_for_partner(partner=appointment.partner)
+        if settings is None or not settings.penalties_enabled:
+            self.message_user(
+                request,
+                "Penalties are disabled for this partner.",
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(change_url)
+        if not self._has_penalty_eligible_status(appointment=appointment, reason=reason):
+            self.message_user(
+                request,
+                "The appointment status does not allow this penalty.",
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(change_url)
+        if penalty_exists_for_appointment_reason(
+            appointment=appointment,
+            reason=reason,
+        ):
+            self.message_user(
+                request,
+                "This appointment already has a penalty for that incident.",
+                level=messages.WARNING,
+            )
+            return HttpResponseRedirect(change_url)
+
+        if reason == Penalty.Reason.NO_SHOW:
+            form = NoShowPenaltyAdminForm(request.POST or None)
+            title = "Create no-show penalty"
+            penalty_amount = settings.no_show_penalty_amount
+            threshold_minutes = None
+        else:
+            form = LateArrivalPenaltyAdminForm(
+                request.POST or None,
+                threshold_minutes=settings.late_arrival_threshold_minutes,
+            )
+            title = "Record late arrival"
+            penalty_amount = settings.late_arrival_penalty_amount
+            threshold_minutes = settings.late_arrival_threshold_minutes
+
+        if request.method == "POST" and form.is_valid():
+            try:
+                if reason == Penalty.Reason.NO_SHOW:
+                    penalty = create_no_show_penalty_for_appointment(
+                        actor=request.user,
+                        appointment=appointment,
+                        note=form.cleaned_data["note"],
+                    )
+                else:
+                    penalty = create_late_arrival_penalty_for_appointment(
+                        actor=request.user,
+                        appointment=appointment,
+                        late_by_minutes=form.cleaned_data["late_by_minutes"],
+                        note=form.cleaned_data["note"],
+                    )
+            except ValidationError as exc:
+                add_domain_errors_to_form(form, exc)
+            else:
+                self.log_change(
+                    request,
+                    appointment,
+                    f"Created {penalty.get_reason_display()} penalty.",
+                )
+                self.message_user(
+                    request,
+                    f"{penalty.get_reason_display()} penalty created for the client.",
+                )
+                return HttpResponseRedirect(change_url)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": title,
+            "subtitle": _appointment_partner_summary(appointment),
+            "opts": self.model._meta,
+            "appointment": appointment,
+            "form": form,
+            "media": self.media + form.media,
+            "change_url": change_url,
+            "penalty_amount": penalty_amount,
+            "penalty_currency": settings.currency,
+            "threshold_minutes": threshold_minutes,
+        }
+        return TemplateResponse(
+            request,
+            "admin/appointments/appointment/create_penalty_form.html",
+            context,
+        )
+
+    def _can_create_source_penalty(self, *, appointment, reason: str) -> bool:
+        settings = penalty_settings_for_partner(partner=appointment.partner)
+        return bool(
+            settings
+            and settings.penalties_enabled
+            and self._has_penalty_eligible_status(
+                appointment=appointment,
+                reason=reason,
+            )
+            and not penalty_exists_for_appointment_reason(
+                appointment=appointment,
+                reason=reason,
+            )
+        )
+
+    @staticmethod
+    def _has_penalty_eligible_status(*, appointment, reason: str) -> bool:
+        if reason == Penalty.Reason.NO_SHOW:
+            return appointment.status == Appointment.Status.NO_SHOW
+        if reason == Penalty.Reason.LATE_ARRIVAL:
+            return (
+                appointment.status
+                in {
+                    Appointment.Status.CONFIRMED,
+                    Appointment.Status.COMPLETED,
+                }
+                and appointment.start_at <= timezone.now()
+            )
+        return False
 
     def _run_status_action(self, request, queryset, status: str) -> None:
         changed_count = 0

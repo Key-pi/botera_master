@@ -5,12 +5,20 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.appointments.services import AppointmentServiceItemInput, create_confirmed_appointment
+from apps.appointments.models import Appointment
+from apps.appointments.services import (
+    AppointmentServiceItemInput,
+    create_confirmed_appointment,
+)
 from apps.audit.models import AuditEvent
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import create_manual_client_profile
 from apps.finance.models import PartnerPenaltySettings, Penalty, PenaltyApplication
-from apps.finance.services import apply_penalties_to_appointment, create_penalty
+from apps.finance.services import (
+    apply_penalties_to_appointment,
+    create_penalty,
+    update_penalty_settings,
+)
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 
@@ -210,6 +218,119 @@ def test_owner_updates_penalty_settings_through_service_backed_admin(
 
 
 @pytest.mark.django_db
+def test_no_show_status_redirects_to_optional_configured_penalty(
+    finance_admin_context,
+) -> None:
+    context = finance_admin_context
+    update_penalty_settings(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        penalties_enabled=True,
+        no_show_penalty_amount=7_500,
+    )
+    appointment = _create_appointment(
+        context,
+        start_at=timezone.now() - timedelta(hours=2),
+    )
+    status_url = reverse(
+        "admin:appointments_appointment_status",
+        args=[appointment.id],
+    )
+    penalty_url = reverse(
+        "admin:appointments_appointment_no_show_penalty",
+        args=[appointment.id],
+    )
+    change_url = reverse(
+        "admin:appointments_appointment_change",
+        args=[appointment.id],
+    )
+
+    status_response = context["http_client"].post(
+        status_url,
+        {"new_status": Appointment.Status.NO_SHOW, "reason": ""},
+    )
+    suggestion_response = context["http_client"].get(penalty_url)
+    create_response = context["http_client"].post(
+        penalty_url,
+        {"note": "Missed appointment"},
+    )
+    duplicate_response = context["http_client"].post(
+        penalty_url,
+        {"note": "Duplicate submit"},
+    )
+
+    assert status_response.status_code == 302
+    assert status_response.url == penalty_url
+    assert suggestion_response.status_code == 200
+    assert "75.00 UAH" in suggestion_response.content.decode()
+    assert create_response.status_code == 302
+    assert create_response.url == change_url
+    assert duplicate_response.status_code == 302
+    penalties = Penalty.objects.filter(
+        source_appointment=appointment,
+        reason=Penalty.Reason.NO_SHOW,
+    )
+    assert penalties.count() == 1
+    penalty = penalties.get()
+    assert penalty.amount == 7_500
+    assert penalty.note == "Missed appointment"
+
+
+@pytest.mark.django_db
+def test_owner_records_late_arrival_from_appointment_detail(
+    finance_admin_context,
+) -> None:
+    context = finance_admin_context
+    update_penalty_settings(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        penalties_enabled=True,
+        late_arrival_threshold_minutes=20,
+        late_arrival_penalty_amount=2_500,
+    )
+    appointment = _create_appointment(
+        context,
+        start_at=timezone.now() - timedelta(hours=1),
+    )
+    change_url = reverse(
+        "admin:appointments_appointment_change",
+        args=[appointment.id],
+    )
+    action_url = reverse(
+        "admin:appointments_appointment_late_arrival_penalty",
+        args=[appointment.id],
+    )
+
+    change_response = context["http_client"].get(change_url)
+    action_response = context["http_client"].get(action_url)
+    below_threshold_response = context["http_client"].post(
+        action_url,
+        {"late_by_minutes": "19", "note": ""},
+    )
+    create_response = context["http_client"].post(
+        action_url,
+        {"late_by_minutes": "20", "note": "Traffic"},
+    )
+
+    assert change_response.status_code == 200
+    assert action_url in change_response.content.decode()
+    assert action_response.status_code == 200
+    assert "25.00 UAH" in action_response.content.decode()
+    assert "20 minutes" in action_response.content.decode()
+    assert below_threshold_response.status_code == 200
+    assert "late_by_minutes" in below_threshold_response.context["form"].errors
+    assert create_response.status_code == 302
+    assert create_response.url == change_url
+    penalty = Penalty.objects.get(
+        source_appointment=appointment,
+        reason=Penalty.Reason.LATE_ARRIVAL,
+    )
+    assert penalty.amount == 2_500
+    assert penalty.late_by_minutes == 20
+    assert penalty.note == "Traffic"
+
+
+@pytest.mark.django_db
 def test_penalty_admin_operations_reject_foreign_tenant_and_client_ids(
     finance_admin_context,
 ) -> None:
@@ -267,13 +388,13 @@ def test_penalty_admin_operations_reject_foreign_tenant_and_client_ids(
     assert appointment.penalties_total_amount == 0
 
 
-def _create_appointment(context):
+def _create_appointment(context, *, start_at=None):
     return create_confirmed_appointment(
         actor=context["created"].owner,
         partner=context["created"].partner,
         booking_resource=context["resource"],
         client_profile=context["client_profile"],
-        start_at=timezone.now() + timedelta(days=3),
+        start_at=start_at or timezone.now() + timedelta(days=3),
         service_items=[AppointmentServiceItemInput(service=context["service"])],
     )
 

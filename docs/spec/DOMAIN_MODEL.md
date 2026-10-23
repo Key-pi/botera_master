@@ -618,7 +618,7 @@ MVP appointment total:
 
 ### Penalty
 
-Monetary add-on caused by late cancellation.
+Partner-scoped monetary debt caused by a configured appointment incident.
 
 Rules:
 
@@ -642,7 +642,9 @@ Rules:
 - The cancelled application should remain available as historical/audit information, while the penalty itself becomes available to apply again.
 - Penalties should be tied to a concrete business reason rather than arbitrary free-form charges.
 - Confirmed MVP penalty reasons are late cancellation, no-show, and being late by more than partner-configured X minutes.
+- One source appointment can create at most one penalty for each reason. Repeated submissions and retries must not duplicate client debt.
 - Late-arrival penalty threshold is partner-configurable.
+- Late arrival can be recorded only after the appointment's planned start time.
 - Default late-arrival penalty threshold is 15 minutes.
 - Default no-show penalty amount is `50.00 UAH`, stored as `5000` minor units.
 - Default late-arrival penalty amount is `20.00 UAH`, stored as `2000` minor units.

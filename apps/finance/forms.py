@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django import forms
+from django.core.validators import MinValueValidator
 
 from apps.appointments.models import Appointment
 from apps.finance.models import Penalty
@@ -56,6 +57,36 @@ class ClientPenaltyActionAdminForm(forms.Form):
 
     def clean_note(self) -> str:
         return self.cleaned_data.get("note", "").strip()
+
+
+class NoShowPenaltyAdminForm(forms.Form):
+    """Confirm an optional no-show debt from the appointment workflow."""
+
+    note = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Optional note visible in the partner penalty record.",
+    )
+
+    def clean_note(self) -> str:
+        return self.cleaned_data.get("note", "").strip()
+
+
+class LateArrivalPenaltyAdminForm(NoShowPenaltyAdminForm):
+    """Collect lateness details before creating the configured penalty."""
+
+    late_by_minutes = forms.IntegerField(
+        min_value=1,
+        label="Late by (minutes)",
+    )
+
+    def __init__(self, *args, threshold_minutes: int, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        field = self.fields["late_by_minutes"]
+        field.min_value = threshold_minutes
+        field.validators.append(MinValueValidator(threshold_minutes))
+        field.widget.attrs["min"] = threshold_minutes
+        field.help_text = f"The configured late-arrival threshold is {threshold_minutes} minutes."
 
 
 def add_domain_errors_to_form(form: forms.Form, exc) -> None:

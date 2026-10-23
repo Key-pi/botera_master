@@ -755,7 +755,15 @@ def test_penalty_lifecycle_dispatches_localized_client_notifications(
         partner=created.partner,
         booking_resource=default_booking_resource_for_partner(created.partner),
         client_profile=client_profile,
-        start_at=timezone.now() + timedelta(days=2),
+        start_at=timezone.now() - timedelta(days=3),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    waived_appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=timezone.now() - timedelta(days=2),
         service_items=[AppointmentServiceItemInput(service=service)],
     )
     sent_payloads = []
@@ -780,7 +788,7 @@ def test_penalty_lifecycle_dispatches_localized_client_notifications(
     with django_capture_on_commit_callbacks(execute=True):
         waived_penalty = create_late_arrival_penalty_for_appointment(
             actor=created.owner,
-            appointment=appointment,
+            appointment=waived_appointment,
             late_by_minutes=20,
         )
     assert dispatch_due_notifications_task() == 1

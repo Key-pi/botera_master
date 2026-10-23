@@ -9,7 +9,7 @@ from django.db.models import QuerySet, Sum
 
 from apps.appointments.models import Appointment
 from apps.catalog.models import DEFAULT_CURRENCY
-from apps.finance.models import Expense, Penalty, PenaltyApplication
+from apps.finance.models import Expense, PartnerPenaltySettings, Penalty, PenaltyApplication
 from core.timezones import get_zone
 
 if TYPE_CHECKING:
@@ -72,6 +72,26 @@ def penalty_applications_for_appointment(
         .select_related("penalty", "penalty__client_profile")
         .order_by("-created_at")
     )
+
+
+def penalty_settings_for_partner(*, partner: Partner) -> PartnerPenaltySettings | None:
+    """Return stored penalty configuration without creating data in a read path."""
+
+    return PartnerPenaltySettings.objects.filter(partner=partner).first()
+
+
+def penalty_exists_for_appointment_reason(
+    *,
+    appointment: Appointment,
+    reason: str,
+) -> bool:
+    """Return whether one appointment incident already produced this penalty reason."""
+
+    return Penalty.objects.filter(
+        partner=appointment.partner,
+        source_appointment=appointment,
+        reason=reason,
+    ).exists()
 
 
 def expenses_for_partner(

@@ -130,6 +130,22 @@ def create_penalty(
             raise ValidationError({"late_by_minutes": "Late minutes must be positive."})
 
     with transaction.atomic():
+        if source_appointment is not None:
+            source_appointment = Appointment.objects.select_for_update().get(
+                id=source_appointment.id
+            )
+            _validate_appointment_scope(
+                partner=partner,
+                appointment=source_appointment,
+                client_profile=client_profile,
+            )
+            if Penalty.objects.filter(
+                source_appointment=source_appointment,
+                reason=reason,
+            ).exists():
+                raise ValidationError(
+                    {"penalty": "This appointment already has a penalty for this reason."}
+                )
         penalty = Penalty.objects.create(
             partner=partner,
             client_profile=client_profile,
@@ -218,6 +234,10 @@ def create_late_arrival_penalty_for_appointment(
     if appointment.status not in {Appointment.Status.CONFIRMED, Appointment.Status.COMPLETED}:
         raise ValidationError(
             {"appointment": "Late-arrival penalty requires confirmed or completed status."}
+        )
+    if appointment.start_at > timezone.now():
+        raise ValidationError(
+            {"appointment": "Late arrival can only be recorded after the appointment starts."}
         )
     penalty_note = note or f"Late by {late_by_minutes} minutes."
     return create_penalty(

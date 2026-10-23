@@ -2,6 +2,16 @@
 {% load i18n %}
 
 {% block object-tools-items %}
+  {% if no_show_penalty_action_url and change %}
+    <li>
+      <a href="{{ no_show_penalty_action_url }}">{% translate "Create no-show penalty" %}</a>
+    </li>
+  {% endif %}
+  {% if late_arrival_penalty_action_url and change %}
+    <li>
+      <a href="{{ late_arrival_penalty_action_url }}">{% translate "Record late arrival" %}</a>
+    </li>
+  {% endif %}
   {% if penalty_action_url and change %}
     <li>
       <a href="{{ penalty_action_url }}">{% translate "Manage penalties" %}</a>
