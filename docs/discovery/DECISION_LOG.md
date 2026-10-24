@@ -48,6 +48,10 @@ Status: discovery approved on 2026-08-07.
   start/end times, service snapshots, major-unit totals, local-date presets, and filters for
   service, category, and penalty state. Related filter choices remain constrained to the actor's
   trusted appointment queryset.
+- 2026-10-24: The partner client changelist now shows masked contact data, Telegram connection
+  state, the next active appointment in partner time, completed visit count, and unpaid penalty
+  count. Operational filters and correlated annotations remain scoped by trusted partner access,
+  while the partner column is reserved for superusers.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

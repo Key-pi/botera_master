@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from django.db.models import QuerySet, Sum
+from django.db.models import Count, IntegerField, OuterRef, QuerySet, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.accounts.selectors import partner_ids_for_user
@@ -53,6 +54,42 @@ def client_profiles_visible_to_user(user: User) -> QuerySet[ClientProfile]:
     if user.is_superuser:
         return queryset
     return queryset.filter(partner_id__in=partner_ids_for_user(user))
+
+
+def with_client_operational_annotations(
+    queryset: QuerySet[ClientProfile],
+    *,
+    now: datetime | None = None,
+) -> QuerySet[ClientProfile]:
+    """Annotate an already scoped client queryset for the operational list."""
+
+    current_time = now or timezone.now()
+    if timezone.is_naive(current_time):
+        raise ValueError("Client operational reference time must be timezone-aware.")
+
+    appointments = Appointment.objects.filter(
+        partner_id=OuterRef("partner_id"),
+        client_profile_id=OuterRef("pk"),
+    )
+    completed_appointments = appointments.filter(status=Appointment.Status.COMPLETED)
+    future_appointments = appointments.filter(
+        status__in=[Appointment.Status.REQUESTED, Appointment.Status.CONFIRMED],
+        start_at__gte=current_time,
+    )
+    outstanding_penalties = Penalty.objects.filter(
+        partner_id=OuterRef("partner_id"),
+        client_profile_id=OuterRef("pk"),
+        status__in=[Penalty.Status.UNPAID, Penalty.Status.APPLIED_TO_APPOINTMENT],
+    )
+
+    return queryset.annotate(
+        ops_completed_visit_count=_count_subquery(completed_appointments),
+        ops_future_appointment_count=_count_subquery(future_appointments),
+        ops_next_appointment_at=Subquery(
+            future_appointments.order_by("start_at").values("start_at")[:1]
+        ),
+        ops_outstanding_penalty_count=_count_subquery(outstanding_penalties),
+    )
 
 
 def client_profile_for_telegram_identity(
@@ -148,4 +185,20 @@ def _money_tuple(amounts_by_currency: dict[str, int]) -> tuple[Money, ...]:
     return tuple(
         Money(amount=amount, currency=currency)
         for currency, amount in sorted(amounts_by_currency.items())
+    )
+
+
+def _count_subquery(queryset: QuerySet) -> Coalesce:
+    """Return a zero-safe correlated count for one outer client profile."""
+
+    count_query = (
+        queryset.order_by()
+        .values("client_profile_id")
+        .annotate(total=Count("pk"))
+        .values("total")[:1]
+    )
+    return Coalesce(
+        Subquery(count_query, output_field=IntegerField()),
+        Value(0),
+        output_field=IntegerField(),
     )
