@@ -6,11 +6,13 @@ from datetime import timedelta
 from typing import Any
 
 from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.services import ensure_partner_access
+from apps.audit.services import record_audit_event
 from apps.broadcasts.models import (
     BROADCAST_RECIPIENT_RETAIN_DAYS,
     DEFAULT_BROADCAST_MAX_ATTEMPTS,
@@ -19,6 +21,7 @@ from apps.broadcasts.models import (
     BroadcastTemplate,
 )
 from apps.broadcasts.selectors import due_broadcast_recipients, eligible_broadcast_clients
+from apps.catalog.models import Service
 from apps.clients.services import mark_client_unreachable
 from apps.notifications.models import DeliveryAttempt
 from apps.notifications.services import TERMINAL_TELEGRAM_FAILURE_CODES
@@ -28,6 +31,16 @@ from core.security.masking import mask_sensitive_text
 BROADCAST_RETRY_BACKOFFS = (timedelta(minutes=1), timedelta(minutes=5), timedelta(minutes=15))
 RATE_LIMIT_FAILURE_CODES = {"telegram_429", "too_many_requests", "rate_limited"}
 ALLOWED_BROADCAST_BUTTON_TYPES = {"book", "my_appointments", "external_link"}
+ALLOWED_BROADCAST_FILTER_KEYS = {
+    "service_id",
+    "long_absent_days",
+    "has_future_appointment",
+    "without_future_appointment",
+}
+MAX_LONG_ABSENT_DAYS = 3650
+TELEGRAM_MESSAGE_TEXT_LIMIT = 4096
+TELEGRAM_PHOTO_CAPTION_LIMIT = 1024
+validate_external_link_url = URLValidator(schemes=["http", "https"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,19 +123,89 @@ def create_broadcast_template(
     cleaned_name = name.strip()
     if not cleaned_name:
         raise ValidationError({"name": "Template name is required."})
-    cleaned_text, cleaned_photo, cleaned_buttons = _clean_broadcast_content(
+    cleaned_text, cleaned_photo, cleaned_buttons = validate_broadcast_content(
         text=text,
         photo=photo,
         buttons=buttons,
     )
-    return BroadcastTemplate.objects.create(
-        partner=partner,
-        name=cleaned_name,
-        text=cleaned_text,
-        photo=cleaned_photo,
-        buttons=cleaned_buttons,
-        created_by=actor,
+    with transaction.atomic():
+        template = BroadcastTemplate.objects.create(
+            partner=partner,
+            name=cleaned_name,
+            text=cleaned_text,
+            photo=cleaned_photo,
+            buttons=cleaned_buttons,
+            created_by=actor,
+        )
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="broadcast.template_created",
+            target=template,
+            message="Broadcast template created.",
+        )
+    return template
+
+
+def update_broadcast_template(
+    *,
+    actor: User,
+    template: BroadcastTemplate,
+    name: str,
+    text: str = "",
+    photo: str = "",
+    buttons: list[dict[str, Any]] | None = None,
+) -> BroadcastTemplate:
+    """Update one reusable template through its trusted partner scope."""
+
+    cleaned_name = name.strip()
+    if not cleaned_name:
+        raise ValidationError({"name": "Template name is required."})
+    cleaned_text, cleaned_photo, cleaned_buttons = validate_broadcast_content(
+        text=text,
+        photo=photo,
+        buttons=buttons,
     )
+    with transaction.atomic():
+        stored = (
+            BroadcastTemplate.objects.select_for_update()
+            .select_related("partner")
+            .get(id=template.id)
+        )
+        ensure_partner_access(actor, stored.partner)
+        stored.name = cleaned_name
+        stored.text = cleaned_text
+        stored.photo = cleaned_photo
+        stored.buttons = cleaned_buttons
+        stored.save(update_fields=["name", "text", "photo", "buttons", "updated_at"])
+        record_audit_event(
+            partner=stored.partner,
+            actor=actor,
+            event_type="broadcast.template_updated",
+            target=stored,
+            message="Broadcast template updated.",
+        )
+    return stored
+
+
+def delete_broadcast_template(*, actor: User, template: BroadcastTemplate) -> None:
+    """Delete one template while retaining a partner-visible audit event."""
+
+    with transaction.atomic():
+        stored = (
+            BroadcastTemplate.objects.select_for_update()
+            .select_related("partner")
+            .get(id=template.id)
+        )
+        ensure_partner_access(actor, stored.partner)
+        record_audit_event(
+            partner=stored.partner,
+            actor=actor,
+            event_type="broadcast.template_deleted",
+            target=stored,
+            message="Broadcast template deleted.",
+        )
+        stored.delete()
 
 
 def create_broadcast_campaign(
@@ -138,22 +221,109 @@ def create_broadcast_campaign(
     """Create a draft or scheduled broadcast campaign."""
 
     ensure_partner_access(actor, partner)
-    cleaned_text, cleaned_photo, cleaned_buttons = _clean_broadcast_content(
+    cleaned_text, cleaned_photo, cleaned_buttons = validate_broadcast_content(
         text=text,
         photo=photo,
         buttons=buttons,
     )
+    cleaned_filters = validate_broadcast_filters(partner=partner, filters=filters)
+    _validate_scheduled_at(scheduled_at)
     status = BroadcastCampaign.Status.SCHEDULED if scheduled_at else BroadcastCampaign.Status.DRAFT
-    return BroadcastCampaign.objects.create(
-        partner=partner,
-        text=cleaned_text,
-        photo=cleaned_photo,
-        buttons=cleaned_buttons,
-        filters=filters or {},
-        status=status,
-        scheduled_at=scheduled_at,
-        created_by=actor,
+    with transaction.atomic():
+        campaign = BroadcastCampaign.objects.create(
+            partner=partner,
+            text=cleaned_text,
+            photo=cleaned_photo,
+            buttons=cleaned_buttons,
+            filters=cleaned_filters,
+            status=status,
+            scheduled_at=scheduled_at,
+            created_by=actor,
+        )
+        _record_campaign_audit(
+            campaign=campaign,
+            actor=actor,
+            event_type="broadcast.created",
+            message="Broadcast campaign created.",
+        )
+        if scheduled_at:
+            _record_campaign_audit(
+                campaign=campaign,
+                actor=actor,
+                event_type="broadcast.scheduled",
+                message="Broadcast campaign scheduled.",
+            )
+    return campaign
+
+
+def update_broadcast_campaign(
+    *,
+    actor: User,
+    campaign: BroadcastCampaign,
+    text: str = "",
+    photo: str = "",
+    buttons: list[dict[str, Any]] | None = None,
+    filters: dict | None = None,
+    scheduled_at=None,
+) -> BroadcastCampaign:
+    """Edit content/targeting only while a campaign has not started."""
+
+    cleaned_text, cleaned_photo, cleaned_buttons = validate_broadcast_content(
+        text=text,
+        photo=photo,
+        buttons=buttons,
     )
+    _validate_scheduled_at(scheduled_at)
+    with transaction.atomic():
+        stored = (
+            BroadcastCampaign.objects.select_for_update()
+            .select_related("partner")
+            .get(id=campaign.id)
+        )
+        ensure_partner_access(actor, stored.partner)
+        if stored.status not in {
+            BroadcastCampaign.Status.DRAFT,
+            BroadcastCampaign.Status.SCHEDULED,
+        }:
+            raise ValidationError({"status": "A started broadcast cannot be edited."})
+        cleaned_filters = validate_broadcast_filters(
+            partner=stored.partner,
+            filters=filters,
+        )
+        was_scheduled_for = stored.scheduled_at
+        stored.text = cleaned_text
+        stored.photo = cleaned_photo
+        stored.buttons = cleaned_buttons
+        stored.filters = cleaned_filters
+        stored.scheduled_at = scheduled_at
+        stored.status = (
+            BroadcastCampaign.Status.SCHEDULED if scheduled_at else BroadcastCampaign.Status.DRAFT
+        )
+        stored.save(
+            update_fields=[
+                "text",
+                "photo",
+                "buttons",
+                "filters",
+                "scheduled_at",
+                "status",
+                "updated_at",
+            ]
+        )
+        _record_campaign_audit(
+            campaign=stored,
+            actor=actor,
+            event_type="broadcast.updated",
+            message="Broadcast campaign updated.",
+        )
+        if scheduled_at and scheduled_at != was_scheduled_for:
+            _record_campaign_audit(
+                campaign=stored,
+                actor=actor,
+                event_type="broadcast.scheduled",
+                message="Broadcast campaign scheduled.",
+            )
+    return stored
 
 
 def queue_broadcast_campaign(
@@ -165,13 +335,68 @@ def queue_broadcast_campaign(
     """Materialize eligible recipients and queue a broadcast for gradual sending."""
 
     ensure_partner_access(actor, campaign.partner)
+    queued, _started = _queue_broadcast_campaign(
+        campaign_id=campaign.id,
+        actor=actor,
+        now=now or timezone.now(),
+        require_due=False,
+    )
+    return queued
+
+
+def queue_due_scheduled_broadcast_campaigns(*, now=None, limit: int = 100) -> int:
+    """Queue due scheduled campaigns idempotently for the broadcast worker."""
+
     current_time = now or timezone.now()
+    campaign_ids = list(
+        BroadcastCampaign.objects.filter(
+            status=BroadcastCampaign.Status.SCHEDULED,
+            scheduled_at__lte=current_time,
+        )
+        .order_by("scheduled_at", "created_at")
+        .values_list("id", flat=True)[: max(1, limit)]
+    )
+    started_count = 0
+    for campaign_id in campaign_ids:
+        _campaign, started = _queue_broadcast_campaign(
+            campaign_id=campaign_id,
+            actor=None,
+            now=current_time,
+            require_due=True,
+        )
+        started_count += int(started)
+    return started_count
+
+
+def _queue_broadcast_campaign(
+    *,
+    campaign_id,
+    actor: User | None,
+    now,
+    require_due: bool,
+) -> tuple[BroadcastCampaign, bool]:
+    """Materialize recipients once under a campaign lock."""
+
     with transaction.atomic():
-        locked = BroadcastCampaign.objects.select_for_update().get(id=campaign.id)
-        if locked.status not in {
+        locked = (
+            BroadcastCampaign.objects.select_for_update()
+            .select_related("partner")
+            .get(id=campaign_id)
+        )
+        if actor is not None:
+            ensure_partner_access(actor, locked.partner)
+        if require_due:
+            if (
+                locked.status != BroadcastCampaign.Status.SCHEDULED
+                or locked.scheduled_at is None
+                or locked.scheduled_at > now
+            ):
+                return locked, False
+        elif locked.status == BroadcastCampaign.Status.QUEUED:
+            return locked, False
+        elif locked.status not in {
             BroadcastCampaign.Status.DRAFT,
             BroadcastCampaign.Status.SCHEDULED,
-            BroadcastCampaign.Status.QUEUED,
         }:
             raise ValidationError({"status": "Campaign cannot be queued from this status."})
 
@@ -179,7 +404,7 @@ def queue_broadcast_campaign(
             eligible_broadcast_clients(
                 partner=locked.partner,
                 filters=locked.filters,
-                now=current_time,
+                now=now,
             )
         )
         for client in clients:
@@ -189,18 +414,24 @@ def queue_broadcast_campaign(
                 client_profile=client,
                 defaults={
                     "status": BroadcastRecipient.Status.QUEUED,
-                    "next_attempt_at": current_time,
+                    "next_attempt_at": now,
                     "max_attempts": DEFAULT_BROADCAST_MAX_ATTEMPTS,
-                    "retain_until": current_time + timedelta(days=BROADCAST_RECIPIENT_RETAIN_DAYS),
+                    "retain_until": now + timedelta(days=BROADCAST_RECIPIENT_RETAIN_DAYS),
                 },
             )
-        locked.started_at = locked.started_at or current_time
+        locked.started_at = locked.started_at or now
         locked.status = BroadcastCampaign.Status.QUEUED
         locked.save(update_fields=["status", "started_at", "updated_at"])
         _refresh_campaign_counters(locked)
+        _record_campaign_audit(
+            campaign=locked,
+            actor=actor,
+            event_type="broadcast.started",
+            message="Broadcast campaign started.",
+        )
         _finalize_campaign_if_done(locked)
     locked.refresh_from_db()
-    return locked
+    return locked, True
 
 
 def cancel_broadcast_campaign(*, actor: User, campaign: BroadcastCampaign) -> BroadcastCampaign:
@@ -209,7 +440,19 @@ def cancel_broadcast_campaign(*, actor: User, campaign: BroadcastCampaign) -> Br
     ensure_partner_access(actor, campaign.partner)
     now = timezone.now()
     with transaction.atomic():
-        locked = BroadcastCampaign.objects.select_for_update().get(id=campaign.id)
+        locked = (
+            BroadcastCampaign.objects.select_for_update()
+            .select_related("partner")
+            .get(id=campaign.id)
+        )
+        ensure_partner_access(actor, locked.partner)
+        if locked.status == BroadcastCampaign.Status.CANCELLED:
+            return locked
+        if locked.status in {
+            BroadcastCampaign.Status.COMPLETED,
+            BroadcastCampaign.Status.FAILED_PARTIAL,
+        }:
+            raise ValidationError({"status": "A finished broadcast cannot be cancelled."})
         locked.status = BroadcastCampaign.Status.CANCELLED
         locked.finished_at = now
         locked.save(update_fields=["status", "finished_at", "updated_at"])
@@ -218,6 +461,12 @@ def cancel_broadcast_campaign(*, actor: User, campaign: BroadcastCampaign) -> Br
             status__in=[BroadcastRecipient.Status.QUEUED, BroadcastRecipient.Status.SENDING],
         ).update(status=BroadcastRecipient.Status.SKIPPED, updated_at=now)
         _refresh_campaign_counters(locked)
+        _record_campaign_audit(
+            campaign=locked,
+            actor=actor,
+            event_type="broadcast.cancelled",
+            message="Broadcast campaign cancelled.",
+        )
     locked.refresh_from_db()
     return locked
 
@@ -273,6 +522,11 @@ def _prepare_recipient_for_delivery(
     now,
 ) -> BroadcastRecipient | None:
     with transaction.atomic():
+        campaign = (
+            BroadcastCampaign.objects.select_for_update()
+            .select_related("partner")
+            .get(id=recipient.campaign_id)
+        )
         locked = (
             BroadcastRecipient.objects.select_for_update()
             .select_related(
@@ -283,6 +537,7 @@ def _prepare_recipient_for_delivery(
             )
             .get(id=recipient.id)
         )
+        locked.campaign = campaign
         if locked.status != BroadcastRecipient.Status.QUEUED:
             return None
         if locked.next_attempt_at and locked.next_attempt_at > now:
@@ -295,13 +550,13 @@ def _prepare_recipient_for_delivery(
                 status=DeliveryAttempt.Status.SKIPPED,
                 attempted_at=now,
             )
-            _refresh_campaign_counters(locked.campaign)
-            _finalize_campaign_if_done(locked.campaign)
+            _refresh_campaign_counters(campaign)
+            _finalize_campaign_if_done(campaign)
             return None
         locked.status = BroadcastRecipient.Status.SENDING
-        locked.campaign.status = BroadcastCampaign.Status.SENDING
+        campaign.status = BroadcastCampaign.Status.SENDING
         locked.save(update_fields=["status", "updated_at"])
-        locked.campaign.save(update_fields=["status", "updated_at"])
+        campaign.save(update_fields=["status", "updated_at"])
         return locked
 
 
@@ -312,11 +567,17 @@ def _record_broadcast_delivery_result(
     now,
 ) -> str:
     with transaction.atomic():
+        campaign = (
+            BroadcastCampaign.objects.select_for_update()
+            .select_related("partner")
+            .get(id=recipient.campaign_id)
+        )
         locked = (
             BroadcastRecipient.objects.select_for_update()
             .select_related("partner", "campaign", "client_profile")
             .get(id=recipient.id)
         )
+        locked.campaign = campaign
         if locked.status != BroadcastRecipient.Status.SENDING:
             return locked.status
 
@@ -351,8 +612,8 @@ def _record_broadcast_delivery_result(
                 "updated_at",
             ]
         )
-        _refresh_campaign_counters(locked.campaign)
-        _finalize_campaign_if_done(locked.campaign)
+        _refresh_campaign_counters(campaign)
+        _finalize_campaign_if_done(campaign)
         return locked.status
 
 
@@ -423,11 +684,7 @@ def _recipient_should_skip_before_delivery(recipient: BroadcastRecipient) -> boo
     if recipient.campaign.status == BroadcastCampaign.Status.CANCELLED:
         return True
     client = recipient.client_profile
-    return (
-        client.marketing_opt_out
-        or client.bot_unreachable
-        or not client.telegram_identity_id
-    )
+    return client.marketing_opt_out or client.bot_unreachable or not client.telegram_identity_id
 
 
 def _record_broadcast_delivery_attempt(
@@ -451,18 +708,19 @@ def _record_broadcast_delivery_attempt(
 
 
 def _refresh_campaign_counters(campaign: BroadcastCampaign) -> None:
+    stored = BroadcastCampaign.objects.select_for_update().get(id=campaign.id)
     counts = {
-        status: BroadcastRecipient.objects.filter(campaign=campaign, status=status).count()
+        status: BroadcastRecipient.objects.filter(campaign=stored, status=status).count()
         for status in BroadcastRecipient.Status.values
     }
-    campaign.queued_count = counts.get(BroadcastRecipient.Status.QUEUED, 0) + counts.get(
+    stored.queued_count = counts.get(BroadcastRecipient.Status.QUEUED, 0) + counts.get(
         BroadcastRecipient.Status.SENDING,
         0,
     )
-    campaign.sent_count = counts.get(BroadcastRecipient.Status.SENT, 0)
-    campaign.failed_count = counts.get(BroadcastRecipient.Status.FAILED, 0)
-    campaign.skipped_count = counts.get(BroadcastRecipient.Status.SKIPPED, 0)
-    campaign.save(
+    stored.sent_count = counts.get(BroadcastRecipient.Status.SENT, 0)
+    stored.failed_count = counts.get(BroadcastRecipient.Status.FAILED, 0)
+    stored.skipped_count = counts.get(BroadcastRecipient.Status.SKIPPED, 0)
+    stored.save(
         update_fields=[
             "queued_count",
             "sent_count",
@@ -471,29 +729,52 @@ def _refresh_campaign_counters(campaign: BroadcastCampaign) -> None:
             "updated_at",
         ]
     )
+    _copy_campaign_counters(target=campaign, source=stored)
 
 
 def _finalize_campaign_if_done(campaign: BroadcastCampaign) -> None:
-    campaign.refresh_from_db()
-    if campaign.status == BroadcastCampaign.Status.CANCELLED:
+    stored = (
+        BroadcastCampaign.objects.select_for_update().select_related("partner").get(id=campaign.id)
+    )
+    if stored.status in {
+        BroadcastCampaign.Status.CANCELLED,
+        BroadcastCampaign.Status.COMPLETED,
+        BroadcastCampaign.Status.FAILED_PARTIAL,
+    }:
         return
     has_pending = BroadcastRecipient.objects.filter(
-        campaign=campaign,
+        campaign=stored,
         status__in=[BroadcastRecipient.Status.QUEUED, BroadcastRecipient.Status.SENDING],
     ).exists()
     if has_pending:
         return
 
-    campaign.status = (
+    stored.status = (
         BroadcastCampaign.Status.FAILED_PARTIAL
-        if campaign.failed_count
+        if stored.failed_count
         else BroadcastCampaign.Status.COMPLETED
     )
-    campaign.finished_at = timezone.now()
-    campaign.save(update_fields=["status", "finished_at", "updated_at"])
+    stored.finished_at = timezone.now()
+    stored.save(update_fields=["status", "finished_at", "updated_at"])
+    _record_campaign_audit(
+        campaign=stored,
+        actor=None,
+        event_type=(
+            "broadcast.failed"
+            if stored.status == BroadcastCampaign.Status.FAILED_PARTIAL
+            else "broadcast.completed"
+        ),
+        message=(
+            "Broadcast campaign completed with failed recipients."
+            if stored.status == BroadcastCampaign.Status.FAILED_PARTIAL
+            else "Broadcast campaign completed."
+        ),
+    )
+    campaign.status = stored.status
+    campaign.finished_at = stored.finished_at
 
 
-def _clean_broadcast_content(
+def validate_broadcast_content(
     *,
     text: str,
     photo: str,
@@ -503,8 +784,109 @@ def _clean_broadcast_content(
     cleaned_photo = photo.strip()
     if not cleaned_text and not cleaned_photo:
         raise ValidationError({"text": "Broadcast needs text or photo."})
+    text_limit = TELEGRAM_PHOTO_CAPTION_LIMIT if cleaned_photo else TELEGRAM_MESSAGE_TEXT_LIMIT
+    if len(cleaned_text) > text_limit:
+        raise ValidationError(
+            {
+                "text": (
+                    f"Broadcast text must be {text_limit} characters or shorter"
+                    + (" when a photo is attached." if cleaned_photo else ".")
+                )
+            }
+        )
     cleaned_buttons = _clean_broadcast_buttons(buttons or [])
     return cleaned_text, cleaned_photo, cleaned_buttons
+
+
+def validate_broadcast_filters(*, partner: Partner, filters: dict | None) -> dict:
+    """Normalize the finite MVP audience filter registry."""
+
+    if filters is None:
+        return {}
+    if not isinstance(filters, dict):
+        raise ValidationError({"filters": "Broadcast filters must be an object."})
+    unknown_keys = set(filters) - ALLOWED_BROADCAST_FILTER_KEYS
+    if unknown_keys:
+        raise ValidationError(
+            {"filters": f"Unsupported broadcast filter: {sorted(unknown_keys)[0]}."}
+        )
+
+    cleaned: dict[str, Any] = {}
+    service_id = filters.get("service_id")
+    if service_id:
+        try:
+            service = Service.objects.filter(partner=partner, id=service_id).first()
+        except (ValidationError, ValueError) as exc:
+            raise ValidationError({"service_id": "Choose a valid partner service."}) from exc
+        if service is None:
+            raise ValidationError({"service_id": "Service must belong to this partner."})
+        cleaned["service_id"] = str(service.id)
+
+    long_absent_days = filters.get("long_absent_days")
+    if long_absent_days is not None and long_absent_days != "":
+        try:
+            normalized_days = int(long_absent_days)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"long_absent_days": "Enter a whole number of days."}) from exc
+        if not 1 <= normalized_days <= MAX_LONG_ABSENT_DAYS:
+            raise ValidationError(
+                {"long_absent_days": (f"Days must be between 1 and {MAX_LONG_ABSENT_DAYS}.")}
+            )
+        cleaned["long_absent_days"] = normalized_days
+
+    for key in ("has_future_appointment", "without_future_appointment"):
+        value = filters.get(key)
+        if value is not None and value is not True and value is not False:
+            raise ValidationError({"filters": f"{key} must be true or false."})
+    has_future = filters.get("has_future_appointment") is True
+    without_future = filters.get("without_future_appointment") is True
+    if has_future and without_future:
+        raise ValidationError({"filters": "Choose only one future-appointment filter."})
+    if has_future:
+        cleaned["has_future_appointment"] = True
+    if without_future:
+        cleaned["without_future_appointment"] = True
+    return cleaned
+
+
+def _validate_scheduled_at(scheduled_at) -> None:
+    if scheduled_at is None:
+        return
+    if timezone.is_naive(scheduled_at):
+        raise ValidationError({"scheduled_at": "Scheduled time must include a timezone."})
+    if scheduled_at <= timezone.now():
+        raise ValidationError({"scheduled_at": "Scheduled time must be in the future."})
+
+
+def _record_campaign_audit(
+    *,
+    campaign: BroadcastCampaign,
+    actor: User | None,
+    event_type: str,
+    message: str,
+) -> None:
+    record_audit_event(
+        partner=campaign.partner,
+        actor=actor,
+        event_type=event_type,
+        target=campaign,
+        message=message,
+        payload={
+            "status": campaign.status,
+            "scheduled_at": (campaign.scheduled_at.isoformat() if campaign.scheduled_at else None),
+            "queued_count": campaign.queued_count,
+            "sent_count": campaign.sent_count,
+            "failed_count": campaign.failed_count,
+            "skipped_count": campaign.skipped_count,
+        },
+    )
+
+
+def _copy_campaign_counters(*, target: BroadcastCampaign, source: BroadcastCampaign) -> None:
+    target.queued_count = source.queued_count
+    target.sent_count = source.sent_count
+    target.failed_count = source.failed_count
+    target.skipped_count = source.skipped_count
 
 
 def _clean_broadcast_buttons(buttons: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -525,8 +907,15 @@ def _clean_broadcast_buttons(buttons: list[dict[str, Any]]) -> list[dict[str, An
             raise ValidationError({"buttons": "Button label must be 64 characters or shorter."})
         if button_type == "external_link" and not url:
             raise ValidationError({"buttons": "External link button needs a URL."})
+        if button_type == "external_link":
+            try:
+                validate_external_link_url(url)
+            except ValidationError as exc:
+                raise ValidationError(
+                    {"buttons": "External link button needs a valid HTTP(S) URL."}
+                ) from exc
         cleaned_button = {"type": button_type, "label": label}
-        if url:
+        if button_type == "external_link":
             cleaned_button["url"] = url
         cleaned.append(cleaned_button)
     return cleaned

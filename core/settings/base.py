@@ -125,6 +125,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": timedelta(seconds=1),
         "options": {"queue": "broadcasts", "expires": 5},
     },
+    "queue-due-broadcast-campaigns": {
+        "task": "broadcasts.queue_due_campaigns",
+        "schedule": timedelta(minutes=1),
+        "options": {"queue": "broadcasts", "expires": 90},
+    },
     "deliver-pending-integration-events": {
         "task": "integrations.deliver_pending_events",
         "schedule": timedelta(minutes=1),

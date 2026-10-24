@@ -40,6 +40,9 @@ PARTNER_OWNER_PERMISSION_RULES = (
     # Direct model adds remain disabled; `add` authorizes the reviewed
     # service-backed "message client" admin action.
     ("messaging", "conversationmessage", ("view", "add")),
+    ("broadcasts", "broadcastcampaign", ("view", "add", "change")),
+    ("broadcasts", "broadcastrecipient", ("view",)),
+    ("broadcasts", "broadcasttemplate", ("view", "add", "change", "delete")),
     ("finance", "partnerpenaltysettings", ("view", "change")),
     ("finance", "expense", ("view", "add", "change", "delete")),
     ("audit", "auditevent", ("view",)),

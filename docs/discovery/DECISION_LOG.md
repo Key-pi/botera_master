@@ -248,6 +248,17 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-10: Temporary Telegram errors and `429` should not fail the whole broadcast. The system should back off and continue later.
 - 2026-08-10: Detailed per-recipient broadcast delivery records should not be stored indefinitely; default cleanup retention is 90 days.
 - 2026-08-10: Manual retry of failed broadcast recipients is outside MVP unless real usage shows it is needed earlier.
+- 2026-10-24: The partner broadcast admin uses explicit content, audience,
+  button, and delivery-mode fields rather than exposing JSON configuration;
+  started campaigns are read-only and show durable recipient progress.
+- 2026-10-24: Saved broadcast templates can prefill a new campaign, while
+  template and campaign mutations remain partner-scoped and service-backed.
+- 2026-10-24: Celery Beat queues due scheduled campaigns through the isolated
+  `broadcasts` queue; repeated scheduler passes must not duplicate recipients or
+  lifecycle events.
+- 2026-10-24: Campaign creation, scheduling, start, cancellation, completion,
+  and partial failure are recorded as partner-visible audit events without
+  storing campaign message content in audit payloads.
 - 2026-08-10: Cleanup-eligible noisy technical records should use `retain_until`, not `expires_at`, to mark when the system may delete them.
 - 2026-08-10: Candidate cleanup-eligible records include detailed per-recipient broadcast delivery records, delivery attempt records, partner-visible technical logs, and platform/system logs.
 - 2026-08-10: Default retention for cleanup-eligible records is 90 days, using `retain_until = created_at + 90 days` unless a specific record type later receives a different approved policy.
