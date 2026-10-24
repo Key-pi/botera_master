@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 from django.urls import reverse
@@ -13,9 +14,10 @@ from apps.appointments.services import (
 from apps.audit.models import AuditEvent
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import create_manual_client_profile
-from apps.finance.models import PartnerPenaltySettings, Penalty, PenaltyApplication
+from apps.finance.models import Expense, PartnerPenaltySettings, Penalty, PenaltyApplication
 from apps.finance.services import (
     apply_penalties_to_appointment,
+    create_expense,
     create_penalty,
     update_penalty_settings,
 )
@@ -189,18 +191,25 @@ def test_owner_updates_penalty_settings_through_service_backed_admin(
         args=[settings.id],
     )
 
+    change_page = context["http_client"].get(change_url)
+
     response = context["http_client"].post(
         change_url,
         {
             "penalties_enabled": "on",
-            "late_cancel_penalty_amount": "6500",
-            "no_show_penalty_amount": "7500",
+            "late_cancel_penalty": "65.00",
+            "no_show_penalty": "75.00",
             "late_arrival_threshold_minutes": "20",
-            "late_arrival_penalty_amount": "2500",
+            "late_arrival_penalty": "25.00",
             "_save": "Save",
         },
     )
 
+    assert change_page.status_code == 200
+    settings_form = change_page.context["adminform"].form
+    assert settings_form["late_cancel_penalty"].value() == Decimal("50.00")
+    assert settings_form["no_show_penalty"].value() == Decimal("50.00")
+    assert settings_form["late_arrival_penalty"].value() == Decimal("20.00")
     assert response.status_code == 302
     settings.refresh_from_db()
     assert settings.penalties_enabled is True
@@ -386,6 +395,119 @@ def test_penalty_admin_operations_reject_foreign_tenant_and_client_ids(
     appointment.refresh_from_db()
     assert wrong_client_penalty.status == Penalty.Status.UNPAID
     assert appointment.penalties_total_amount == 0
+
+
+@pytest.mark.django_db
+def test_owner_manages_expenses_in_major_units_with_audit(
+    finance_admin_context,
+) -> None:
+    context = finance_admin_context
+    partner = context["created"].partner
+    owner = context["created"].owner
+    expense_date = timezone.localdate()
+    add_url = reverse("admin:finance_expense_add")
+
+    create_response = context["http_client"].post(
+        add_url,
+        {
+            "partner": str(partner.id),
+            "date": expense_date.isoformat(),
+            "amount_major": "100.50",
+            "currency": "uah",
+            "description": "  Materials  ",
+            "_save": "Save",
+        },
+    )
+
+    assert create_response.status_code == 302
+    expense = Expense.objects.get(partner=partner)
+    assert expense.amount == 10_050
+    assert expense.currency == "UAH"
+    assert expense.description == "Materials"
+    assert expense.created_by == owner
+    assert AuditEvent.objects.filter(
+        partner=partner,
+        actor=owner,
+        target_id=str(expense.id),
+        event_type="expense.created",
+    ).exists()
+
+    change_url = reverse("admin:finance_expense_change", args=[expense.id])
+    change_page = context["http_client"].get(change_url)
+    update_response = context["http_client"].post(
+        change_url,
+        {
+            "date": expense_date.isoformat(),
+            "amount_major": "125.25",
+            "currency": "UAH",
+            "description": "Materials and tools",
+            "_save": "Save",
+        },
+    )
+
+    assert change_page.status_code == 200
+    assert change_page.context["adminform"].form["amount_major"].value() == Decimal("100.50")
+    assert update_response.status_code == 302
+    expense.refresh_from_db()
+    assert expense.amount == 12_525
+    assert expense.description == "Materials and tools"
+    assert expense.created_by == owner
+    assert AuditEvent.objects.filter(
+        partner=partner,
+        actor=owner,
+        target_id=str(expense.id),
+        event_type="expense.updated",
+    ).exists()
+
+    delete_url = reverse("admin:finance_expense_delete", args=[expense.id])
+    delete_response = context["http_client"].post(delete_url, {"post": "yes"})
+
+    assert delete_response.status_code == 302
+    assert not Expense.objects.filter(id=expense.id).exists()
+    assert AuditEvent.objects.filter(
+        partner=partner,
+        actor=owner,
+        target_id=str(expense.id),
+        event_type="expense.deleted",
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_expense_admin_is_tenant_scoped(finance_admin_context) -> None:
+    context = finance_admin_context
+    other = create_partner_with_owner(
+        actor=context["superuser"],
+        partner_name="Foreign Expense Partner",
+        owner_username="foreign-expense-owner",
+        owner_password="secret",
+    )
+    own_expense = create_expense(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        date=timezone.localdate(),
+        amount=2_000,
+        description="Own supplies",
+    )
+    foreign_expense = create_expense(
+        actor=other.owner,
+        partner=other.partner,
+        date=timezone.localdate(),
+        amount=3_000,
+        description="Foreign supplies",
+    )
+
+    response = context["http_client"].get(reverse("admin:finance_expense_changelist"))
+    foreign_change_response = context["http_client"].get(
+        reverse("admin:finance_expense_change", args=[foreign_expense.id])
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Own supplies" in content
+    assert "Foreign supplies" not in content
+    assert foreign_change_response.status_code in {302, 404}
+    assert Expense.objects.filter(id=own_expense.id).exists()
+    assert Expense.objects.filter(id=foreign_expense.id).exists()
 
 
 def _create_appointment(context, *, start_at=None):

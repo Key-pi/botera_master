@@ -272,7 +272,7 @@
         <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Clients" %}</a>
         <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Catalog" %}</a>
         <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Broadcasts" %}</a>
-        <a href="{% url 'admin:finance_expense_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Finance" %}</a>
+        <a href="{% url 'finance:report' %}?partner={{ snapshot.partner.pk }}">{% translate "Finance" %}</a>
         <a href="{% url 'admin:bot_botinstance_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Bot" %}</a>
         <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ snapshot.partner.pk }}">{% translate "Activity Log" %}</a>
       </nav>

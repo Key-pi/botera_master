@@ -1,0 +1,369 @@
+{% extends "admin/base_site.html" %}
+{% load client_admin i18n %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .finance-workspace {
+      display: grid;
+      gap: 18px;
+      max-width: 1440px;
+    }
+    .finance-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 20px;
+      justify-content: space-between;
+    }
+    .finance-header h1 {
+      font-size: 1.5rem;
+      margin: 0 0 6px;
+    }
+    .finance-subtitle,
+    .finance-muted {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .finance-actions,
+    .finance-selector,
+    .finance-period-nav,
+    .finance-date-form {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .finance-selector label,
+    .finance-date-form label {
+      font-weight: 600;
+    }
+    .finance-selector select {
+      max-width: 280px;
+      min-width: 180px;
+    }
+    .finance-workspace-nav {
+      border-bottom: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .finance-workspace-nav a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+    .finance-workspace-nav a[aria-current="page"] {
+      background: var(--selected-bg);
+    }
+    .finance-toolbar {
+      align-items: center;
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+    }
+    .finance-period-switch {
+      border: 1px solid var(--hairline-color);
+      display: inline-flex;
+    }
+    .finance-period-switch a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 7px 12px;
+      text-decoration: none;
+    }
+    .finance-period-switch a:last-child {
+      border-right: 0;
+    }
+    .finance-period-switch a[aria-selected="true"] {
+      background: var(--selected-bg);
+      color: var(--body-fg);
+    }
+    .finance-range {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .finance-summary {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .finance-band {
+      border-top: 3px solid var(--primary);
+      min-width: 0;
+    }
+    .finance-band--expected {
+      border-top-color: #3678a8;
+    }
+    .finance-band h2,
+    .finance-expenses-heading h2 {
+      font-size: 1rem;
+      margin: 10px 0;
+    }
+    .finance-metrics {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0;
+    }
+    .finance-metric {
+      background: var(--darkened-bg);
+      border: 1px solid var(--hairline-color);
+      border-radius: 6px;
+      min-width: 0;
+      padding: 12px;
+    }
+    .finance-metric dt {
+      color: var(--body-quiet-color);
+      font-size: 0.72rem;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+    .finance-metric dd {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .finance-metric--total {
+      border-color: var(--primary);
+    }
+    .finance-expenses {
+      min-width: 0;
+    }
+    .finance-expenses-heading {
+      align-items: center;
+      background: var(--primary);
+      color: var(--header-color);
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 0 12px;
+    }
+    .finance-expenses-heading h2 {
+      color: inherit;
+    }
+    .finance-expenses-heading a {
+      color: var(--header-link-color);
+    }
+    .finance-table-wrap {
+      overflow-x: auto;
+    }
+    .finance-table {
+      width: 100%;
+    }
+    .finance-table th,
+    .finance-table td {
+      vertical-align: top;
+    }
+    .finance-table td:last-child,
+    .finance-table th:last-child {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .finance-empty {
+      color: var(--body-quiet-color);
+      margin: 0;
+      padding: 16px;
+    }
+    .finance-no-access {
+      border-left: 4px solid var(--error-fg);
+      padding-left: 14px;
+    }
+    @media (max-width: 900px) {
+      .finance-header,
+      .finance-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .finance-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .finance-workspace-nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .finance-workspace-nav a {
+        border-bottom: 1px solid var(--hairline-color);
+        overflow-wrap: anywhere;
+      }
+      .finance-selector select {
+        max-width: 100%;
+        width: 100%;
+      }
+    }
+    @media (max-width: 620px) {
+      .finance-metrics {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .finance-period-nav {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .finance-period-switch {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .finance-period-switch a {
+        text-align: center;
+      }
+      .finance-date-form input,
+      .finance-date-form button {
+        box-sizing: border-box;
+        width: 100%;
+      }
+      .finance-table-wrap {
+        overflow: visible;
+      }
+      .finance-table,
+      .finance-table tbody,
+      .finance-table tr,
+      .finance-table td {
+        display: block;
+        width: 100%;
+      }
+      .finance-table thead {
+        display: none;
+      }
+      .finance-table tr {
+        border-bottom: 1px solid var(--hairline-color);
+        box-sizing: border-box;
+        padding: 8px 0;
+      }
+      .finance-table td,
+      .finance-table td:last-child {
+        box-sizing: border-box;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(88px, 0.4fr) minmax(0, 1fr);
+        padding: 5px 12px;
+        text-align: left;
+        white-space: normal;
+      }
+      .finance-table td::before {
+        color: var(--body-quiet-color);
+        content: attr(data-label);
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <main class="finance-workspace">
+    {% if selected_partner and report %}
+      <header class="finance-header">
+        <div>
+          <h1>{{ selected_partner.name }}</h1>
+          <p class="finance-subtitle">{% translate "Finance" %} · {{ selected_partner.timezone }}</p>
+        </div>
+        <div class="finance-actions">
+          {% if partners|length > 1 %}
+            <form class="finance-selector" method="get">
+              <input type="hidden" name="period" value="{{ selected_period }}">
+              <input type="hidden" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+              <label for="finance-partner">{% translate "Partner" %}</label>
+              <select id="finance-partner" name="partner">
+                {% for partner in partners %}
+                  <option value="{{ partner.pk }}"{% if partner.pk == selected_partner.pk %} selected{% endif %}>{{ partner.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">{% translate "Open" %}</button>
+            </form>
+          {% endif %}
+          <a class="button" href="{% url 'admin:finance_expense_add' %}?partner={{ selected_partner.pk }}&date={{ selected_date|date:'Y-m-d' }}">{% translate "Add expense" %}</a>
+        </div>
+      </header>
+
+      <nav class="finance-workspace-nav" aria-label="{% translate 'Partner workspace' %}">
+        <a href="{% url 'partners:dashboard' %}?partner={{ selected_partner.pk }}">{% translate "Dashboard" %}</a>
+        <a href="{% url 'schedule:calendar' %}?partner={{ selected_partner.pk }}">{% translate "Calendar" %}</a>
+        <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Appointments" %}</a>
+        <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Clients" %}</a>
+        <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Catalog" %}</a>
+        <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Broadcasts" %}</a>
+        <a href="{% url 'finance:report' %}?partner={{ selected_partner.pk }}" aria-current="page">{% translate "Finance" %}</a>
+        <a href="{% url 'admin:bot_botinstance_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Bot" %}</a>
+        <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Activity Log" %}</a>
+      </nav>
+
+      <section class="finance-toolbar" aria-label="{% translate 'Report period' %}">
+        <div class="finance-period-nav">
+          <div class="finance-period-switch">
+            <a href="{{ period_urls.day }}" aria-selected="{% if selected_period == 'day' %}true{% else %}false{% endif %}">{% translate "Day" %}</a>
+            <a href="{{ period_urls.week }}" aria-selected="{% if selected_period == 'week' %}true{% else %}false{% endif %}">{% translate "Week" %}</a>
+            <a href="{{ period_urls.month }}" aria-selected="{% if selected_period == 'month' %}true{% else %}false{% endif %}">{% translate "Month" %}</a>
+          </div>
+          <a class="button" href="{{ previous_url }}" aria-label="{% translate 'Previous period' %}">‹</a>
+          <a class="button" href="{{ next_url }}" aria-label="{% translate 'Next period' %}">›</a>
+          <p class="finance-range">{{ window.start_date|date:"d.m.Y" }}{% if window.end_date != window.start_date %} – {{ window.end_date|date:"d.m.Y" }}{% endif %}</p>
+        </div>
+        <form class="finance-date-form" method="get">
+          <input type="hidden" name="partner" value="{{ selected_partner.pk }}">
+          <input type="hidden" name="period" value="{{ selected_period }}">
+          <label for="finance-date">{% translate "Date" %}</label>
+          <input id="finance-date" type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+          <button type="submit">{% translate "Open" %}</button>
+        </form>
+      </section>
+
+      <section class="finance-summary">
+        <div class="finance-band">
+          <h2>{% translate "Actual" %}</h2>
+          <dl class="finance-metrics">
+            <div class="finance-metric"><dt>{% translate "Services" %}</dt><dd>{{ report.actual_service_revenue_amount|money_amount }} {{ report.currency }}</dd></div>
+            <div class="finance-metric"><dt>{% translate "Paid penalties" %}</dt><dd>{{ report.actual_penalty_revenue_amount|money_amount }} {{ report.currency }}</dd></div>
+            <div class="finance-metric finance-metric--total"><dt>{% translate "Revenue" %}</dt><dd>{{ report.actual_revenue_amount|money_amount }} {{ report.currency }}</dd></div>
+            <div class="finance-metric"><dt>{% translate "Expenses" %}</dt><dd>{{ report.expense_amount|money_amount }} {{ report.currency }}</dd></div>
+            <div class="finance-metric finance-metric--total"><dt>{% translate "Net actual" %}</dt><dd>{{ report.net_actual_amount|money_amount }} {{ report.currency }}</dd></div>
+          </dl>
+        </div>
+        <div class="finance-band finance-band--expected">
+          <h2>{% translate "Expected" %}</h2>
+          <dl class="finance-metrics">
+            <div class="finance-metric"><dt>{% translate "Services" %}</dt><dd>{{ report.expected_service_revenue_amount|money_amount }} {{ report.currency }}</dd></div>
+            <div class="finance-metric"><dt>{% translate "Applied penalties" %}</dt><dd>{{ report.expected_penalty_revenue_amount|money_amount }} {{ report.currency }}</dd></div>
+            <div class="finance-metric finance-metric--total"><dt>{% translate "Revenue" %}</dt><dd>{{ report.expected_revenue_amount|money_amount }} {{ report.currency }}</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="finance-expenses">
+        <div class="finance-expenses-heading">
+          <h2>{% translate "Expenses in period" %} ({{ expense_count }})</h2>
+          <a href="{% url 'admin:finance_expense_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Manage expenses" %}</a>
+        </div>
+        {% if expenses %}
+          <div class="finance-table-wrap">
+            <table class="finance-table">
+              <thead><tr><th>{% translate "Date" %}</th><th>{% translate "Description" %}</th><th>{% translate "Amount" %}</th></tr></thead>
+              <tbody>
+                {% for expense in expenses %}
+                  <tr>
+                    <td data-label="{% translate 'Date' %}"><a href="{% url 'admin:finance_expense_change' expense.pk %}">{{ expense.date|date:"d.m.Y" }}</a></td>
+                    <td data-label="{% translate 'Description' %}">{{ expense.description }}</td>
+                    <td data-label="{% translate 'Amount' %}">{{ expense.amount|money_amount }} {{ expense.currency }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if expense_count > expense_preview_limit %}<p class="finance-muted">{% translate "Showing the latest expenses in this period." %}</p>{% endif %}
+        {% else %}
+          <p class="finance-empty">{% translate "No expenses in this period." %}</p>
+        {% endif %}
+      </section>
+    {% else %}
+      <div class="finance-no-access">
+        <h1>{% translate "Finance" %}</h1>
+        <p>{% translate "No partner workspace is available for this account." %}</p>
+      </div>
+    {% endif %}
+  </main>
+{% endblock %}

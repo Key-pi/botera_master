@@ -17,6 +17,16 @@ if TYPE_CHECKING:
     from apps.partners.models import Partner
 
 
+FINANCE_PERIOD_DAY = "day"
+FINANCE_PERIOD_WEEK = "week"
+FINANCE_PERIOD_MONTH = "month"
+FINANCE_PERIODS = (
+    FINANCE_PERIOD_DAY,
+    FINANCE_PERIOD_WEEK,
+    FINANCE_PERIOD_MONTH,
+)
+
+
 @dataclass(frozen=True)
 class FinanceReport:
     """Lightweight partner finance totals for one local-date period."""
@@ -32,6 +42,16 @@ class FinanceReport:
     expected_revenue_amount: int
     expense_amount: int
     net_actual_amount: int
+
+
+@dataclass(frozen=True, slots=True)
+class FinancePeriodWindow:
+    """Resolved local-date boundaries for one report preset."""
+
+    period: str
+    anchor_date: date
+    start_date: date
+    end_date: date
 
 
 def penalties_for_client(client_profile: ClientProfile) -> QuerySet[Penalty]:
@@ -108,6 +128,50 @@ def expenses_for_partner(
     if end_date is not None:
         queryset = queryset.filter(date__lte=end_date)
     return queryset
+
+
+def finance_period_window(
+    *,
+    period: str,
+    anchor_date: date,
+) -> FinancePeriodWindow:
+    """Resolve day/week/month report boundaries around a local anchor date."""
+
+    if period == FINANCE_PERIOD_DAY:
+        start_date = anchor_date
+        end_date = anchor_date
+    elif period == FINANCE_PERIOD_WEEK:
+        start_date = anchor_date - timedelta(days=anchor_date.weekday())
+        end_date = start_date + timedelta(days=6)
+    elif period == FINANCE_PERIOD_MONTH:
+        start_date = anchor_date.replace(day=1)
+        next_month = _shift_month_start(start_date=start_date, months=1)
+        end_date = next_month - timedelta(days=1)
+    else:
+        raise ValueError("Unsupported finance report period.")
+    return FinancePeriodWindow(
+        period=period,
+        anchor_date=anchor_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+def shift_finance_period_anchor(
+    *,
+    period: str,
+    anchor_date: date,
+    steps: int,
+) -> date:
+    """Move a report anchor by whole selected periods."""
+
+    if period == FINANCE_PERIOD_DAY:
+        return anchor_date + timedelta(days=steps)
+    if period == FINANCE_PERIOD_WEEK:
+        return anchor_date + timedelta(days=7 * steps)
+    if period == FINANCE_PERIOD_MONTH:
+        return _shift_month_start(start_date=anchor_date.replace(day=1), months=steps)
+    raise ValueError("Unsupported finance report period.")
 
 
 def finance_report_for_partner(
@@ -205,3 +269,9 @@ def _local_date_bounds(
 
 def _sum(queryset: QuerySet, field_name: str) -> int:
     return queryset.aggregate(total=Sum(field_name))["total"] or 0
+
+
+def _shift_month_start(*, start_date: date, months: int) -> date:
+    month_index = start_date.year * 12 + start_date.month - 1 + months
+    year, zero_based_month = divmod(month_index, 12)
+    return date(year, zero_based_month + 1, 1)

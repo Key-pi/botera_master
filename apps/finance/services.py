@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING
@@ -29,6 +30,16 @@ APPLICATION_TOTAL_STATUSES = (
     PenaltyApplication.Status.ACTIVE,
     PenaltyApplication.Status.SETTLED,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ExpenseDetails:
+    """Normalized partner-controlled expense values."""
+
+    date: date
+    amount: int
+    currency: str
+    description: str
 
 
 def get_or_create_penalty_settings(*, partner: Partner) -> PartnerPenaltySettings:
@@ -477,18 +488,135 @@ def create_expense(
     """Create a manual partner expense for finance reports."""
 
     ensure_partner_access(actor, partner)
+    details = validate_expense_input(
+        date=date,
+        amount=amount,
+        description=description,
+        currency=currency,
+    )
+    with transaction.atomic():
+        expense = Expense.objects.create(
+            partner=partner,
+            date=details.date,
+            amount=details.amount,
+            currency=details.currency,
+            description=details.description,
+            created_by=actor,
+        )
+        _record_expense_audit(
+            expense=expense,
+            actor=actor,
+            event_type="expense.created",
+            message="Expense created.",
+        )
+        return expense
+
+
+def update_expense(
+    *,
+    actor: User,
+    expense: Expense,
+    date: date,
+    amount: int,
+    description: str,
+    currency: str = DEFAULT_CURRENCY,
+) -> Expense:
+    """Update an expense under its trusted tenant scope and record the change."""
+
+    details = validate_expense_input(
+        date=date,
+        amount=amount,
+        description=description,
+        currency=currency,
+    )
+    with transaction.atomic():
+        stored = Expense.objects.select_for_update().select_related("partner").get(id=expense.id)
+        ensure_partner_access(actor, stored.partner)
+        stored.date = details.date
+        stored.amount = details.amount
+        stored.currency = details.currency
+        stored.description = details.description
+        stored.save(
+            update_fields=[
+                "date",
+                "amount",
+                "currency",
+                "description",
+                "updated_at",
+            ]
+        )
+        _record_expense_audit(
+            expense=stored,
+            actor=actor,
+            event_type="expense.updated",
+            message="Expense updated.",
+        )
+        return stored
+
+
+def delete_expense(
+    *,
+    actor: User,
+    expense: Expense,
+    reason: str = "",
+) -> None:
+    """Delete one expense while preserving a partner-visible audit event."""
+
+    with transaction.atomic():
+        stored = Expense.objects.select_for_update().select_related("partner").get(id=expense.id)
+        ensure_partner_access(actor, stored.partner)
+        _record_expense_audit(
+            expense=stored,
+            actor=actor,
+            event_type="expense.deleted",
+            message="Expense deleted.",
+            reason=reason,
+        )
+        stored.delete()
+
+
+def validate_expense_input(
+    *,
+    date: date,
+    amount: int,
+    description: str,
+    currency: str = DEFAULT_CURRENCY,
+) -> ExpenseDetails:
+    """Normalize expense input shared by admin forms and write services."""
+
     if amount <= 0:
         raise ValidationError({"amount": "Expense amount must be positive."})
     cleaned_description = description.strip()
     if not cleaned_description:
         raise ValidationError({"description": "Expense description is required."})
-    return Expense.objects.create(
-        partner=partner,
+    return ExpenseDetails(
         date=date,
         amount=amount,
         currency=_normalize_currency(currency),
         description=cleaned_description,
-        created_by=actor,
+    )
+
+
+def _record_expense_audit(
+    *,
+    expense: Expense,
+    actor: User,
+    event_type: str,
+    message: str,
+    reason: str = "",
+) -> None:
+    record_audit_event(
+        partner=expense.partner,
+        actor=actor,
+        event_type=event_type,
+        target=expense,
+        message=message,
+        reason=reason,
+        payload={
+            "date": expense.date.isoformat(),
+            "amount": expense.amount,
+            "currency": expense.currency,
+        },
     )
 
 

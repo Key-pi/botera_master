@@ -41,6 +41,7 @@ PARTNER_OWNER_PERMISSION_RULES = (
     # service-backed "message client" admin action.
     ("messaging", "conversationmessage", ("view", "add")),
     ("finance", "partnerpenaltysettings", ("view", "change")),
+    ("finance", "expense", ("view", "add", "change", "delete")),
     ("audit", "auditevent", ("view",)),
 )
 

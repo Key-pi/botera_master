@@ -512,6 +512,15 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-13: Expense categories are not part of MVP.
 - 2026-08-13: Expenses are partner-only data and are not client-visible.
 - 2026-08-15: Partner can edit/delete expense records, and these changes are audit logged.
+- 2026-10-24: Partner finance uses a dedicated tenant-scoped workspace with day,
+  week, and month views calculated in the partner timezone; it shows actual
+  revenue, expected revenue, expenses, and actual net amount.
+- 2026-10-24: Partner-facing expense and penalty-setting forms accept and show
+  major currency units while persistent money values remain integer minor
+  units.
+- 2026-10-24: Expense create/update/delete operations go through finance owner
+  services and produce partner-visible audit events; partner-owner admin access
+  includes only the reviewed tenant-scoped expense surface.
 - 2026-08-13: Partner admin default landing screen should be an operational dashboard focused on today's/tomorrow's appointments/calendar, pending `requested` appointments, failed reminders/notifications, active conflicts/problems, and compact basic stats/revenue.
 - 2026-09-22: MVP partner admin main navigation is Dashboard, Calendar, Appointments, Clients, Catalog, Broadcasts, Finance, Bot, and Activity Log.
 - 2026-09-22: Calendar is the primary day-to-day working screen for the master; Appointments list is a secondary searchable/filterable operational view.

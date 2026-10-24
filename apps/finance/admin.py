@@ -6,25 +6,49 @@ from django.core.exceptions import PermissionDenied
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.models import Appointment
 from apps.clients.models import ClientProfile
+from apps.finance.forms import ExpenseAdminForm, PartnerPenaltySettingsAdminForm
 from apps.finance.models import Expense, PartnerPenaltySettings, Penalty, PenaltyApplication
-from apps.finance.services import update_penalty_settings
+from apps.finance.services import (
+    create_expense,
+    delete_expense,
+    update_expense,
+    update_penalty_settings,
+)
 from core.admin import PartnerScopedAdminMixin
+from core.money import Money
 
 
 @admin.register(PartnerPenaltySettings)
 class PartnerPenaltySettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
+    form = PartnerPenaltySettingsAdminForm
     list_display = [
-        "partner",
         "penalties_enabled",
-        "late_cancel_penalty_amount",
-        "no_show_penalty_amount",
+        "late_cancel_penalty_display",
+        "no_show_penalty_display",
         "late_arrival_threshold_minutes",
-        "late_arrival_penalty_amount",
-        "currency",
+        "late_arrival_penalty_display",
     ]
-    list_filter = ["penalties_enabled", "currency"]
+    list_filter = ["penalties_enabled"]
     search_fields = ["partner__name"]
     readonly_fields = ["partner", "currency", "created_at", "updated_at"]
+
+    def get_list_display(self, request):
+        columns = list(super().get_list_display(request))
+        if request.user.is_superuser:
+            columns.insert(0, "partner")
+        return columns
+
+    @admin.display(description="Late cancellation", ordering="late_cancel_penalty_amount")
+    def late_cancel_penalty_display(self, obj):
+        return _money_label(obj.late_cancel_penalty_amount, obj.currency)
+
+    @admin.display(description="No-show", ordering="no_show_penalty_amount")
+    def no_show_penalty_display(self, obj):
+        return _money_label(obj.no_show_penalty_amount, obj.currency)
+
+    @admin.display(description="Late arrival", ordering="late_arrival_penalty_amount")
+    def late_arrival_penalty_display(self, obj):
+        return _money_label(obj.late_arrival_penalty_amount, obj.currency)
 
     def save_model(self, request, obj, form, change):
         if not change:
@@ -51,17 +75,25 @@ class PartnerPenaltySettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 class PenaltyAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     list_display = [
         "client_profile",
-        "partner",
         "reason",
         "status",
-        "amount",
-        "currency",
+        "amount_display",
         "late_by_minutes",
         "source_appointment",
         "created_at",
     ]
-    list_filter = ["partner", "reason", "status", "currency"]
-    search_fields = ["client_profile__name", "client_profile__phone", "note"]
+    list_filter = [
+        ("partner", admin.RelatedOnlyFieldListFilter),
+        "reason",
+        "status",
+        "currency",
+    ]
+    search_fields = [
+        "client_profile__name",
+        "client_profile__phone",
+        "client_profile__telegram_identity__username",
+        "note",
+    ]
     readonly_fields = [
         "partner",
         "client_profile",
@@ -78,6 +110,18 @@ class PenaltyAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "created_at",
         "updated_at",
     ]
+    list_select_related = ["partner", "client_profile", "source_appointment"]
+    list_per_page = 50
+
+    def get_list_display(self, request):
+        columns = list(super().get_list_display(request))
+        if request.user.is_superuser:
+            columns.insert(1, "partner")
+        return columns
+
+    @admin.display(description="Amount", ordering="amount")
+    def amount_display(self, obj):
+        return _money_label(obj.amount, obj.currency)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if not request.user.is_superuser:
@@ -103,14 +147,20 @@ class PenaltyApplicationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     list_display = [
         "penalty",
         "appointment",
-        "partner",
         "status",
-        "amount_snapshot",
-        "currency",
+        "amount_display",
         "created_at",
     ]
-    list_filter = ["partner", "status", "currency"]
-    search_fields = ["penalty__client_profile__name", "penalty__client_profile__phone"]
+    list_filter = [
+        ("partner", admin.RelatedOnlyFieldListFilter),
+        "status",
+        "currency",
+    ]
+    search_fields = [
+        "penalty__client_profile__name",
+        "penalty__client_profile__phone",
+        "penalty__client_profile__telegram_identity__username",
+    ]
     readonly_fields = [
         "partner",
         "penalty",
@@ -123,6 +173,18 @@ class PenaltyApplicationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         "created_at",
         "updated_at",
     ]
+    list_select_related = ["partner", "penalty", "penalty__client_profile", "appointment"]
+    list_per_page = 50
+
+    def get_list_display(self, request):
+        columns = list(super().get_list_display(request))
+        if request.user.is_superuser:
+            columns.insert(2, "partner")
+        return columns
+
+    @admin.display(description="Amount", ordering="amount_snapshot")
+    def amount_display(self, obj):
+        return _money_label(obj.amount_snapshot, obj.currency)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if not request.user.is_superuser:
@@ -145,11 +207,68 @@ class PenaltyApplicationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
 @admin.register(Expense)
 class ExpenseAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
-    list_display = ["date", "partner", "amount", "currency", "description", "created_by"]
-    list_filter = ["partner", "currency", "date"]
-    search_fields = ["description"]
-    autocomplete_fields = ["partner", "created_by"]
-    readonly_fields = ["created_at", "updated_at"]
+    form = ExpenseAdminForm
+    list_display = ["date", "description", "amount_display", "created_by"]
+    list_filter = [
+        ("partner", admin.RelatedOnlyFieldListFilter),
+        "currency",
+        "date",
+    ]
+    search_fields = ["description", "partner__name"]
+    autocomplete_fields = ["partner"]
+    readonly_fields = ["created_by", "created_at", "updated_at"]
+    date_hierarchy = "date"
+    list_select_related = ["partner", "created_by"]
+    list_per_page = 50
+
+    def get_list_display(self, request):
+        columns = list(super().get_list_display(request))
+        if request.user.is_superuser:
+            columns.insert(1, "partner")
+        return columns
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None:
+            readonly_fields.append("partner")
+        return readonly_fields
+
+    @admin.display(description="Amount", ordering="amount")
+    def amount_display(self, obj):
+        return _money_label(obj.amount, obj.currency)
+
+    def save_model(self, request, obj, form, change):
+        values = {
+            "date": form.cleaned_data["date"],
+            "amount": form.cleaned_data["amount"],
+            "currency": form.cleaned_data["currency"],
+            "description": form.cleaned_data["description"],
+        }
+        if change:
+            stored = update_expense(
+                actor=request.user,
+                expense=obj,
+                **values,
+            )
+        else:
+            stored = create_expense(
+                actor=request.user,
+                partner=form.cleaned_data["partner"],
+                **values,
+            )
+        _copy_model_state(target=obj, source=stored)
+
+    def delete_model(self, request, obj):
+        delete_expense(actor=request.user, expense=obj)
+
+    def delete_queryset(self, request, queryset):
+        for expense in queryset.select_related("partner"):
+            delete_expense(actor=request.user, expense=expense)
+
+
+def _money_label(amount: int, currency: str) -> str:
+    money = Money(amount=amount, currency=currency)
+    return f"{money.to_major_decimal()} {money.currency}"
 
 
 def _copy_model_state(*, target, source) -> None:
