@@ -175,6 +175,16 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-19: Superuser-visible system/audit logs include technical errors from bot runner and background jobs, with sensitive data masked.
 - 2026-09-22: Sensitive/destructive partner actions must be audited, including appointment cancellation, no-show marking, penalty changes/payment/waiver, expense changes/deletion, bot token/settings changes, and corrections after final status.
 - 2026-09-22: Partner-visible Activity Log entries should be business-friendly and should not expose raw technical payloads.
+- 2026-10-24: The partner Activity Log is a read-only, partner-scoped journal
+  with business-area filters, curated event labels, partner-local timestamps,
+  safe whitelisted details, and links to known surviving business records.
+- 2026-10-24: Raw event keys, target identifiers, and masked payload JSON are
+  hidden from partner users. Superusers may inspect the already-redacted
+  technical context in a collapsed support-only section; audit history cannot
+  be edited or deleted through admin.
+- 2026-10-24: Appointment creation emits `appointment.created` in the same
+  transaction as the appointment and its service snapshots, so the activity
+  history begins with the source business action.
 - 2026-09-22: Audit reason is required for correction-flow actions after a final appointment status.
 - 2026-09-22: For master cancellation, penalty waiver, and expense deletion, reason is optional in MVP unless a later policy makes it required.
 - 2026-09-22: Appointment service item/line records are used for every appointment, including one-service appointments.

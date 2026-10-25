@@ -149,6 +149,11 @@ def create_requested_appointment(
             appointment=appointment,
             snapshot_items=snapshot_items,
         )
+        _record_appointment_created_audit(
+            actor=actor,
+            appointment=appointment,
+            service_count=len(snapshot_items),
+        )
         _on_commit_schedule_requested_notifications(appointment.id)
     return appointment
 
@@ -200,6 +205,11 @@ def create_confirmed_appointment(
         _create_snapshot_items(
             appointment=appointment,
             snapshot_items=snapshot_items,
+        )
+        _record_appointment_created_audit(
+            actor=actor,
+            appointment=appointment,
+            service_count=len(snapshot_items),
         )
         _on_commit_schedule_confirmed_notifications(appointment.id)
         if actor is None and source == Appointment.Source.CLIENT_BOT:
@@ -1037,6 +1047,34 @@ def _record_status_audit(
         message=f"Appointment status changed from {old_status} to {new_status}.",
         payload={"old_status": old_status, "new_status": new_status},
         reason=reason,
+    )
+
+
+def _record_appointment_created_audit(
+    *,
+    actor: User | None,
+    appointment: Appointment,
+    service_count: int,
+) -> None:
+    record_audit_event(
+        partner=appointment.partner,
+        actor=actor,
+        event_type="appointment.created",
+        target=appointment,
+        message=(
+            "Appointment request created."
+            if appointment.status == Appointment.Status.REQUESTED
+            else "Confirmed appointment created."
+        ),
+        payload={
+            "status": appointment.status,
+            "source": appointment.source,
+            "start_at": appointment.start_at.isoformat(),
+            "service_count": service_count,
+            "total_amount": appointment.total_amount,
+            "currency": appointment.currency,
+            "is_near_fit": appointment.is_near_fit,
+        },
     )
 
 

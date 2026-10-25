@@ -16,6 +16,7 @@ from apps.appointments.services import (
     create_requested_appointment,
     transition_appointment_status,
 )
+from apps.audit.models import AuditEvent
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import create_manual_client_profile
 from apps.partners.services import create_partner_with_owner
@@ -127,6 +128,33 @@ def test_requested_appointments_may_overlap_without_blocking_slot(
     assert first.status == Appointment.Status.REQUESTED
     assert second.status == Appointment.Status.REQUESTED
     assert first.start_at == second.start_at
+
+
+@pytest.mark.django_db
+def test_appointment_creation_records_business_audit_event(
+    appointment_context,
+    rounded_future_start,
+) -> None:
+    context = appointment_context
+
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[_service_input(context["service"])],
+    )
+
+    event = AuditEvent.objects.get(
+        partner=context["partner"],
+        target_id=str(appointment.id),
+        event_type="appointment.created",
+    )
+    assert event.actor == context["owner"]
+    assert event.payload_masked["status"] == Appointment.Status.CONFIRMED
+    assert event.payload_masked["service_count"] == 1
+    assert event.payload_masked["total_amount"] == 50000
 
 
 @pytest.mark.django_db
