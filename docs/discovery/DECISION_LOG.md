@@ -58,6 +58,13 @@ Status: discovery approved on 2026-08-07.
   Partner owners do not see redundant partner columns or foreign filter choices; superusers retain
   cross-partner context. Catalog records are archived through active/inactive state instead of
   physical deletion in the partner admin.
+- 2026-10-25: Partner bot operations use one tenant-scoped Bot workspace with the approved
+  Instance, Settings, Content, Notifications, Booking, and Penalties tabs. Instance actions keep
+  token handling, connection checks, launch/pause rules, and signed master-contact links in bot
+  services; the other tabs initially compose owner-module summaries and safe edit destinations.
+- 2026-10-25: Bot token replacement, status changes, connection checks, and master Telegram link
+  creation emit business-safe audit events without storing or displaying the raw token or signed
+  link nonce.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

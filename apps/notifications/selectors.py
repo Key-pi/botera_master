@@ -6,7 +6,11 @@ from uuid import UUID
 from django.db.models import QuerySet
 from django.utils import timezone
 
-from apps.notifications.models import ReminderRule, ScheduledNotification
+from apps.notifications.models import (
+    PartnerNotificationSettings,
+    ReminderRule,
+    ScheduledNotification,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -25,6 +29,24 @@ def active_reminder_rules_for_partner(
     if target is not None:
         queryset = queryset.filter(target=target)
     return queryset.order_by("-offset_minutes")
+
+
+def notification_settings_for_partner(
+    *,
+    partner: Partner,
+) -> PartnerNotificationSettings | None:
+    """Return stored notification settings without creating data in a read path."""
+
+    return PartnerNotificationSettings.objects.filter(partner=partner).first()
+
+
+def reminder_rules_for_partner(*, partner: Partner) -> QuerySet[ReminderRule]:
+    """Return all configured reminder rules for an operational settings view."""
+
+    return ReminderRule.objects.filter(partner=partner).order_by(
+        "target",
+        "-offset_minutes",
+    )
 
 
 def due_notifications(

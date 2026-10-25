@@ -1,0 +1,510 @@
+{% extends "admin/base_site.html" %}
+{% load client_admin i18n tz %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .bot-workspace {
+      display: grid;
+      gap: 18px;
+      max-width: 1440px;
+    }
+    .bot-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 20px;
+      justify-content: space-between;
+    }
+    .bot-header h1 {
+      font-size: 1.5rem;
+      margin: 0 0 6px;
+    }
+    .bot-subtitle,
+    .bot-muted {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .bot-selector,
+    .bot-actions,
+    .bot-form-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .bot-selector label,
+    .bot-token-form label {
+      font-weight: 600;
+    }
+    .bot-selector select {
+      max-width: 280px;
+      min-width: 180px;
+    }
+    .bot-workspace-nav,
+    .bot-tabs {
+      border-bottom: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .bot-workspace-nav a,
+    .bot-tabs a {
+      border-right: 1px solid var(--hairline-color);
+      font-weight: 600;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+    .bot-workspace-nav a[aria-current="page"],
+    .bot-tabs a[aria-current="page"] {
+      background: var(--selected-bg);
+    }
+    .bot-tabs a {
+      padding-bottom: 9px;
+      padding-top: 9px;
+    }
+    .bot-section {
+      border-top: 3px solid var(--primary);
+      min-width: 0;
+    }
+    .bot-section--warning {
+      border-top-color: #ba8b00;
+    }
+    .bot-section--error {
+      border-top-color: var(--error-fg);
+    }
+    .bot-section-heading {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 10px 0;
+    }
+    .bot-section-heading h2 {
+      font-size: 1rem;
+      margin: 0;
+    }
+    .bot-section-body {
+      background: var(--darkened-bg);
+      border: 1px solid var(--hairline-color);
+      padding: 14px;
+    }
+    .bot-status-grid,
+    .bot-settings-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin: 0;
+    }
+    .bot-status-grid > div,
+    .bot-settings-grid > div {
+      min-width: 0;
+    }
+    .bot-status-grid dt,
+    .bot-settings-grid dt {
+      color: var(--body-quiet-color);
+      font-size: 0.72rem;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .bot-status-grid dd,
+    .bot-settings-grid dd {
+      font-weight: 600;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .bot-status {
+      border: 1px solid var(--hairline-color);
+      border-radius: 4px;
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 2px 7px;
+    }
+    .bot-status--active,
+    .bot-check--done {
+      color: #16723d;
+    }
+    .bot-status--error,
+    .bot-check--pending {
+      color: var(--error-fg);
+    }
+    .bot-checklist {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .bot-checklist li {
+      border-bottom: 1px solid var(--hairline-color);
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      padding: 7px 0;
+    }
+    .bot-token-form {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: minmax(220px, 560px) auto;
+      align-items: end;
+    }
+    .bot-token-form input {
+      box-sizing: border-box;
+      max-width: 100%;
+      width: 100%;
+    }
+    .bot-field-errors,
+    .bot-error-text {
+      color: var(--error-fg);
+      margin: 6px 0 0;
+    }
+    .bot-help {
+      color: var(--body-quiet-color);
+      display: block;
+      font-size: 0.75rem;
+      margin-top: 4px;
+    }
+    .bot-generated-link {
+      overflow-wrap: anywhere;
+    }
+    .bot-table-wrap {
+      overflow-x: auto;
+    }
+    .bot-table {
+      width: 100%;
+    }
+    .bot-table th,
+    .bot-table td {
+      text-align: left;
+      vertical-align: top;
+    }
+    .bot-table th:last-child,
+    .bot-table td:last-child {
+      text-align: right;
+    }
+    @media (max-width: 900px) {
+      .bot-header,
+      .bot-section-heading {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .bot-workspace-nav,
+      .bot-tabs {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .bot-workspace-nav a,
+      .bot-tabs a {
+        border-bottom: 1px solid var(--hairline-color);
+        overflow-wrap: anywhere;
+      }
+      .bot-selector select {
+        max-width: 100%;
+        width: 100%;
+      }
+      .bot-checklist {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 620px) {
+      .bot-checklist,
+      .bot-token-form {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .bot-form-actions form,
+      .bot-form-actions button,
+      .bot-token-form button {
+        box-sizing: border-box;
+        width: 100%;
+      }
+      .bot-table-wrap {
+        overflow: visible;
+      }
+      .bot-table,
+      .bot-table tbody,
+      .bot-table tr,
+      .bot-table td {
+        display: block;
+        width: 100%;
+      }
+      .bot-table thead {
+        display: none;
+      }
+      .bot-table tr {
+        border-bottom: 1px solid var(--hairline-color);
+        box-sizing: border-box;
+        padding: 8px 0;
+      }
+      .bot-table td,
+      .bot-table td:last-child {
+        box-sizing: border-box;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(100px, 0.45fr) minmax(0, 1fr);
+        padding: 5px 0;
+        text-align: left;
+      }
+      .bot-table td::before {
+        color: var(--body-quiet-color);
+        content: attr(data-label);
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <main class="bot-workspace">
+    {% if selected_partner %}
+      <header class="bot-header">
+        <div>
+          <h1>{{ selected_partner.name }}</h1>
+          <p class="bot-subtitle">{% translate "Bot" %} · {{ selected_partner.timezone }}</p>
+        </div>
+        {% if partners|length > 1 %}
+          <form class="bot-selector" method="get">
+            <input type="hidden" name="tab" value="{{ selected_tab }}">
+            <label for="bot-partner">{% translate "Partner" %}</label>
+            <select id="bot-partner" name="partner">
+              {% for partner in partners %}
+                <option value="{{ partner.pk }}"{% if partner.pk == selected_partner.pk %} selected{% endif %}>{{ partner.name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">{% translate "Open" %}</button>
+          </form>
+        {% endif %}
+      </header>
+
+      <nav class="bot-workspace-nav" aria-label="{% translate 'Partner workspace' %}">
+        <a href="{% url 'partners:dashboard' %}?partner={{ selected_partner.pk }}">{% translate "Dashboard" %}</a>
+        <a href="{% url 'schedule:calendar' %}?partner={{ selected_partner.pk }}">{% translate "Calendar" %}</a>
+        <a href="{% url 'admin:appointments_appointment_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Appointments" %}</a>
+        <a href="{% url 'admin:clients_clientprofile_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Clients" %}</a>
+        <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Catalog" %}</a>
+        <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Broadcasts" %}</a>
+        <a href="{% url 'finance:report' %}?partner={{ selected_partner.pk }}">{% translate "Finance" %}</a>
+        <a href="{% url 'bot:workspace' %}?partner={{ selected_partner.pk }}" aria-current="page">{% translate "Bot" %}</a>
+        <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Activity Log" %}</a>
+      </nav>
+
+      <nav class="bot-tabs" aria-label="{% translate 'Bot settings' %}">
+        {% for tab in workspace_tabs %}
+          <a href="{{ tab.url }}"{% if tab.slug == selected_tab %} aria-current="page"{% endif %}>{{ tab.label }}</a>
+        {% endfor %}
+      </nav>
+
+      {% if selected_tab == "instance" %}
+        <section class="bot-section{% if bot_instance and bot_instance.last_error_code %} bot-section--error{% endif %}">
+          <div class="bot-section-heading">
+            <h2>{% translate "Runtime status" %}</h2>
+            <div class="bot-form-actions">
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="check_connection">
+                <button type="submit"{% if not bot_instance %} disabled{% endif %}>{% translate "Check connection" %}</button>
+              </form>
+              <form method="post" data-confirm="{% translate 'Launch this bot after setup checks?' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="launch">
+                <button type="submit"{% if not bot_instance or bot_instance.status == "active" or bot_instance.status == "suspended" %} disabled{% endif %}>{% translate "Launch" %}</button>
+              </form>
+              <form method="post" data-confirm="{% translate 'Pause client bot flows?' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="pause">
+                <button type="submit"{% if not bot_instance or bot_instance.status == "paused" or bot_instance.status == "suspended" %} disabled{% endif %}>{% translate "Pause" %}</button>
+              </form>
+            </div>
+          </div>
+          <div class="bot-section-body">
+            <dl class="bot-status-grid">
+              <div><dt>{% translate "Partner" %}</dt><dd>{{ selected_partner.get_status_display }}</dd></div>
+              <div>
+                <dt>{% translate "Bot status" %}</dt>
+                <dd><span class="bot-status bot-status--{% if bot_instance %}{{ bot_instance.status }}{% else %}missing{% endif %}">{% if bot_instance %}{{ bot_instance.get_status_display }}{% else %}{% translate "Not configured" %}{% endif %}</span></dd>
+              </div>
+              <div><dt>{% translate "Token" %}</dt><dd>{% if bot_instance and bot_instance.token_masked %}{{ bot_instance.token_masked }}{% else %}{% translate "Missing" %}{% endif %}</dd></div>
+              <div><dt>{% translate "Telegram bot" %}</dt><dd>{% if bot_instance.telegram_username %}@{{ bot_instance.telegram_username }}{% else %}—{% endif %}</dd></div>
+              {% timezone selected_partner.timezone %}
+                <div><dt>{% translate "Last checked" %}</dt><dd>{% if bot_instance.last_checked_at %}{{ bot_instance.last_checked_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</dd></div>
+                <div><dt>{% translate "Last activity" %}</dt><dd>{% if bot_instance.last_activity_at %}{{ bot_instance.last_activity_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</dd></div>
+              {% endtimezone %}
+            </dl>
+            {% if bot_instance.last_error_code %}
+              <p class="bot-error-text"><strong>{{ bot_instance.last_error_code }}</strong>{% if bot_instance.last_error_message_masked %}: {{ bot_instance.last_error_message_masked }}{% endif %}</p>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="bot-section">
+          <div class="bot-section-heading"><h2>{% translate "Secure token" %}</h2></div>
+          <div class="bot-section-body">
+            <form class="bot-token-form" method="post" data-confirm="{% translate 'Replace the current bot token?' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="replace_token">
+              <div>
+                {{ token_form.new_token.label_tag }}
+                {{ token_form.new_token }}
+                {% if token_form.new_token.help_text %}<span class="bot-help">{{ token_form.new_token.help_text }}</span>{% endif %}
+                {% for error in token_form.new_token.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+              </div>
+              <button type="submit">{% translate "Save token" %}</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="bot-section{% if not setup_status.is_complete %} bot-section--warning{% endif %}">
+          <div class="bot-section-heading"><h2>{% translate "Launch checklist" %}</h2></div>
+          <div class="bot-section-body">
+            <ul class="bot-checklist">
+              {% for label, complete in setup_steps %}
+                <li><span>{{ label }}</span><strong class="bot-check--{% if complete %}done{% else %}pending{% endif %}">{% if complete %}{% translate "Done" %}{% else %}{% translate "Pending" %}{% endif %}</strong></li>
+              {% endfor %}
+            </ul>
+          </div>
+        </section>
+
+        <section class="bot-section{% if not primary_contact %} bot-section--warning{% endif %}">
+          <div class="bot-section-heading">
+            <h2>{% translate "Master Telegram" %}</h2>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="create_master_link">
+              <button type="submit"{% if not bot_instance.telegram_username %} disabled{% endif %}>{% translate "Create connection link" %}</button>
+            </form>
+          </div>
+          <div class="bot-section-body">
+            {% if primary_contact %}
+              <dl class="bot-status-grid">
+                <div><dt>{% translate "Telegram" %}</dt><dd>{{ primary_contact.telegram_identity }}</dd></div>
+                <div><dt>{% translate "Account" %}</dt><dd>{{ primary_contact.user|default:"—" }}</dd></div>
+                <div><dt>{% translate "Delivery" %}</dt><dd>{% if primary_contact.last_delivery_failure_code %}{{ primary_contact.last_delivery_failure_code }}{% else %}{% translate "Reachable" %}{% endif %}</dd></div>
+              </dl>
+            {% else %}
+              <p class="bot-muted">{% translate "Not connected" %}</p>
+            {% endif %}
+            {% if generated_master_link %}
+              <p class="bot-generated-link"><a class="button" href="{{ generated_master_link.url }}" target="_blank" rel="noopener">{% translate "Open Telegram connection" %}</a></p>
+            {% endif %}
+          </div>
+        </section>
+
+      {% elif selected_tab == "settings" %}
+        <section class="bot-section">
+          <div class="bot-section-heading"><h2>{% translate "Partner defaults" %}</h2><a class="button" href="{% url 'admin:partners_partner_change' selected_partner.pk %}">{% translate "Edit settings" %}</a></div>
+          <div class="bot-section-body">
+            <dl class="bot-settings-grid">
+              <div><dt>{% translate "Language" %}</dt><dd>{{ selected_partner.default_language|upper }}</dd></div>
+              <div><dt>{% translate "Timezone" %}</dt><dd>{{ selected_partner.timezone }}</dd></div>
+              <div><dt>{% translate "Partner status" %}</dt><dd>{{ selected_partner.get_status_display }}</dd></div>
+            </dl>
+          </div>
+        </section>
+
+      {% elif selected_tab == "content" %}
+        <section class="bot-section">
+          <div class="bot-section-heading"><h2>{% translate "Editable bot content" %}</h2><a class="button" href="{% url 'admin:bot_partnertemplateoverride_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Manage content" %}</a></div>
+          <div class="bot-section-body bot-table-wrap">
+            <table class="bot-table">
+              <thead><tr><th>{% translate "Group" %}</th><th>{% translate "Editable texts" %}</th><th>{% translate "Customized keys" %}</th></tr></thead>
+              <tbody>
+                {% for group in content_groups %}
+                  <tr><td data-label="{% translate 'Group' %}">{{ group.label }}</td><td data-label="{% translate 'Editable texts' %}">{{ group.key_count }}</td><td data-label="{% translate 'Customized keys' %}">{{ group.overridden_key_count }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      {% elif selected_tab == "notifications" %}
+        <section class="bot-section">
+          <div class="bot-section-heading">
+            <h2>{% translate "Notification schedule" %}</h2>
+            {% if notification_settings %}<a class="button" href="{% url 'admin:notifications_partnernotificationsettings_change' notification_settings.pk %}">{% translate "Edit notifications" %}</a>{% endif %}
+          </div>
+          <div class="bot-section-body">
+            {% if notification_settings %}
+              <dl class="bot-settings-grid">
+                <div><dt>{% translate "Quiet hours" %}</dt><dd>{% if notification_settings.quiet_hours_enabled %}{{ notification_settings.quiet_hours_start_local|time:"H:i" }}–{{ notification_settings.quiet_hours_end_local|time:"H:i" }}{% else %}{% translate "Off" %}{% endif %}</dd></div>
+                <div><dt>{% translate "Morning digest" %}</dt><dd>{% if notification_settings.morning_digest_enabled %}{{ notification_settings.morning_digest_time_local|time:"H:i" }}{% else %}{% translate "Off" %}{% endif %}</dd></div>
+                <div><dt>{% translate "Stale request reminder" %}</dt><dd>{{ notification_settings.stale_requested_base_interval_minutes }} min</dd></div>
+              </dl>
+            {% endif %}
+          </div>
+        </section>
+        <section class="bot-section">
+          <div class="bot-section-heading"><h2>{% translate "Appointment reminders" %}</h2><a href="{% url 'admin:notifications_reminderrule_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Manage rules" %}</a></div>
+          <div class="bot-section-body bot-table-wrap">
+            <table class="bot-table">
+              <thead><tr><th>{% translate "Recipient" %}</th><th>{% translate "Before appointment" %}</th><th>{% translate "Status" %}</th></tr></thead>
+              <tbody>
+                {% for rule in reminder_rules %}
+                  <tr><td data-label="{% translate 'Recipient' %}">{{ rule.get_target_display }}</td><td data-label="{% translate 'Before appointment' %}">{{ rule.offset_minutes }} min</td><td data-label="{% translate 'Status' %}">{% if rule.is_active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</td></tr>
+                {% empty %}
+                  <tr><td colspan="3">{% translate "No reminder rules" %}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      {% elif selected_tab == "booking" %}
+        <section class="bot-section">
+          <div class="bot-section-heading">
+            <h2>{% translate "Booking rules" %}</h2>
+            {% if schedule_settings %}<a class="button" href="{% url 'admin:schedule_partnerschedulesettings_change' schedule_settings.pk %}">{% translate "Edit booking" %}</a>{% endif %}
+          </div>
+          <div class="bot-section-body">
+            {% if schedule_settings %}
+              <dl class="bot-settings-grid">
+                <div><dt>{% translate "Confirmation" %}</dt><dd>{{ schedule_settings.get_confirmation_mode_display|default:"Pending setup" }}</dd></div>
+                <div><dt>{% translate "Slot step" %}</dt><dd>{{ schedule_settings.slot_step_minutes }} min</dd></div>
+                <div><dt>{% translate "Booking horizon" %}</dt><dd>{{ schedule_settings.booking_horizon_days }} days</dd></div>
+                <div><dt>{% translate "Near-fit tolerance" %}</dt><dd>{{ schedule_settings.near_fit_tolerance_minutes }} min</dd></div>
+                <div><dt>{% translate "Cancellation deadline" %}</dt><dd>{{ schedule_settings.cancellation_deadline_hours }} h</dd></div>
+                <div><dt>{% translate "Phone required" %}</dt><dd>{% if schedule_settings.require_phone_for_booking %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</dd></div>
+              </dl>
+            {% endif %}
+          </div>
+        </section>
+
+      {% elif selected_tab == "penalties" %}
+        <section class="bot-section">
+          <div class="bot-section-heading">
+            <h2>{% translate "Penalty rules" %}</h2>
+            {% if penalty_settings %}<a class="button" href="{% url 'admin:finance_partnerpenaltysettings_change' penalty_settings.pk %}">{% translate "Edit penalties" %}</a>{% endif %}
+          </div>
+          <div class="bot-section-body">
+            {% if penalty_settings %}
+              <dl class="bot-settings-grid">
+                <div><dt>{% translate "Penalties" %}</dt><dd>{% if penalty_settings.penalties_enabled %}{% translate "Enabled" %}{% else %}{% translate "Disabled" %}{% endif %}</dd></div>
+                <div><dt>{% translate "Late cancellation" %}</dt><dd>{{ penalty_settings.late_cancel_penalty_amount|money_amount }} {{ penalty_settings.currency }}</dd></div>
+                <div><dt>{% translate "No-show" %}</dt><dd>{{ penalty_settings.no_show_penalty_amount|money_amount }} {{ penalty_settings.currency }}</dd></div>
+                <div><dt>{% translate "Late arrival threshold" %}</dt><dd>{{ penalty_settings.late_arrival_threshold_minutes }} min</dd></div>
+                <div><dt>{% translate "Late arrival" %}</dt><dd>{{ penalty_settings.late_arrival_penalty_amount|money_amount }} {{ penalty_settings.currency }}</dd></div>
+              </dl>
+            {% endif %}
+          </div>
+        </section>
+      {% endif %}
+    {% else %}
+      <section class="bot-section bot-section--error">
+        <div class="bot-section-body"><p class="bot-muted">{% translate "No partner workspace is available for this account." %}</p></div>
+      </section>
+    {% endif %}
+  </main>
+
+  <script>
+    document.querySelectorAll("form[data-confirm]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (!window.confirm(form.dataset.confirm)) {
+          event.preventDefault();
+        }
+      });
+    });
+  </script>
+{% endblock %}

@@ -289,7 +289,7 @@
         <a href="{% url 'admin:catalog_service_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Catalog" %}</a>
         <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Broadcasts" %}</a>
         <a href="{% url 'finance:report' %}?partner={{ selected_partner.pk }}" aria-current="page">{% translate "Finance" %}</a>
-        <a href="{% url 'admin:bot_botinstance_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Bot" %}</a>
+        <a href="{% url 'bot:workspace' %}?partner={{ selected_partner.pk }}">{% translate "Bot" %}</a>
         <a href="{% url 'admin:audit_auditevent_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Activity Log" %}</a>
       </nav>
 

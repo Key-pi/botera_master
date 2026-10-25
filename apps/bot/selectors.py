@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.db.models import QuerySet
 
-from apps.bot.models import BotInstance, PartnerTelegramContact
+from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTemplateOverride
 from apps.partners.models import Partner
 
 
@@ -52,3 +52,9 @@ def master_telegram_contact_for_user(
         )
         .first()
     )
+
+
+def template_overrides_for_partner(partner: Partner) -> QuerySet[PartnerTemplateOverride]:
+    """Return one partner's localized content overrides for workspace summaries."""
+
+    return PartnerTemplateOverride.objects.filter(partner=partner).order_by("key", "language")
