@@ -58,3 +58,18 @@ def template_overrides_for_partner(partner: Partner) -> QuerySet[PartnerTemplate
     """Return one partner's localized content overrides for workspace summaries."""
 
     return PartnerTemplateOverride.objects.filter(partner=partner).order_by("key", "language")
+
+
+def template_override_for_partner(
+    *,
+    partner: Partner,
+    key: str,
+    language: str,
+) -> PartnerTemplateOverride | None:
+    """Return one localized override inside the trusted partner scope."""
+
+    return PartnerTemplateOverride.objects.filter(
+        partner=partner,
+        key=key,
+        language=language,
+    ).first()

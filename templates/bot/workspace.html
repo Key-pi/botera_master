@@ -182,6 +182,178 @@
     .bot-table td:last-child {
       text-align: right;
     }
+    .bot-content-layout {
+      display: grid;
+      gap: 24px;
+      grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+    }
+    .bot-content-nav {
+      border-right: 1px solid var(--hairline-color);
+      min-width: 0;
+      padding-right: 20px;
+    }
+    .bot-content-group {
+      border-bottom: 1px solid var(--hairline-color);
+      padding: 4px 0;
+    }
+    .bot-content-group summary {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 8px 4px;
+    }
+    .bot-content-group summary span {
+      color: var(--body-quiet-color);
+      float: right;
+      font-size: 0.75rem;
+      font-weight: 400;
+    }
+    .bot-content-key-list {
+      display: grid;
+      gap: 2px;
+      list-style: none;
+      margin: 2px 0 8px;
+      padding: 0;
+    }
+    .bot-content-key-list li {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .bot-content-key-list a {
+      border-left: 3px solid transparent;
+      display: grid;
+      gap: 2px;
+      padding: 7px 8px;
+      text-decoration: none;
+    }
+    .bot-content-key-list a[aria-current="page"] {
+      background: var(--selected-bg);
+      border-left-color: var(--primary);
+    }
+    .bot-content-key-list code {
+      color: var(--body-quiet-color);
+      font-size: 0.68rem;
+      overflow-wrap: anywhere;
+    }
+    .bot-content-key-meta {
+      color: var(--body-quiet-color);
+      font-size: 0.7rem;
+    }
+    .bot-content-editor {
+      min-width: 0;
+    }
+    .bot-content-editor-heading {
+      align-items: flex-start;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+    }
+    .bot-content-editor-heading h2 {
+      font-size: 1.2rem;
+      margin: 0 0 4px;
+    }
+    .bot-content-editor-heading code {
+      color: var(--body-quiet-color);
+      overflow-wrap: anywhere;
+    }
+    .bot-content-source {
+      border: 1px solid var(--hairline-color);
+      border-radius: 4px;
+      flex: 0 0 auto;
+      font-size: 0.75rem;
+      padding: 3px 8px;
+    }
+    .bot-language-tabs {
+      border-bottom: 1px solid var(--hairline-color);
+      display: flex;
+      gap: 2px;
+      margin: 18px 0 14px;
+    }
+    .bot-language-tabs a {
+      border-bottom: 3px solid transparent;
+      font-weight: 600;
+      padding: 8px 14px;
+      text-decoration: none;
+    }
+    .bot-language-tabs a[aria-current="page"] {
+      border-bottom-color: var(--primary);
+    }
+    .bot-language-tabs .has-override::after {
+      color: #16723d;
+      content: " •";
+    }
+    .bot-content-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      margin-bottom: 16px;
+    }
+    .bot-content-meta span {
+      color: var(--body-quiet-color);
+      font-size: 0.78rem;
+    }
+    .bot-content-block {
+      border-top: 1px solid var(--hairline-color);
+      padding: 14px 0;
+    }
+    .bot-content-block h3 {
+      font-size: 0.85rem;
+      margin: 0 0 8px;
+    }
+    .bot-content-copy {
+      background: var(--body-bg);
+      border-left: 3px solid var(--hairline-color);
+      box-sizing: border-box;
+      font-family: var(--font-family-monospace);
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+    .bot-placeholder-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .bot-placeholder-list code {
+      background: var(--body-bg);
+      border: 1px solid var(--hairline-color);
+      border-radius: 3px;
+      padding: 3px 6px;
+    }
+    .bot-content-form textarea {
+      box-sizing: border-box;
+      min-height: 220px;
+      resize: vertical;
+      width: 100%;
+    }
+    .bot-content-form label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 7px;
+    }
+    .bot-content-form-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .bot-content-reset {
+      margin-top: 8px;
+    }
+    .bot-content-preview-label {
+      align-items: center;
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+    }
+    .bot-content-preview-label span {
+      color: var(--body-quiet-color);
+      font-size: 0.75rem;
+      font-weight: 400;
+    }
     @media (max-width: 900px) {
       .bot-header,
       .bot-section-heading {
@@ -205,6 +377,14 @@
       .bot-checklist {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .bot-content-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .bot-content-nav {
+        border-bottom: 1px solid var(--hairline-color);
+        border-right: 0;
+        padding: 0 0 18px;
+      }
     }
     @media (max-width: 620px) {
       .bot-checklist,
@@ -213,9 +393,18 @@
       }
       .bot-form-actions form,
       .bot-form-actions button,
-      .bot-token-form button {
+      .bot-token-form button,
+      .bot-content-form-actions button,
+      .bot-content-reset button {
         box-sizing: border-box;
         width: 100%;
+      }
+      .bot-content-editor-heading {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .bot-content-source {
+        align-self: flex-start;
       }
       .bot-table-wrap {
         overflow: visible;
@@ -269,6 +458,10 @@
         {% if partners|length > 1 %}
           <form class="bot-selector" method="get">
             <input type="hidden" name="tab" value="{{ selected_tab }}">
+            {% if selected_tab == "content" %}
+              <input type="hidden" name="key" value="{{ selected_content_key }}">
+              <input type="hidden" name="language" value="{{ selected_content_language }}">
+            {% endif %}
             <label for="bot-partner">{% translate "Partner" %}</label>
             <select id="bot-partner" name="partner">
               {% for partner in partners %}
@@ -407,16 +600,90 @@
 
       {% elif selected_tab == "content" %}
         <section class="bot-section">
-          <div class="bot-section-heading"><h2>{% translate "Editable bot content" %}</h2><a class="button" href="{% url 'admin:bot_partnertemplateoverride_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Manage content" %}</a></div>
-          <div class="bot-section-body bot-table-wrap">
-            <table class="bot-table">
-              <thead><tr><th>{% translate "Group" %}</th><th>{% translate "Editable texts" %}</th><th>{% translate "Customized keys" %}</th></tr></thead>
-              <tbody>
-                {% for group in content_groups %}
-                  <tr><td data-label="{% translate 'Group' %}">{{ group.label }}</td><td data-label="{% translate 'Editable texts' %}">{{ group.key_count }}</td><td data-label="{% translate 'Customized keys' %}">{{ group.overridden_key_count }}</td></tr>
+          <div class="bot-section-heading"><h2>{% translate "Bot content" %}</h2></div>
+          <div class="bot-section-body bot-content-layout">
+            <aside class="bot-content-nav" aria-label="{% translate 'Editable content keys' %}">
+              {% for group in content_groups %}
+                <details class="bot-content-group"{% if group.is_selected %} open{% endif %}>
+                  <summary>{{ group.label }} <span>{{ group.overridden_key_count }}/{{ group.key_count }}</span></summary>
+                  <ul class="bot-content-key-list">
+                    {% for item in group.items %}
+                      <li>
+                        <a href="{{ item.url }}"{% if item.is_selected %} aria-current="page"{% endif %}>
+                          <strong>{{ item.label }}</strong>
+                          <code>{{ item.key }}</code>
+                          {% if item.overridden_language_count %}<span class="bot-content-key-meta">{{ item.overridden_language_count }}/3 {% translate "languages customized" %}</span>{% endif %}
+                        </a>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </details>
+              {% endfor %}
+            </aside>
+
+            <div class="bot-content-editor">
+              <header class="bot-content-editor-heading">
+                <div>
+                  <h2>{{ selected_content_label }}</h2>
+                  <code>{{ selected_content_key }}</code>
+                </div>
+                <span class="bot-content-source">{{ content_preview_source }}</span>
+              </header>
+
+              <nav class="bot-language-tabs" aria-label="{% translate 'Content language' %}">
+                {% for language in content_languages %}
+                  <a href="{{ language.url }}" class="{% if language.has_override %}has-override{% endif %}"{% if language.is_selected %} aria-current="page"{% endif %}>{{ language.label }}</a>
                 {% endfor %}
-              </tbody>
-            </table>
+              </nav>
+
+              <div class="bot-content-meta">
+                <span>{% translate "Type" %}: <strong>{{ content_type_label }}</strong></span>
+                <span>{% translate "Language" %}: <strong>{{ selected_content_language|upper }}</strong></span>
+              </div>
+
+              <div class="bot-content-block">
+                <h3>{% translate "System default" %}</h3>
+                <pre class="bot-content-copy">{{ content_system_default }}</pre>
+              </div>
+
+              <div class="bot-content-block">
+                <h3>{% translate "Allowed placeholders" %}</h3>
+                {% if content_allowed_placeholders %}
+                  <div class="bot-placeholder-list">
+                    {% for placeholder in content_allowed_placeholders %}<code>&#123;{{ placeholder }}&#125;</code>{% endfor %}
+                  </div>
+                {% else %}
+                  <p class="bot-muted">{% translate "This text has no placeholders." %}</p>
+                {% endif %}
+              </div>
+
+              <div class="bot-content-block">
+                <form class="bot-content-form" method="post">
+                  {% csrf_token %}
+                  {% for error in content_form.non_field_errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                  {{ content_form.body.label_tag }}
+                  {{ content_form.body }}
+                  {% if content_form.body.help_text %}<span class="bot-help">{{ content_form.body.help_text }}</span>{% endif %}
+                  {% for error in content_form.body.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                  <div class="bot-content-form-actions">
+                    <button class="default" type="submit" name="action" value="save_content">{% translate "Save override" %}</button>
+                    <button type="submit" name="action" value="preview_content">{% translate "Preview draft" %}</button>
+                  </div>
+                </form>
+                <form class="bot-content-reset" method="post" data-confirm="{% translate 'Reset this language to the system default?' %}">
+                  {% csrf_token %}
+                  <button type="submit" name="action" value="reset_content"{% if not selected_content_override %} disabled{% endif %}>{% translate "Reset to default" %}</button>
+                </form>
+              </div>
+
+              <div class="bot-content-block">
+                <h3 class="bot-content-preview-label">
+                  {% if content_preview_is_draft %}{% translate "Draft preview" %}{% else %}{% translate "Effective preview" %}{% endif %}
+                  <span>{{ content_preview_source }}</span>
+                </h3>
+                <pre class="bot-content-copy">{{ content_preview.body }}</pre>
+              </div>
+            </div>
           </div>
         </section>
 

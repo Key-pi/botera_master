@@ -6,8 +6,13 @@ from django.urls import reverse
 
 from apps.accounts.models import User
 from apps.audit.models import AuditEvent
-from apps.bot.models import BotInstance, PartnerTelegramContactLink
-from apps.bot.services import decrypt_bot_token, set_bot_token
+from apps.bot.models import BotInstance, PartnerTelegramContactLink, PartnerTemplateOverride
+from apps.bot.services import (
+    decrypt_bot_token,
+    render_content_template,
+    set_bot_token,
+    set_partner_template_override,
+)
 from apps.bot.telegram import TelegramBotIdentity
 from apps.partners.services import create_partner_with_owner
 
@@ -42,8 +47,13 @@ def bot_workspace_context(client, settings):
     }
 
 
-def _workspace_url(*, partner_id, tab="instance") -> str:
-    return f"{reverse('bot:workspace')}?{urlencode({'partner': partner_id, 'tab': tab})}"
+def _workspace_url(*, partner_id, tab="instance", key="", language="") -> str:
+    params = {"partner": partner_id, "tab": tab}
+    if key:
+        params["key"] = key
+    if language:
+        params["language"] = language
+    return f"{reverse('bot:workspace')}?{urlencode(params)}"
 
 
 @pytest.mark.django_db
@@ -189,6 +199,184 @@ def test_workspace_tab_summaries_stay_partner_scoped(bot_workspace_context) -> N
     assert "Booking horizon" in booking.content.decode()
     assert penalties.status_code == 200
     assert "50.00 UAH" in penalties.content.decode()
+
+
+@pytest.mark.django_db
+def test_content_workspace_shows_registry_defaults_without_foreign_overrides(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    set_partner_template_override(
+        actor=context["second"].owner,
+        partner=context["second"].partner,
+        key="start.welcome",
+        language="uk",
+        body="FOREIGN CONTENT {partner_name}",
+    )
+
+    response = context["http_client"].get(
+        _workspace_url(
+            partner_id=context["first"].partner.id,
+            tab="content",
+            key="start.welcome",
+            language="uk",
+        )
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Start and welcome" in content
+    assert "start.welcome" in content
+    assert "Вітаємо у боті {partner_name}." in content
+    assert "{partner_name}" in content
+    assert "System default" in content
+    assert ">UK<" in content
+    assert ">RU<" in content
+    assert ">EN<" in content
+    assert "FOREIGN CONTENT" not in content
+
+
+@pytest.mark.django_db
+def test_content_workspace_saves_valid_override_and_safe_audit(bot_workspace_context) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    body = "PRIVATE CUSTOM COPY for {partner_name}"
+    url = _workspace_url(
+        partner_id=partner.id,
+        tab="content",
+        key="start.welcome",
+        language="en",
+    )
+
+    response = context["http_client"].post(
+        url,
+        {"action": "save_content", "body": body},
+    )
+
+    assert response.status_code == 302
+    override = PartnerTemplateOverride.objects.get(
+        partner=partner,
+        key="start.welcome",
+        language="en",
+    )
+    assert override.body == body
+    rendered = render_content_template(
+        partner=partner,
+        key="start.welcome",
+        language="en",
+        context={"partner_name": "Workspace Studio"},
+    )
+    assert rendered.body == "PRIVATE CUSTOM COPY for Workspace Studio"
+    event = AuditEvent.objects.get(
+        partner=partner,
+        event_type="bot.content_override_saved",
+    )
+    assert event.payload_masked == {
+        "template_key": "start.welcome",
+        "language": "en",
+        "content_type": "message",
+    }
+    assert body not in event.message
+    assert body not in str(event.payload_masked)
+
+
+@pytest.mark.django_db
+def test_content_workspace_previews_without_saving_and_rejects_unknown_placeholder(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    url = _workspace_url(
+        partner_id=partner.id,
+        tab="content",
+        key="start.welcome",
+        language="en",
+    )
+
+    preview = context["http_client"].post(
+        url,
+        {"action": "preview_content", "body": "Draft for {partner_name}"},
+    )
+    preview_content = preview.content.decode()
+
+    assert preview.status_code == 200
+    assert "Draft preview" in preview_content
+    assert "Draft for &lt;partner_name&gt;" in preview_content
+    assert not PartnerTemplateOverride.objects.filter(partner=partner).exists()
+
+    invalid = context["http_client"].post(
+        url,
+        {"action": "save_content", "body": "Bad {unknown}"},
+    )
+
+    assert invalid.status_code == 200
+    assert "Unknown placeholder(s): unknown." in invalid.content.decode()
+    assert not PartnerTemplateOverride.objects.filter(partner=partner).exists()
+
+
+@pytest.mark.django_db
+def test_content_workspace_resets_override_to_language_default(bot_workspace_context) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    set_partner_template_override(
+        actor=context["first"].owner,
+        partner=partner,
+        key="start.welcome",
+        language="ru",
+        body="Своя версия для {partner_name}",
+    )
+    url = _workspace_url(
+        partner_id=partner.id,
+        tab="content",
+        key="start.welcome",
+        language="ru",
+    )
+
+    response = context["http_client"].post(url, {"action": "reset_content"})
+
+    assert response.status_code == 302
+    assert not PartnerTemplateOverride.objects.filter(
+        partner=partner,
+        key="start.welcome",
+        language="ru",
+    ).exists()
+    rendered = render_content_template(
+        partner=partner,
+        key="start.welcome",
+        language="ru",
+        context={"partner_name": "Workspace Studio"},
+    )
+    assert rendered.body == "Добро пожаловать в бот Workspace Studio."
+    assert AuditEvent.objects.filter(
+        partner=partner,
+        event_type="bot.content_override_reset",
+        payload_masked__template_key="start.welcome",
+        payload_masked__language="ru",
+    ).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("key", "language"),
+    (("booking.slot_taken", "uk"), ("start.welcome", "de"), ("missing.key", "uk")),
+)
+def test_content_workspace_rejects_system_only_unknown_keys_and_languages(
+    bot_workspace_context,
+    key,
+    language,
+) -> None:
+    context = bot_workspace_context
+
+    response = context["http_client"].get(
+        _workspace_url(
+            partner_id=context["first"].partner.id,
+            tab="content",
+            key=key,
+            language=language,
+        )
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db

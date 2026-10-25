@@ -156,6 +156,14 @@ EVENT_PRESENTATIONS = {
         "Master Telegram connection link created",
         "settings",
     ),
+    "bot.content_override_saved": ActivityPresentation(
+        "Bot content customized",
+        "settings",
+    ),
+    "bot.content_override_reset": ActivityPresentation(
+        "Bot content reset to default",
+        "settings",
+    ),
     "bot.settings_updated": ActivityPresentation("Bot settings updated", "settings"),
     "client.created": ActivityPresentation("Client created", "clients_catalog"),
     "client.updated": ActivityPresentation("Client updated", "clients_catalog"),
@@ -195,6 +203,10 @@ TARGET_PRESENTATIONS = {
         "Client",
     ),
     "BotInstance": ActivityTargetPresentation("admin:bot_botinstance_change", "Bot"),
+    "PartnerTemplateOverride": ActivityTargetPresentation(
+        "admin:bot_partnertemplateoverride_change",
+        "Bot content",
+    ),
     "PartnerNotificationSettings": ActivityTargetPresentation(
         "admin:notifications_partnernotificationsettings_change",
         "Notification settings",
@@ -245,6 +257,8 @@ DETAIL_FIELDS = (
     ("is_near_fit", "Near-fit slot", "boolean"),
     ("success", "Successful", "boolean"),
     ("token_changed", "Token changed", "boolean"),
+    ("template_key", "Content key", "text"),
+    ("language", "Language", "choice"),
     ("appointment_cancelled", "Appointment cancelled", "boolean"),
     ("penalties_enabled", "Penalties enabled", "boolean"),
     ("late_arrival_threshold_minutes", "Late-arrival threshold", "minutes"),

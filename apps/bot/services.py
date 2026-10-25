@@ -609,16 +609,29 @@ def set_partner_template_override(
             content_type=system_template.content_type,
         )
 
-    override, _created = PartnerTemplateOverride.objects.update_or_create(
-        partner=partner,
-        key=cleaned_key,
-        language=cleaned_language,
-        defaults={
-            "body": cleaned_body,
-            "is_active": bool(is_active),
-            "last_validated_at": timezone.now(),
-        },
-    )
+    with transaction.atomic():
+        override, _created = PartnerTemplateOverride.objects.update_or_create(
+            partner=partner,
+            key=cleaned_key,
+            language=cleaned_language,
+            defaults={
+                "body": cleaned_body,
+                "is_active": bool(is_active),
+                "last_validated_at": timezone.now(),
+            },
+        )
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="bot.content_override_saved",
+            target=override,
+            message="Localized bot content override saved.",
+            payload={
+                "template_key": cleaned_key,
+                "language": cleaned_language,
+                "content_type": system_template.content_type,
+            },
+        )
     return override
 
 
@@ -632,11 +645,73 @@ def reset_partner_template_override(
     """Remove a partner override so runtime falls back to the system default."""
 
     ensure_partner_access(actor, partner)
-    return PartnerTemplateOverride.objects.filter(
-        partner=partner,
-        key=key.strip(),
-        language=_normalize_template_language(language),
-    ).delete()[0]
+    cleaned_key = key.strip()
+    cleaned_language = _normalize_template_language(language)
+    system_template = _system_template_for_key_language(
+        key=cleaned_key,
+        language=cleaned_language,
+    )
+    if not system_template.editable:
+        raise ValidationError({"key": "This template is system-only."})
+
+    with transaction.atomic():
+        deleted_count = PartnerTemplateOverride.objects.filter(
+            partner=partner,
+            key=cleaned_key,
+            language=cleaned_language,
+        ).delete()[0]
+        if deleted_count:
+            record_audit_event(
+                partner=partner,
+                actor=actor,
+                event_type="bot.content_override_reset",
+                target=partner,
+                message="Localized bot content override reset to the system default.",
+                payload={
+                    "template_key": cleaned_key,
+                    "language": cleaned_language,
+                },
+            )
+    return deleted_count
+
+
+def preview_template_body(
+    *,
+    key: str,
+    language: str,
+    body: str,
+) -> RenderedTemplate:
+    """Validate and safely render an unsaved localized override with sample data."""
+
+    cleaned_key = key.strip()
+    cleaned_language = _normalize_template_language(language)
+    system_template = _system_template_for_key_language(
+        key=cleaned_key,
+        language=cleaned_language,
+    )
+    if not system_template.editable:
+        raise ValidationError({"key": "This template is system-only."})
+
+    cleaned_body = body.strip()
+    source = "draft"
+    if not cleaned_body:
+        cleaned_body = system_template.body
+        source = "system_default"
+    validate_template_body(
+        body=cleaned_body,
+        allowed_placeholders=tuple(system_template.placeholder_allowlist),
+        sample_context=system_template.sample_context,
+        content_type=system_template.content_type,
+    )
+    return RenderedTemplate(
+        key=cleaned_key,
+        language=cleaned_language,
+        body=_render_template_body(
+            cleaned_body,
+            _SafeTemplateContext(system_template.sample_context),
+        ),
+        source=source,
+    )
 
 
 def render_content_template(
