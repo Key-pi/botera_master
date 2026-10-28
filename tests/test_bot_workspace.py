@@ -1,3 +1,4 @@
+from datetime import time
 from urllib.parse import urlencode
 
 import pytest
@@ -14,6 +15,7 @@ from apps.bot.services import (
     set_partner_template_override,
 )
 from apps.bot.telegram import TelegramBotIdentity
+from apps.notifications.models import PartnerNotificationSettings, ReminderRule
 from apps.partners.services import create_partner_with_owner
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
@@ -70,6 +72,7 @@ def test_workspace_is_tenant_scoped_and_exposes_approved_tabs(bot_workspace_cont
         assert label in content
     assert "Launch checklist" in content
     assert "Not configured" in content
+    assert not context["first"].owner.has_perm("notifications.change_partnernotificationsettings")
 
     foreign_response = context["http_client"].get(
         _workspace_url(partner_id=context["second"].partner.id)
@@ -193,12 +196,164 @@ def test_workspace_tab_summaries_stay_partner_scoped(bot_workspace_context) -> N
     penalties = context["http_client"].get(_workspace_url(partner_id=partner.id, tab="penalties"))
 
     assert notifications.status_code == 200
-    assert "22:00–08:00" in notifications.content.decode()
-    assert "Appointment reminders" in notifications.content.decode()
+    notification_content = notifications.content.decode()
+    assert 'name="quiet_hours_start_local"' in notification_content
+    assert 'value="22:00"' in notification_content
+    assert 'name="quiet_hours_end_local"' in notification_content
+    assert 'value="08:00"' in notification_content
+    assert "Appointment reminders" in notification_content
     assert booking.status_code == 200
     assert "Booking horizon" in booking.content.decode()
     assert penalties.status_code == 200
     assert "50.00 UAH" in penalties.content.decode()
+
+
+@pytest.mark.django_db
+def test_notifications_workspace_saves_partner_timing_and_audit(bot_workspace_context) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    url = _workspace_url(partner_id=partner.id, tab="notifications")
+
+    response = context["http_client"].post(
+        url,
+        {
+            "action": "save_notification_settings",
+            "quiet_hours_enabled": "on",
+            "quiet_hours_start_local": "23:15",
+            "quiet_hours_end_local": "07:30",
+            "morning_digest_time_local": "09:10",
+            "stale_requested_base_interval_minutes": "95",
+        },
+    )
+
+    assert response.status_code == 302
+    settings = PartnerNotificationSettings.objects.get(partner=partner)
+    assert settings.quiet_hours_enabled is True
+    assert settings.quiet_hours_start_local == time(23, 15)
+    assert settings.quiet_hours_end_local == time(7, 30)
+    assert settings.morning_digest_enabled is False
+    assert settings.morning_digest_time_local == time(9, 10)
+    assert settings.stale_requested_base_interval_minutes == 95
+    event = AuditEvent.objects.get(
+        partner=partner,
+        event_type="notification.settings_updated",
+    )
+    assert event.actor == context["first"].owner
+    assert event.payload_masked["quiet_hours_start_local"] == "23:15"
+    assert event.payload_masked["morning_digest_enabled"] is False
+
+
+@pytest.mark.django_db
+def test_notifications_workspace_replaces_active_rules_without_deleting_history(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    url = _workspace_url(partner_id=partner.id, tab="notifications")
+
+    response = context["http_client"].post(
+        url,
+        {
+            "action": "save_reminder_rules",
+            "client_1_value": "1",
+            "client_1_unit": "days",
+            "client_2_value": "3",
+            "client_2_unit": "hours",
+            "client_3_value": "",
+            "client_3_unit": "minutes",
+            "client_4_value": "",
+            "client_4_unit": "minutes",
+            "client_5_value": "",
+            "client_5_unit": "minutes",
+            "master_enabled": "on",
+            "master_value": "30",
+            "master_unit": "minutes",
+        },
+    )
+
+    assert response.status_code == 302
+    active_rules = set(
+        ReminderRule.objects.filter(partner=partner, is_active=True).values_list(
+            "target",
+            "offset_minutes",
+        )
+    )
+    assert active_rules == {
+        (ReminderRule.Target.CLIENT, 24 * 60),
+        (ReminderRule.Target.CLIENT, 3 * 60),
+        (ReminderRule.Target.MASTER, 30),
+    }
+    assert ReminderRule.objects.filter(
+        partner=partner,
+        target=ReminderRule.Target.CLIENT,
+        offset_minutes=2 * 60,
+        is_active=False,
+    ).exists()
+    assert ReminderRule.objects.filter(
+        partner=partner,
+        target=ReminderRule.Target.MASTER,
+        offset_minutes=45,
+        is_active=False,
+    ).exists()
+    event = AuditEvent.objects.get(
+        partner=partner,
+        event_type="notification.reminder_rules_updated",
+    )
+    assert event.payload_masked == {
+        "client_offsets_minutes": [1440, 180],
+        "master_enabled": True,
+        "master_offset_minutes": 30,
+    }
+
+
+@pytest.mark.django_db
+def test_notifications_workspace_rejects_out_of_bounds_rules_without_mutation(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    before = set(
+        ReminderRule.objects.filter(partner=partner, is_active=True).values_list(
+            "target",
+            "offset_minutes",
+        )
+    )
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="notifications"),
+        {
+            "action": "save_reminder_rules",
+            "client_1_value": "1",
+            "client_1_unit": "minutes",
+            "client_2_value": "",
+            "client_2_unit": "minutes",
+            "client_3_value": "",
+            "client_3_unit": "minutes",
+            "client_4_value": "",
+            "client_4_unit": "minutes",
+            "client_5_value": "",
+            "client_5_unit": "minutes",
+            "master_enabled": "on",
+            "master_value": "45",
+            "master_unit": "minutes",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Client reminders must be between 15 minutes and 30 days." in (response.content.decode())
+    assert (
+        set(
+            ReminderRule.objects.filter(partner=partner, is_active=True).values_list(
+                "target",
+                "offset_minutes",
+            )
+        )
+        == before
+    )
+    assert not AuditEvent.objects.filter(
+        partner=partner,
+        event_type="notification.reminder_rules_updated",
+    ).exists()
 
 
 @pytest.mark.django_db

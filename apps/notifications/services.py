@@ -12,7 +12,9 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.services import ensure_partner_access
 from apps.appointments.models import Appointment, AppointmentProposal
+from apps.audit.services import record_audit_event
 from apps.clients.services import mark_client_unreachable
 from apps.finance.models import Penalty
 from apps.notifications.models import (
@@ -20,6 +22,13 @@ from apps.notifications.models import (
     DEFAULT_MASTER_REMINDER_OFFSET_MINUTES,
     DEFAULT_MORNING_DIGEST_TIME_LOCAL,
     DEFAULT_NOTIFICATION_MAX_ATTEMPTS,
+    MAX_CLIENT_REMINDER_OFFSET_MINUTES,
+    MAX_CLIENT_REMINDER_RULES,
+    MAX_MASTER_REMINDER_OFFSET_MINUTES,
+    MAX_STALE_REQUESTED_INTERVAL_MINUTES,
+    MIN_CLIENT_REMINDER_OFFSET_MINUTES,
+    MIN_MASTER_REMINDER_OFFSET_MINUTES,
+    MIN_STALE_REQUESTED_INTERVAL_MINUTES,
     MIN_STALE_REQUESTED_REPEAT_MINUTES,
     NOTIFICATION_RETAIN_DAYS,
     DeliveryAttempt,
@@ -32,6 +41,7 @@ from core.security.masking import mask_sensitive_text
 from core.timezones import get_zone
 
 if TYPE_CHECKING:
+    from apps.accounts.models import User
     from apps.partners.models import Partner
 
 
@@ -159,6 +169,193 @@ def ensure_default_reminder_rules(*, partner: Partner) -> tuple[ReminderRule, ..
         )
         rules.append(rule)
     return tuple(rules)
+
+
+def update_partner_notification_settings(
+    *,
+    actor: User,
+    partner: Partner,
+    quiet_hours_enabled: bool,
+    quiet_hours_start_local: time,
+    quiet_hours_end_local: time,
+    morning_digest_enabled: bool,
+    morning_digest_time_local: time,
+    stale_requested_base_interval_minutes: int,
+) -> PartnerNotificationSettings:
+    """Update partner notification timing through one tenant-safe transaction."""
+
+    ensure_partner_access(actor, partner)
+    _validate_notification_settings_input(
+        quiet_hours_enabled=quiet_hours_enabled,
+        quiet_hours_start_local=quiet_hours_start_local,
+        quiet_hours_end_local=quiet_hours_end_local,
+        morning_digest_enabled=morning_digest_enabled,
+        morning_digest_time_local=morning_digest_time_local,
+        stale_requested_base_interval_minutes=stale_requested_base_interval_minutes,
+    )
+    with transaction.atomic():
+        settings, _created = PartnerNotificationSettings.objects.select_for_update().get_or_create(
+            partner=partner
+        )
+        settings.quiet_hours_enabled = quiet_hours_enabled
+        settings.quiet_hours_start_local = quiet_hours_start_local
+        settings.quiet_hours_end_local = quiet_hours_end_local
+        settings.morning_digest_enabled = morning_digest_enabled
+        settings.morning_digest_time_local = morning_digest_time_local
+        settings.stale_requested_base_interval_minutes = stale_requested_base_interval_minutes
+        settings.save()
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="notification.settings_updated",
+            target=settings,
+            message="Notification settings updated.",
+            payload={
+                "quiet_hours_enabled": settings.quiet_hours_enabled,
+                "quiet_hours_start_local": settings.quiet_hours_start_local.isoformat(
+                    timespec="minutes"
+                ),
+                "quiet_hours_end_local": settings.quiet_hours_end_local.isoformat(
+                    timespec="minutes"
+                ),
+                "morning_digest_enabled": settings.morning_digest_enabled,
+                "morning_digest_time_local": settings.morning_digest_time_local.isoformat(
+                    timespec="minutes"
+                ),
+                "stale_requested_base_interval_minutes": (
+                    settings.stale_requested_base_interval_minutes
+                ),
+            },
+        )
+    return settings
+
+
+def replace_partner_reminder_rules(
+    *,
+    actor: User,
+    partner: Partner,
+    client_offsets_minutes: Iterable[int],
+    master_offset_minutes: int | None,
+) -> tuple[ReminderRule, ...]:
+    """Replace active reminder rules while retaining old rows for delivery history."""
+
+    ensure_partner_access(actor, partner)
+    normalized_client_offsets = _validate_client_reminder_offsets(client_offsets_minutes)
+    if master_offset_minutes is not None:
+        _validate_reminder_offset(
+            master_offset_minutes,
+            field_name="master_offset_minutes",
+            minimum=MIN_MASTER_REMINDER_OFFSET_MINUTES,
+            maximum=MAX_MASTER_REMINDER_OFFSET_MINUTES,
+        )
+
+    desired_keys = {(ReminderRule.Target.CLIENT, offset) for offset in normalized_client_offsets}
+    if master_offset_minutes is not None:
+        desired_keys.add((ReminderRule.Target.MASTER, master_offset_minutes))
+
+    with transaction.atomic():
+        settings, _created = PartnerNotificationSettings.objects.select_for_update().get_or_create(
+            partner=partner
+        )
+        existing_rules = {
+            (rule.target, rule.offset_minutes): rule
+            for rule in ReminderRule.objects.select_for_update().filter(partner=partner)
+        }
+        for key, rule in existing_rules.items():
+            should_be_active = key in desired_keys
+            if rule.is_active != should_be_active:
+                rule.is_active = should_be_active
+                rule.save(update_fields=["is_active", "updated_at"])
+
+        for target, offset_minutes in desired_keys - existing_rules.keys():
+            ReminderRule.objects.create(
+                partner=partner,
+                target=target,
+                offset_minutes=offset_minutes,
+                is_active=True,
+            )
+
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="notification.reminder_rules_updated",
+            target=settings,
+            message="Appointment reminder rules updated.",
+            payload={
+                "client_offsets_minutes": list(normalized_client_offsets),
+                "master_enabled": master_offset_minutes is not None,
+                "master_offset_minutes": master_offset_minutes,
+            },
+        )
+
+    return tuple(active_reminder_rules_for_partner(partner=partner))
+
+
+def _validate_notification_settings_input(
+    *,
+    quiet_hours_enabled: bool,
+    quiet_hours_start_local: time,
+    quiet_hours_end_local: time,
+    morning_digest_enabled: bool,
+    morning_digest_time_local: time,
+    stale_requested_base_interval_minutes: int,
+) -> None:
+    for field_name, value in (
+        ("quiet_hours_enabled", quiet_hours_enabled),
+        ("morning_digest_enabled", morning_digest_enabled),
+    ):
+        if not isinstance(value, bool):
+            raise ValidationError({field_name: "This value must be true or false."})
+    for field_name, value in (
+        ("quiet_hours_start_local", quiet_hours_start_local),
+        ("quiet_hours_end_local", quiet_hours_end_local),
+        ("morning_digest_time_local", morning_digest_time_local),
+    ):
+        if not isinstance(value, time):
+            raise ValidationError({field_name: "Enter a valid local time."})
+    _validate_reminder_offset(
+        stale_requested_base_interval_minutes,
+        field_name="stale_requested_base_interval_minutes",
+        minimum=MIN_STALE_REQUESTED_INTERVAL_MINUTES,
+        maximum=MAX_STALE_REQUESTED_INTERVAL_MINUTES,
+    )
+
+
+def _validate_client_reminder_offsets(offsets: Iterable[int]) -> tuple[int, ...]:
+    normalized = tuple(offsets)
+    if len(normalized) > MAX_CLIENT_REMINDER_RULES:
+        raise ValidationError(
+            {
+                "client_offsets_minutes": (
+                    f"Configure at most {MAX_CLIENT_REMINDER_RULES} client reminders."
+                )
+            }
+        )
+    if len(set(normalized)) != len(normalized):
+        raise ValidationError({"client_offsets_minutes": "Client reminder times must be unique."})
+    for offset in normalized:
+        _validate_reminder_offset(
+            offset,
+            field_name="client_offsets_minutes",
+            minimum=MIN_CLIENT_REMINDER_OFFSET_MINUTES,
+            maximum=MAX_CLIENT_REMINDER_OFFSET_MINUTES,
+        )
+    return tuple(sorted(normalized, reverse=True))
+
+
+def _validate_reminder_offset(
+    value: int,
+    *,
+    field_name: str,
+    minimum: int,
+    maximum: int,
+) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError({field_name: "Enter a whole number of minutes."})
+    if value < minimum or value > maximum:
+        raise ValidationError(
+            {field_name: f"Value must be between {minimum} and {maximum} minutes."}
+        )
 
 
 def schedule_reminders_for_confirmed_appointment(
@@ -1225,8 +1422,7 @@ def _schedule_conflict_reschedule_idempotency_key(
     conflict_fingerprint: str,
 ) -> str:
     return (
-        f"appointment:{appointment.id}:client:schedule_conflict_reschedule:"
-        f"{conflict_fingerprint}"
+        f"appointment:{appointment.id}:client:schedule_conflict_reschedule:{conflict_fingerprint}"
     )
 
 
@@ -1378,10 +1574,7 @@ def _has_pending_requested_alternatives(appointment: Appointment) -> bool:
 def _schedule_conflict_fingerprint_from_notification(
     notification: ScheduledNotification,
 ) -> str | None:
-    prefix = (
-        f"appointment:{notification.appointment_id}:client:"
-        "schedule_conflict_reschedule:"
-    )
+    prefix = f"appointment:{notification.appointment_id}:client:schedule_conflict_reschedule:"
     if not notification.idempotency_key.startswith(prefix):
         return None
     fingerprint = notification.idempotency_key.removeprefix(prefix)

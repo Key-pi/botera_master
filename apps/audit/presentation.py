@@ -147,6 +147,14 @@ EVENT_PRESENTATIONS = {
     ),
     "notification.sent": ActivityPresentation("Notification sent", "notifications"),
     "notification.failed": ActivityPresentation("Notification delivery failed", "notifications"),
+    "notification.settings_updated": ActivityPresentation(
+        "Notification settings updated",
+        "notifications",
+    ),
+    "notification.reminder_rules_updated": ActivityPresentation(
+        "Appointment reminder rules updated",
+        "notifications",
+    ),
     "reminder.sent": ActivityPresentation("Reminder sent", "notifications"),
     "reminder.failed": ActivityPresentation("Reminder delivery failed", "notifications"),
     "bot.token_updated": ActivityPresentation("Bot token updated", "settings"),

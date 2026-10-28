@@ -33,7 +33,8 @@ PARTNER_OWNER_PERMISSION_RULES = (
     ("appointments", "appointmentproposaloption", ("view",)),
     ("appointments", "appointmentproposaloptionitem", ("view",)),
     ("clients", "clientprofile", ("view", "change")),
-    ("notifications", "partnernotificationsettings", ("view", "change")),
+    # Partner mutations use the service-backed Bot > Notifications workspace.
+    ("notifications", "partnernotificationsettings", ("view",)),
     ("notifications", "reminderrule", ("view",)),
     ("notifications", "schedulednotification", ("view",)),
     ("notifications", "deliveryattempt", ("view",)),

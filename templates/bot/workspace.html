@@ -112,6 +112,68 @@
       margin: 0;
       overflow-wrap: anywhere;
     }
+    .bot-settings-form {
+      display: grid;
+      gap: 18px;
+    }
+    .bot-form-grid {
+      display: grid;
+      gap: 14px 18px;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+    }
+    .bot-form-field {
+      min-width: 0;
+    }
+    .bot-form-field > label,
+    .bot-form-label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .bot-form-field input[type="number"],
+    .bot-form-field input[type="time"],
+    .bot-form-field select,
+    .bot-reminder-row input,
+    .bot-reminder-row select {
+      box-sizing: border-box;
+      max-width: 100%;
+      width: 100%;
+    }
+    .bot-toggle {
+      align-items: center;
+      display: flex;
+      font-weight: 600;
+      gap: 8px;
+      min-height: 30px;
+    }
+    .bot-toggle input {
+      margin: 0;
+    }
+    .bot-reminder-list {
+      display: grid;
+      gap: 8px;
+      max-width: 620px;
+    }
+    .bot-reminder-row {
+      align-items: start;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 32px minmax(100px, 1fr) minmax(120px, 0.75fr);
+    }
+    .bot-reminder-index {
+      color: var(--body-quiet-color);
+      font-weight: 600;
+      padding-top: 8px;
+      text-align: center;
+    }
+    .bot-master-reminder {
+      display: grid;
+      gap: 10px;
+      max-width: 620px;
+    }
+    .bot-form-submit {
+      justify-self: start;
+    }
     .bot-status {
       border: 1px solid var(--hairline-color);
       border-radius: 4px;
@@ -380,6 +442,9 @@
       .bot-content-layout {
         grid-template-columns: minmax(0, 1fr);
       }
+      .bot-form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       .bot-content-nav {
         border-bottom: 1px solid var(--hairline-color);
         border-right: 0;
@@ -388,7 +453,8 @@
     }
     @media (max-width: 620px) {
       .bot-checklist,
-      .bot-token-form {
+      .bot-token-form,
+      .bot-form-grid {
         grid-template-columns: minmax(0, 1fr);
       }
       .bot-form-actions form,
@@ -398,6 +464,13 @@
       .bot-content-reset button {
         box-sizing: border-box;
         width: 100%;
+      }
+      .bot-form-submit {
+        justify-self: stretch;
+        width: 100%;
+      }
+      .bot-reminder-row {
+        grid-template-columns: 26px minmax(0, 1fr) minmax(105px, 0.75fr);
       }
       .bot-content-editor-heading {
         align-items: stretch;
@@ -689,33 +762,89 @@
 
       {% elif selected_tab == "notifications" %}
         <section class="bot-section">
-          <div class="bot-section-heading">
-            <h2>{% translate "Notification schedule" %}</h2>
-            {% if notification_settings %}<a class="button" href="{% url 'admin:notifications_partnernotificationsettings_change' notification_settings.pk %}">{% translate "Edit notifications" %}</a>{% endif %}
-          </div>
+          <div class="bot-section-heading"><h2>{% translate "Notification schedule" %}</h2></div>
           <div class="bot-section-body">
-            {% if notification_settings %}
-              <dl class="bot-settings-grid">
-                <div><dt>{% translate "Quiet hours" %}</dt><dd>{% if notification_settings.quiet_hours_enabled %}{{ notification_settings.quiet_hours_start_local|time:"H:i" }}–{{ notification_settings.quiet_hours_end_local|time:"H:i" }}{% else %}{% translate "Off" %}{% endif %}</dd></div>
-                <div><dt>{% translate "Morning digest" %}</dt><dd>{% if notification_settings.morning_digest_enabled %}{{ notification_settings.morning_digest_time_local|time:"H:i" }}{% else %}{% translate "Off" %}{% endif %}</dd></div>
-                <div><dt>{% translate "Stale request reminder" %}</dt><dd>{{ notification_settings.stale_requested_base_interval_minutes }} min</dd></div>
-              </dl>
-            {% endif %}
+            <form class="bot-settings-form" method="post" data-confirm="{% translate 'Apply these notification settings?' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="save_notification_settings">
+              {% for error in notification_settings_form.non_field_errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+              <div class="bot-form-grid">
+                <div class="bot-form-field">
+                  <label class="bot-toggle" for="{{ notification_settings_form.quiet_hours_enabled.id_for_label }}">{{ notification_settings_form.quiet_hours_enabled }} <span>{{ notification_settings_form.quiet_hours_enabled.label }}</span></label>
+                  {% for error in notification_settings_form.quiet_hours_enabled.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ notification_settings_form.quiet_hours_start_local.label_tag }}
+                  {{ notification_settings_form.quiet_hours_start_local }}
+                  {% for error in notification_settings_form.quiet_hours_start_local.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ notification_settings_form.quiet_hours_end_local.label_tag }}
+                  {{ notification_settings_form.quiet_hours_end_local }}
+                  {% for error in notification_settings_form.quiet_hours_end_local.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  <label class="bot-toggle" for="{{ notification_settings_form.morning_digest_enabled.id_for_label }}">{{ notification_settings_form.morning_digest_enabled }} <span>{{ notification_settings_form.morning_digest_enabled.label }}</span></label>
+                  {% for error in notification_settings_form.morning_digest_enabled.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ notification_settings_form.morning_digest_time_local.label_tag }}
+                  {{ notification_settings_form.morning_digest_time_local }}
+                  {% for error in notification_settings_form.morning_digest_time_local.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ notification_settings_form.stale_requested_base_interval_minutes.label_tag }}
+                  {{ notification_settings_form.stale_requested_base_interval_minutes }}
+                  <span class="bot-help">{{ notification_settings_form.stale_requested_base_interval_minutes.help_text }}</span>
+                  {% for error in notification_settings_form.stale_requested_base_interval_minutes.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+              </div>
+              <button class="default bot-form-submit" type="submit">{% translate "Save schedule" %}</button>
+            </form>
           </div>
         </section>
         <section class="bot-section">
-          <div class="bot-section-heading"><h2>{% translate "Appointment reminders" %}</h2><a href="{% url 'admin:notifications_reminderrule_changelist' %}?partner__id__exact={{ selected_partner.pk }}">{% translate "Manage rules" %}</a></div>
-          <div class="bot-section-body bot-table-wrap">
-            <table class="bot-table">
-              <thead><tr><th>{% translate "Recipient" %}</th><th>{% translate "Before appointment" %}</th><th>{% translate "Status" %}</th></tr></thead>
-              <tbody>
-                {% for rule in reminder_rules %}
-                  <tr><td data-label="{% translate 'Recipient' %}">{{ rule.get_target_display }}</td><td data-label="{% translate 'Before appointment' %}">{{ rule.offset_minutes }} min</td><td data-label="{% translate 'Status' %}">{% if rule.is_active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</td></tr>
-                {% empty %}
-                  <tr><td colspan="3">{% translate "No reminder rules" %}</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="bot-section-heading"><h2>{% translate "Appointment reminders" %}</h2></div>
+          <div class="bot-section-body">
+            <form class="bot-settings-form" method="post" data-confirm="{% translate 'Replace the active appointment reminder rules?' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="save_reminder_rules">
+              {% for error in reminder_rules_form.non_field_errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+              <div>
+                <span class="bot-form-label">{% translate "Client reminders" %}</span>
+                <div class="bot-reminder-list">
+                  {% for index, value_field, unit_field in reminder_rules_form.client_rows %}
+                    <div class="bot-reminder-row">
+                      <span class="bot-reminder-index">{{ index }}</span>
+                      <div>
+                        {{ value_field }}
+                        {% for error in value_field.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                      </div>
+                      <div>
+                        {{ unit_field }}
+                        {% for error in unit_field.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="bot-master-reminder">
+                <label class="bot-toggle" for="{{ reminder_rules_form.master_enabled.id_for_label }}">{{ reminder_rules_form.master_enabled }} <span>{{ reminder_rules_form.master_enabled.label }}</span></label>
+                {% for error in reminder_rules_form.master_enabled.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                <div class="bot-reminder-row">
+                  <span class="bot-reminder-index">1</span>
+                  <div>
+                    {{ reminder_rules_form.master_value }}
+                    {% for error in reminder_rules_form.master_value.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                  </div>
+                  <div>
+                    {{ reminder_rules_form.master_unit }}
+                    {% for error in reminder_rules_form.master_unit.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                  </div>
+                </div>
+              </div>
+              <button class="default bot-form-submit" type="submit">{% translate "Save reminders" %}</button>
+            </form>
           </div>
         </section>
 

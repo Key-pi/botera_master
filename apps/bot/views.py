@@ -24,8 +24,12 @@ from apps.bot.forms import (
     BOT_WORKSPACE_ACTION_PREVIEW_CONTENT,
     BOT_WORKSPACE_ACTION_RESET_CONTENT,
     BOT_WORKSPACE_ACTION_SAVE_CONTENT,
+    BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS,
+    BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES,
     BotContentWorkspaceActionForm,
     BotContentWorkspaceForm,
+    BotNotificationSettingsWorkspaceForm,
+    BotReminderRulesWorkspaceForm,
     BotTokenWorkspaceForm,
     BotWorkspaceActionForm,
 )
@@ -48,9 +52,21 @@ from apps.bot.services import (
     set_partner_template_override,
 )
 from apps.finance.selectors import penalty_settings_for_partner
+from apps.notifications.models import (
+    DEFAULT_MORNING_DIGEST_TIME_LOCAL,
+    DEFAULT_QUIET_HOURS_END_LOCAL,
+    DEFAULT_QUIET_HOURS_START_LOCAL,
+    DEFAULT_STALE_REQUESTED_INTERVAL_MINUTES,
+    PartnerNotificationSettings,
+    ReminderRule,
+)
 from apps.notifications.selectors import (
     notification_settings_for_partner,
     reminder_rules_for_partner,
+)
+from apps.notifications.services import (
+    replace_partner_reminder_rules,
+    update_partner_notification_settings,
 )
 from apps.partners.selectors import visible_partners_for_user
 from apps.partners.setup import SetupStep, get_partner_setup_status
@@ -97,6 +113,8 @@ def workspace(request):
     selected_content_definition = None
     selected_content_language = ""
     content_form = None
+    notification_settings_form = None
+    reminder_rules_form = None
     token_form = (
         BotTokenWorkspaceForm(partner=selected_partner) if selected_partner is not None else None
     )
@@ -115,6 +133,11 @@ def workspace(request):
             definition=selected_content_definition,
             initial={"body": selected_override.body if selected_override else ""},
         )
+    if selected_partner is not None and selected_tab == "notifications":
+        notification_settings = notification_settings_for_partner(partner=selected_partner)
+        reminder_rules = tuple(reminder_rules_for_partner(partner=selected_partner))
+        notification_settings_form = _notification_settings_form(notification_settings)
+        reminder_rules_form = _reminder_rules_form(reminder_rules)
 
     if request.method == "POST":
         if selected_partner is None:
@@ -221,6 +244,71 @@ def workspace(request):
                                     language=selected_content_language,
                                 )
                             )
+        elif selected_tab == "notifications":
+            if action == BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS:
+                notification_settings_form = BotNotificationSettingsWorkspaceForm(request.POST)
+                if notification_settings_form.is_valid():
+                    try:
+                        update_partner_notification_settings(
+                            actor=request.user,
+                            partner=selected_partner,
+                            quiet_hours_enabled=notification_settings_form.cleaned_data[
+                                "quiet_hours_enabled"
+                            ],
+                            quiet_hours_start_local=notification_settings_form.cleaned_data[
+                                "quiet_hours_start_local"
+                            ],
+                            quiet_hours_end_local=notification_settings_form.cleaned_data[
+                                "quiet_hours_end_local"
+                            ],
+                            morning_digest_enabled=notification_settings_form.cleaned_data[
+                                "morning_digest_enabled"
+                            ],
+                            morning_digest_time_local=notification_settings_form.cleaned_data[
+                                "morning_digest_time_local"
+                            ],
+                            stale_requested_base_interval_minutes=(
+                                notification_settings_form.cleaned_data[
+                                    "stale_requested_base_interval_minutes"
+                                ]
+                            ),
+                        )
+                    except (PermissionDenied, ValidationError) as exc:
+                        notification_settings_form.add_error(None, _error_text(exc))
+                    else:
+                        messages.success(request, "Notification schedule saved.")
+                        return HttpResponseRedirect(
+                            _workspace_url(
+                                partner_id=selected_partner.id,
+                                tab="notifications",
+                            )
+                        )
+            elif action == BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES:
+                reminder_rules_form = BotReminderRulesWorkspaceForm(request.POST)
+                if reminder_rules_form.is_valid():
+                    try:
+                        replace_partner_reminder_rules(
+                            actor=request.user,
+                            partner=selected_partner,
+                            client_offsets_minutes=reminder_rules_form.cleaned_data[
+                                "client_offsets_minutes"
+                            ],
+                            master_offset_minutes=reminder_rules_form.cleaned_data[
+                                "master_offset_minutes"
+                            ],
+                        )
+                    except (PermissionDenied, ValidationError) as exc:
+                        reminder_rules_form.add_error(None, _error_text(exc))
+                    else:
+                        messages.success(request, "Appointment reminder rules saved.")
+                        return HttpResponseRedirect(
+                            _workspace_url(
+                                partner_id=selected_partner.id,
+                                tab="notifications",
+                            )
+                        )
+            else:
+                messages.error(request, "Unknown notification settings action.")
         else:
             messages.error(request, "This bot workspace tab is read-only for now.")
 
@@ -242,6 +330,8 @@ def workspace(request):
                 content_language=selected_content_language,
                 content_form=content_form,
                 content_preview=content_preview,
+                notification_settings_form=notification_settings_form,
+                reminder_rules_form=reminder_rules_form,
             )
         )
     return TemplateResponse(request, "bot/workspace.html", context)
@@ -282,12 +372,12 @@ def _workspace_context(
     content_language: str = "",
     content_form: BotContentWorkspaceForm | None = None,
     content_preview=None,
+    notification_settings_form: BotNotificationSettingsWorkspaceForm | None = None,
+    reminder_rules_form: BotReminderRulesWorkspaceForm | None = None,
 ) -> dict:
     bot_instance = bot_instance_for_partner(partner)
     setup_status = get_partner_setup_status(partner)
     primary_contact = primary_master_telegram_contact(partner)
-    notification_settings = notification_settings_for_partner(partner=partner)
-    reminder_rules = tuple(reminder_rules_for_partner(partner=partner))
     schedule_settings = schedule_settings_for_partner(partner)
     penalty_settings = penalty_settings_for_partner(partner=partner)
     overrides = tuple(template_overrides_for_partner(partner))
@@ -302,8 +392,8 @@ def _workspace_context(
             partner=partner,
         ),
         "primary_contact": primary_contact,
-        "notification_settings": notification_settings,
-        "reminder_rules": reminder_rules,
+        "notification_settings_form": notification_settings_form,
+        "reminder_rules_form": reminder_rules_form,
         "schedule_settings": schedule_settings,
         "penalty_settings": penalty_settings,
         "content_groups": _content_groups(
@@ -329,6 +419,71 @@ def _workspace_context(
             )
         )
     return context
+
+
+def _notification_settings_form(
+    settings: PartnerNotificationSettings | None,
+) -> BotNotificationSettingsWorkspaceForm:
+    return BotNotificationSettingsWorkspaceForm(
+        initial={
+            "quiet_hours_enabled": (settings.quiet_hours_enabled if settings is not None else True),
+            "quiet_hours_start_local": (
+                settings.quiet_hours_start_local
+                if settings is not None
+                else DEFAULT_QUIET_HOURS_START_LOCAL
+            ),
+            "quiet_hours_end_local": (
+                settings.quiet_hours_end_local
+                if settings is not None
+                else DEFAULT_QUIET_HOURS_END_LOCAL
+            ),
+            "morning_digest_enabled": (
+                settings.morning_digest_enabled if settings is not None else True
+            ),
+            "morning_digest_time_local": (
+                settings.morning_digest_time_local
+                if settings is not None
+                else DEFAULT_MORNING_DIGEST_TIME_LOCAL
+            ),
+            "stale_requested_base_interval_minutes": (
+                settings.stale_requested_base_interval_minutes
+                if settings is not None
+                else DEFAULT_STALE_REQUESTED_INTERVAL_MINUTES
+            ),
+        }
+    )
+
+
+def _reminder_rules_form(rules: tuple[ReminderRule, ...]) -> BotReminderRulesWorkspaceForm:
+    active_client_rules = sorted(
+        (rule for rule in rules if rule.is_active and rule.target == ReminderRule.Target.CLIENT),
+        key=lambda rule: rule.offset_minutes,
+        reverse=True,
+    )
+    active_master_rule = next(
+        (rule for rule in rules if rule.is_active and rule.target == ReminderRule.Target.MASTER),
+        None,
+    )
+    initial: dict[str, object] = {
+        "master_enabled": active_master_rule is not None,
+    }
+    for index, rule in enumerate(active_client_rules[:5], start=1):
+        value, unit = _duration_parts(rule.offset_minutes)
+        initial[f"client_{index}_value"] = value
+        initial[f"client_{index}_unit"] = unit
+    if active_master_rule is not None:
+        value, unit = _duration_parts(active_master_rule.offset_minutes)
+        initial["master_value"] = value
+        initial["master_unit"] = unit
+    return BotReminderRulesWorkspaceForm(initial=initial)
+
+
+def _duration_parts(offset_minutes: int) -> tuple[int, str]:
+    if offset_minutes % (24 * 60) == 0:
+        return offset_minutes // (24 * 60), "days"
+    if offset_minutes % 60 == 0:
+        return offset_minutes // 60, "hours"
+    return offset_minutes, "minutes"
 
 
 def _setup_steps(*, setup_status, bot_instance, primary_contact, partner):
