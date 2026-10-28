@@ -107,6 +107,10 @@ EVENT_PRESENTATIONS = {
         "Conflict reschedules requested",
         "calendar",
     ),
+    "schedule.settings_updated": ActivityPresentation(
+        "Booking settings updated",
+        "calendar",
+    ),
     "penalty.settings_updated": ActivityPresentation(
         "Penalty settings updated",
         "penalties",

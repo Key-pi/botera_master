@@ -123,26 +123,53 @@ def update_schedule_settings(
     """Update partner-owned schedule settings through explicit validation."""
 
     ensure_partner_access(actor, partner)
-    schedule_settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
     if confirmation_mode is not None:
         validate_confirmation_mode(confirmation_mode)
-        schedule_settings.confirmation_mode = confirmation_mode
     if slot_step_minutes is not None:
         _validate_slot_step(slot_step_minutes)
-        schedule_settings.slot_step_minutes = slot_step_minutes
     if booking_horizon_days is not None:
         _validate_booking_horizon(booking_horizon_days)
-        schedule_settings.booking_horizon_days = booking_horizon_days
     if near_fit_tolerance_minutes is not None:
         _validate_near_fit_tolerance(near_fit_tolerance_minutes)
-        schedule_settings.near_fit_tolerance_minutes = near_fit_tolerance_minutes
     if cancellation_deadline_hours is not None:
         _validate_cancellation_deadline(cancellation_deadline_hours)
-        schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
     if require_phone_for_booking is not None:
         _validate_require_phone_for_booking(require_phone_for_booking)
-        schedule_settings.require_phone_for_booking = require_phone_for_booking
-    schedule_settings.save()
+
+    with transaction.atomic():
+        schedule_settings, _created = (
+            PartnerScheduleSettings.objects.select_for_update().get_or_create(partner=partner)
+        )
+        if confirmation_mode is not None:
+            schedule_settings.confirmation_mode = confirmation_mode
+        if slot_step_minutes is not None:
+            schedule_settings.slot_step_minutes = slot_step_minutes
+        if booking_horizon_days is not None:
+            schedule_settings.booking_horizon_days = booking_horizon_days
+        if near_fit_tolerance_minutes is not None:
+            schedule_settings.near_fit_tolerance_minutes = near_fit_tolerance_minutes
+        if cancellation_deadline_hours is not None:
+            schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
+        if require_phone_for_booking is not None:
+            schedule_settings.require_phone_for_booking = require_phone_for_booking
+        schedule_settings.save()
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="schedule.settings_updated",
+            target=schedule_settings,
+            message="Booking settings updated.",
+            payload={
+                "confirmation_mode": schedule_settings.confirmation_mode,
+                "slot_step_minutes": schedule_settings.slot_step_minutes,
+                "booking_horizon_days": schedule_settings.booking_horizon_days,
+                "near_fit_tolerance_minutes": schedule_settings.near_fit_tolerance_minutes,
+                "cancellation_deadline_hours": schedule_settings.cancellation_deadline_hours,
+                "required_booking_fields": (
+                    ["phone"] if schedule_settings.require_phone_for_booking else []
+                ),
+            },
+        )
     return schedule_settings
 
 

@@ -850,21 +850,48 @@
 
       {% elif selected_tab == "booking" %}
         <section class="bot-section">
-          <div class="bot-section-heading">
-            <h2>{% translate "Booking rules" %}</h2>
-            {% if schedule_settings %}<a class="button" href="{% url 'admin:schedule_partnerschedulesettings_change' schedule_settings.pk %}">{% translate "Edit booking" %}</a>{% endif %}
-          </div>
+          <div class="bot-section-heading"><h2>{% translate "Booking rules" %}</h2></div>
           <div class="bot-section-body">
-            {% if schedule_settings %}
-              <dl class="bot-settings-grid">
-                <div><dt>{% translate "Confirmation" %}</dt><dd>{{ schedule_settings.get_confirmation_mode_display|default:"Pending setup" }}</dd></div>
-                <div><dt>{% translate "Slot step" %}</dt><dd>{{ schedule_settings.slot_step_minutes }} min</dd></div>
-                <div><dt>{% translate "Booking horizon" %}</dt><dd>{{ schedule_settings.booking_horizon_days }} days</dd></div>
-                <div><dt>{% translate "Near-fit tolerance" %}</dt><dd>{{ schedule_settings.near_fit_tolerance_minutes }} min</dd></div>
-                <div><dt>{% translate "Cancellation deadline" %}</dt><dd>{{ schedule_settings.cancellation_deadline_hours }} h</dd></div>
-                <div><dt>{% translate "Phone required" %}</dt><dd>{% if schedule_settings.require_phone_for_booking %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</dd></div>
-              </dl>
-            {% endif %}
+            <form class="bot-settings-form" method="post" data-confirm="{% translate 'Apply these booking rules?' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="save_booking_settings">
+              {% for error in booking_settings_form.non_field_errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+              <div class="bot-form-grid">
+                <div class="bot-form-field">
+                  {{ booking_settings_form.confirmation_mode.label_tag }}
+                  {{ booking_settings_form.confirmation_mode }}
+                  {% for error in booking_settings_form.confirmation_mode.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ booking_settings_form.slot_step_minutes.label_tag }}
+                  {{ booking_settings_form.slot_step_minutes }}
+                  {% for error in booking_settings_form.slot_step_minutes.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ booking_settings_form.booking_horizon_days.label_tag }}
+                  {{ booking_settings_form.booking_horizon_days }}
+                  <span class="bot-help">{{ booking_settings_form.booking_horizon_days.help_text }}</span>
+                  {% for error in booking_settings_form.booking_horizon_days.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ booking_settings_form.near_fit_tolerance_minutes.label_tag }}
+                  {{ booking_settings_form.near_fit_tolerance_minutes }}
+                  <span class="bot-help">{{ booking_settings_form.near_fit_tolerance_minutes.help_text }}</span>
+                  {% for error in booking_settings_form.near_fit_tolerance_minutes.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ booking_settings_form.cancellation_deadline_hours.label_tag }}
+                  {{ booking_settings_form.cancellation_deadline_hours }}
+                  <span class="bot-help">{{ booking_settings_form.cancellation_deadline_hours.help_text }}</span>
+                  {% for error in booking_settings_form.cancellation_deadline_hours.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  <label class="bot-toggle" for="{{ booking_settings_form.require_phone_for_booking.id_for_label }}">{{ booking_settings_form.require_phone_for_booking }} <span>{{ booking_settings_form.require_phone_for_booking.label }}</span></label>
+                  {% for error in booking_settings_form.require_phone_for_booking.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+              </div>
+              <button class="default bot-form-submit" type="submit">{% translate "Save booking rules" %}</button>
+            </form>
           </div>
         </section>
 

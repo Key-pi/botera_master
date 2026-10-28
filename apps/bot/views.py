@@ -23,9 +23,11 @@ from apps.bot.forms import (
     BOT_WORKSPACE_ACTION_PAUSE,
     BOT_WORKSPACE_ACTION_PREVIEW_CONTENT,
     BOT_WORKSPACE_ACTION_RESET_CONTENT,
+    BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_CONTENT,
     BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES,
+    BotBookingSettingsWorkspaceForm,
     BotContentWorkspaceActionForm,
     BotContentWorkspaceForm,
     BotNotificationSettingsWorkspaceForm,
@@ -70,7 +72,15 @@ from apps.notifications.services import (
 )
 from apps.partners.selectors import visible_partners_for_user
 from apps.partners.setup import SetupStep, get_partner_setup_status
+from apps.schedule.models import (
+    DEFAULT_BOOKING_HORIZON_DAYS,
+    DEFAULT_CANCELLATION_DEADLINE_HOURS,
+    DEFAULT_NEAR_FIT_TOLERANCE_MINUTES,
+    DEFAULT_SLOT_STEP_MINUTES,
+    PartnerScheduleSettings,
+)
 from apps.schedule.selectors import schedule_settings_for_partner
+from apps.schedule.services import update_schedule_settings
 
 BOT_WORKSPACE_DEFAULT_TAB = "instance"
 BOT_WORKSPACE_TAB_LABELS = {
@@ -115,6 +125,7 @@ def workspace(request):
     content_form = None
     notification_settings_form = None
     reminder_rules_form = None
+    booking_settings_form = None
     token_form = (
         BotTokenWorkspaceForm(partner=selected_partner) if selected_partner is not None else None
     )
@@ -138,6 +149,10 @@ def workspace(request):
         reminder_rules = tuple(reminder_rules_for_partner(partner=selected_partner))
         notification_settings_form = _notification_settings_form(notification_settings)
         reminder_rules_form = _reminder_rules_form(reminder_rules)
+    if selected_partner is not None and selected_tab == "booking":
+        booking_settings_form = _booking_settings_form(
+            schedule_settings_for_partner(selected_partner)
+        )
 
     if request.method == "POST":
         if selected_partner is None:
@@ -309,6 +324,45 @@ def workspace(request):
                         )
             else:
                 messages.error(request, "Unknown notification settings action.")
+        elif selected_tab == "booking":
+            if action != BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS:
+                messages.error(request, "Unknown booking settings action.")
+            else:
+                booking_settings_form = BotBookingSettingsWorkspaceForm(request.POST)
+                if booking_settings_form.is_valid():
+                    try:
+                        update_schedule_settings(
+                            actor=request.user,
+                            partner=selected_partner,
+                            confirmation_mode=booking_settings_form.cleaned_data[
+                                "confirmation_mode"
+                            ],
+                            slot_step_minutes=booking_settings_form.cleaned_data[
+                                "slot_step_minutes"
+                            ],
+                            booking_horizon_days=booking_settings_form.cleaned_data[
+                                "booking_horizon_days"
+                            ],
+                            near_fit_tolerance_minutes=(
+                                booking_settings_form.cleaned_data["near_fit_tolerance_minutes"]
+                            ),
+                            cancellation_deadline_hours=(
+                                booking_settings_form.cleaned_data["cancellation_deadline_hours"]
+                            ),
+                            require_phone_for_booking=booking_settings_form.cleaned_data[
+                                "require_phone_for_booking"
+                            ],
+                        )
+                    except (PermissionDenied, ValidationError) as exc:
+                        booking_settings_form.add_error(None, _error_text(exc))
+                    else:
+                        messages.success(request, "Booking settings saved.")
+                        return HttpResponseRedirect(
+                            _workspace_url(
+                                partner_id=selected_partner.id,
+                                tab="booking",
+                            )
+                        )
         else:
             messages.error(request, "This bot workspace tab is read-only for now.")
 
@@ -332,6 +386,7 @@ def workspace(request):
                 content_preview=content_preview,
                 notification_settings_form=notification_settings_form,
                 reminder_rules_form=reminder_rules_form,
+                booking_settings_form=booking_settings_form,
             )
         )
     return TemplateResponse(request, "bot/workspace.html", context)
@@ -374,11 +429,11 @@ def _workspace_context(
     content_preview=None,
     notification_settings_form: BotNotificationSettingsWorkspaceForm | None = None,
     reminder_rules_form: BotReminderRulesWorkspaceForm | None = None,
+    booking_settings_form: BotBookingSettingsWorkspaceForm | None = None,
 ) -> dict:
     bot_instance = bot_instance_for_partner(partner)
     setup_status = get_partner_setup_status(partner)
     primary_contact = primary_master_telegram_contact(partner)
-    schedule_settings = schedule_settings_for_partner(partner)
     penalty_settings = penalty_settings_for_partner(partner=partner)
     overrides = tuple(template_overrides_for_partner(partner))
 
@@ -394,7 +449,7 @@ def _workspace_context(
         "primary_contact": primary_contact,
         "notification_settings_form": notification_settings_form,
         "reminder_rules_form": reminder_rules_form,
-        "schedule_settings": schedule_settings,
+        "booking_settings_form": booking_settings_form,
         "penalty_settings": penalty_settings,
         "content_groups": _content_groups(
             overrides=overrides,
@@ -484,6 +539,37 @@ def _duration_parts(offset_minutes: int) -> tuple[int, str]:
     if offset_minutes % 60 == 0:
         return offset_minutes // 60, "hours"
     return offset_minutes, "minutes"
+
+
+def _booking_settings_form(
+    settings: PartnerScheduleSettings | None,
+) -> BotBookingSettingsWorkspaceForm:
+    return BotBookingSettingsWorkspaceForm(
+        initial={
+            "confirmation_mode": settings.confirmation_mode if settings is not None else "",
+            "slot_step_minutes": (
+                settings.slot_step_minutes if settings is not None else DEFAULT_SLOT_STEP_MINUTES
+            ),
+            "booking_horizon_days": (
+                settings.booking_horizon_days
+                if settings is not None
+                else DEFAULT_BOOKING_HORIZON_DAYS
+            ),
+            "near_fit_tolerance_minutes": (
+                settings.near_fit_tolerance_minutes
+                if settings is not None
+                else DEFAULT_NEAR_FIT_TOLERANCE_MINUTES
+            ),
+            "cancellation_deadline_hours": (
+                settings.cancellation_deadline_hours
+                if settings is not None
+                else DEFAULT_CANCELLATION_DEADLINE_HOURS
+            ),
+            "require_phone_for_booking": (
+                settings.require_phone_for_booking if settings is not None else False
+            ),
+        }
+    )
 
 
 def _setup_steps(*, setup_status, bot_instance, primary_contact, partner):

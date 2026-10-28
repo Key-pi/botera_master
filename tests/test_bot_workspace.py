@@ -17,6 +17,7 @@ from apps.bot.services import (
 from apps.bot.telegram import TelegramBotIdentity
 from apps.notifications.models import PartnerNotificationSettings, ReminderRule
 from apps.partners.services import create_partner_with_owner
+from apps.schedule.models import PartnerScheduleSettings
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
 SECOND_VALID_TOKEN = "987654321:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghj"
@@ -353,6 +354,91 @@ def test_notifications_workspace_rejects_out_of_bounds_rules_without_mutation(
     assert not AuditEvent.objects.filter(
         partner=partner,
         event_type="notification.reminder_rules_updated",
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_booking_workspace_saves_complete_rules_and_audit(bot_workspace_context) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="booking"),
+        {
+            "action": "save_booking_settings",
+            "confirmation_mode": PartnerScheduleSettings.ConfirmationMode.AUTO,
+            "slot_step_minutes": "20",
+            "booking_horizon_days": "180",
+            "near_fit_tolerance_minutes": "12",
+            "cancellation_deadline_hours": "8",
+            "require_phone_for_booking": "on",
+        },
+    )
+
+    assert response.status_code == 302
+    settings = PartnerScheduleSettings.objects.get(partner=partner)
+    assert settings.confirmation_mode == PartnerScheduleSettings.ConfirmationMode.AUTO
+    assert settings.slot_step_minutes == 20
+    assert settings.booking_horizon_days == 180
+    assert settings.near_fit_tolerance_minutes == 12
+    assert settings.cancellation_deadline_hours == 8
+    assert settings.require_phone_for_booking is True
+    event = AuditEvent.objects.get(
+        partner=partner,
+        event_type="schedule.settings_updated",
+    )
+    assert event.actor == context["first"].owner
+    assert event.payload_masked == {
+        "confirmation_mode": PartnerScheduleSettings.ConfirmationMode.AUTO,
+        "slot_step_minutes": 20,
+        "booking_horizon_days": 180,
+        "near_fit_tolerance_minutes": 12,
+        "cancellation_deadline_hours": 8,
+        "required_booking_fields": ["phone"],
+    }
+
+
+@pytest.mark.django_db
+def test_booking_workspace_rejects_invalid_bounds_without_mutation(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    before = PartnerScheduleSettings.objects.get(partner=partner)
+    expected = (
+        before.confirmation_mode,
+        before.slot_step_minutes,
+        before.booking_horizon_days,
+        before.near_fit_tolerance_minutes,
+        before.cancellation_deadline_hours,
+        before.require_phone_for_booking,
+    )
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="booking"),
+        {
+            "action": "save_booking_settings",
+            "confirmation_mode": PartnerScheduleSettings.ConfirmationMode.MANUAL,
+            "slot_step_minutes": "15",
+            "booking_horizon_days": "366",
+            "near_fit_tolerance_minutes": "10",
+            "cancellation_deadline_hours": "6",
+        },
+    )
+
+    assert response.status_code == 200
+    before.refresh_from_db()
+    assert (
+        before.confirmation_mode,
+        before.slot_step_minutes,
+        before.booking_horizon_days,
+        before.near_fit_tolerance_minutes,
+        before.cancellation_deadline_hours,
+        before.require_phone_for_booking,
+    ) == expected
+    assert not AuditEvent.objects.filter(
+        partner=partner,
+        event_type="schedule.settings_updated",
     ).exists()
 
 

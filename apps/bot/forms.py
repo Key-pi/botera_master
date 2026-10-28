@@ -15,6 +15,14 @@ from apps.notifications.models import (
     MIN_MASTER_REMINDER_OFFSET_MINUTES,
     MIN_STALE_REQUESTED_INTERVAL_MINUTES,
 )
+from apps.schedule.models import (
+    ALLOWED_SLOT_STEPS,
+    MAX_BOOKING_HORIZON_DAYS,
+    MAX_CANCELLATION_DEADLINE_HOURS,
+    MAX_NEAR_FIT_TOLERANCE_MINUTES,
+    PartnerScheduleSettings,
+)
+from apps.schedule.services import validate_schedule_settings_input
 
 BOT_WORKSPACE_ACTION_CHECK_CONNECTION = "check_connection"
 BOT_WORKSPACE_ACTION_LAUNCH = "launch"
@@ -25,6 +33,7 @@ BOT_WORKSPACE_ACTION_PREVIEW_CONTENT = "preview_content"
 BOT_WORKSPACE_ACTION_RESET_CONTENT = "reset_content"
 BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS = "save_notification_settings"
 BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES = "save_reminder_rules"
+BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS = "save_booking_settings"
 
 DURATION_UNIT_CHOICES = (
     ("minutes", "Minutes"),
@@ -312,3 +321,82 @@ class BotReminderRulesWorkspaceForm(forms.Form):
         cleaned_data["client_offsets_minutes"] = tuple(sorted(client_offsets, reverse=True))
         cleaned_data["master_offset_minutes"] = master_offset
         return cleaned_data
+
+
+class BotBookingSettingsWorkspaceForm(forms.Form):
+    """Validate one complete partner booking-rules update."""
+
+    confirmation_mode = forms.ChoiceField(
+        label="Booking confirmation",
+        choices=(
+            ("", "Select confirmation mode"),
+            (PartnerScheduleSettings.ConfirmationMode.AUTO, "Auto-confirm"),
+            (PartnerScheduleSettings.ConfirmationMode.MANUAL, "Manual confirmation"),
+        ),
+    )
+    slot_step_minutes = forms.TypedChoiceField(
+        label="Slot step",
+        choices=tuple((value, f"{value} minutes") for value in ALLOWED_SLOT_STEPS),
+        coerce=int,
+    )
+    booking_horizon_days = forms.IntegerField(
+        label="Booking horizon",
+        min_value=1,
+        max_value=MAX_BOOKING_HORIZON_DAYS,
+        widget=forms.NumberInput(attrs={"min": 1, "max": MAX_BOOKING_HORIZON_DAYS}),
+        help_text="Days",
+    )
+    near_fit_tolerance_minutes = forms.IntegerField(
+        label="Near-fit tolerance",
+        min_value=0,
+        max_value=MAX_NEAR_FIT_TOLERANCE_MINUTES,
+        widget=forms.NumberInput(attrs={"min": 0, "max": MAX_NEAR_FIT_TOLERANCE_MINUTES}),
+        help_text="Minutes",
+    )
+    cancellation_deadline_hours = forms.IntegerField(
+        label="Cancellation deadline",
+        min_value=0,
+        max_value=MAX_CANCELLATION_DEADLINE_HOURS,
+        widget=forms.NumberInput(attrs={"min": 0, "max": MAX_CANCELLATION_DEADLINE_HOURS}),
+        help_text="Hours before appointment",
+    )
+    require_phone_for_booking = forms.BooleanField(
+        label="Require phone for booking",
+        required=False,
+    )
+
+    def clean(self) -> dict:
+        cleaned_data = super().clean()
+        field_names = (
+            "confirmation_mode",
+            "slot_step_minutes",
+            "booking_horizon_days",
+            "near_fit_tolerance_minutes",
+            "cancellation_deadline_hours",
+            "require_phone_for_booking",
+        )
+        if any(cleaned_data.get(field_name) is None for field_name in field_names):
+            return cleaned_data
+        try:
+            validate_schedule_settings_input(
+                confirmation_mode=cleaned_data["confirmation_mode"],
+                slot_step_minutes=cleaned_data["slot_step_minutes"],
+                booking_horizon_days=cleaned_data["booking_horizon_days"],
+                near_fit_tolerance_minutes=cleaned_data["near_fit_tolerance_minutes"],
+                cancellation_deadline_hours=cleaned_data["cancellation_deadline_hours"],
+                require_phone_for_booking=cleaned_data["require_phone_for_booking"],
+            )
+        except DjangoValidationError as exc:
+            _add_domain_errors(self, exc)
+        return cleaned_data
+
+
+def _add_domain_errors(form: forms.Form, exc: DjangoValidationError) -> None:
+    if hasattr(exc, "message_dict"):
+        for field_name, errors in exc.message_dict.items():
+            target = field_name if field_name in form.fields else None
+            for error in errors:
+                form.add_error(target, error)
+        return
+    for error in exc.messages:
+        form.add_error(None, error)

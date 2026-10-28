@@ -73,6 +73,10 @@ Status: discovery approved on 2026-08-07.
   stale-request timing, and appointment reminder configuration. Reminder edits atomically
   activate the desired client/master rules and deactivate superseded rows instead of deleting
   delivery history; already scheduled notification records keep their existing due time.
+- 2026-10-28: The Bot Booking workspace owns partner-facing confirmation mode, slot step,
+  booking horizon, near-fit tolerance, cancellation deadline, and required-phone configuration.
+  Complete updates pass through the schedule owner service in one transaction and emit one
+  business-safe audit event describing the resulting booking rules.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.
