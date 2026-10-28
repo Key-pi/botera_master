@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load client_admin i18n tz %}
+{% load i18n tz %}
 
 {% block extrastyle %}
   {{ block.super }}
@@ -897,20 +897,44 @@
 
       {% elif selected_tab == "penalties" %}
         <section class="bot-section">
-          <div class="bot-section-heading">
-            <h2>{% translate "Penalty rules" %}</h2>
-            {% if penalty_settings %}<a class="button" href="{% url 'admin:finance_partnerpenaltysettings_change' penalty_settings.pk %}">{% translate "Edit penalties" %}</a>{% endif %}
-          </div>
+          <div class="bot-section-heading"><h2>{% translate "Penalty rules" %}</h2></div>
           <div class="bot-section-body">
-            {% if penalty_settings %}
-              <dl class="bot-settings-grid">
-                <div><dt>{% translate "Penalties" %}</dt><dd>{% if penalty_settings.penalties_enabled %}{% translate "Enabled" %}{% else %}{% translate "Disabled" %}{% endif %}</dd></div>
-                <div><dt>{% translate "Late cancellation" %}</dt><dd>{{ penalty_settings.late_cancel_penalty_amount|money_amount }} {{ penalty_settings.currency }}</dd></div>
-                <div><dt>{% translate "No-show" %}</dt><dd>{{ penalty_settings.no_show_penalty_amount|money_amount }} {{ penalty_settings.currency }}</dd></div>
-                <div><dt>{% translate "Late arrival threshold" %}</dt><dd>{{ penalty_settings.late_arrival_threshold_minutes }} min</dd></div>
-                <div><dt>{% translate "Late arrival" %}</dt><dd>{{ penalty_settings.late_arrival_penalty_amount|money_amount }} {{ penalty_settings.currency }}</dd></div>
-              </dl>
-            {% endif %}
+            <form class="bot-settings-form" method="post" data-confirm="{% translate 'Apply these penalty rules?' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="save_penalty_settings">
+              {% for error in penalty_settings_form.non_field_errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+              <div class="bot-form-grid">
+                <div class="bot-form-field">
+                  <label class="bot-toggle" for="{{ penalty_settings_form.penalties_enabled.id_for_label }}">{{ penalty_settings_form.penalties_enabled }} <span>{{ penalty_settings_form.penalties_enabled.label }}</span></label>
+                  {% for error in penalty_settings_form.penalties_enabled.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ penalty_settings_form.late_cancel_penalty.label_tag }}
+                  {{ penalty_settings_form.late_cancel_penalty }}
+                  <span class="bot-help">{{ penalty_settings_form.late_cancel_penalty.help_text }}</span>
+                  {% for error in penalty_settings_form.late_cancel_penalty.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ penalty_settings_form.no_show_penalty.label_tag }}
+                  {{ penalty_settings_form.no_show_penalty }}
+                  <span class="bot-help">{{ penalty_settings_form.no_show_penalty.help_text }}</span>
+                  {% for error in penalty_settings_form.no_show_penalty.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ penalty_settings_form.late_arrival_threshold_minutes.label_tag }}
+                  {{ penalty_settings_form.late_arrival_threshold_minutes }}
+                  <span class="bot-help">{{ penalty_settings_form.late_arrival_threshold_minutes.help_text }}</span>
+                  {% for error in penalty_settings_form.late_arrival_threshold_minutes.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ penalty_settings_form.late_arrival_penalty.label_tag }}
+                  {{ penalty_settings_form.late_arrival_penalty }}
+                  <span class="bot-help">{{ penalty_settings_form.late_arrival_penalty.help_text }}</span>
+                  {% for error in penalty_settings_form.late_arrival_penalty.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+              </div>
+              <button class="default bot-form-submit" type="submit">{% translate "Save penalty rules" %}</button>
+            </form>
           </div>
         </section>
       {% endif %}

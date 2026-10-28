@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -26,11 +27,13 @@ from apps.bot.forms import (
     BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_CONTENT,
     BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS,
+    BOT_WORKSPACE_ACTION_SAVE_PENALTY_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES,
     BotBookingSettingsWorkspaceForm,
     BotContentWorkspaceActionForm,
     BotContentWorkspaceForm,
     BotNotificationSettingsWorkspaceForm,
+    BotPenaltySettingsWorkspaceForm,
     BotReminderRulesWorkspaceForm,
     BotTokenWorkspaceForm,
     BotWorkspaceActionForm,
@@ -53,7 +56,15 @@ from apps.bot.services import (
     set_bot_token,
     set_partner_template_override,
 )
+from apps.finance.models import (
+    DEFAULT_LATE_ARRIVAL_PENALTY_AMOUNT,
+    DEFAULT_LATE_ARRIVAL_THRESHOLD_MINUTES,
+    DEFAULT_LATE_CANCEL_PENALTY_AMOUNT,
+    DEFAULT_NO_SHOW_PENALTY_AMOUNT,
+    PartnerPenaltySettings,
+)
 from apps.finance.selectors import penalty_settings_for_partner
+from apps.finance.services import update_penalty_settings
 from apps.notifications.models import (
     DEFAULT_MORNING_DIGEST_TIME_LOCAL,
     DEFAULT_QUIET_HOURS_END_LOCAL,
@@ -81,6 +92,7 @@ from apps.schedule.models import (
 )
 from apps.schedule.selectors import schedule_settings_for_partner
 from apps.schedule.services import update_schedule_settings
+from core.money import Money
 
 BOT_WORKSPACE_DEFAULT_TAB = "instance"
 BOT_WORKSPACE_TAB_LABELS = {
@@ -126,6 +138,7 @@ def workspace(request):
     notification_settings_form = None
     reminder_rules_form = None
     booking_settings_form = None
+    penalty_settings_form = None
     token_form = (
         BotTokenWorkspaceForm(partner=selected_partner) if selected_partner is not None else None
     )
@@ -152,6 +165,10 @@ def workspace(request):
     if selected_partner is not None and selected_tab == "booking":
         booking_settings_form = _booking_settings_form(
             schedule_settings_for_partner(selected_partner)
+        )
+    if selected_partner is not None and selected_tab == "penalties":
+        penalty_settings_form = _penalty_settings_form(
+            penalty_settings_for_partner(partner=selected_partner)
         )
 
     if request.method == "POST":
@@ -363,6 +380,42 @@ def workspace(request):
                                 tab="booking",
                             )
                         )
+        elif selected_tab == "penalties":
+            if action != BOT_WORKSPACE_ACTION_SAVE_PENALTY_SETTINGS:
+                messages.error(request, "Unknown penalty settings action.")
+            else:
+                penalty_settings_form = BotPenaltySettingsWorkspaceForm(request.POST)
+                if penalty_settings_form.is_valid():
+                    try:
+                        update_penalty_settings(
+                            actor=request.user,
+                            partner=selected_partner,
+                            penalties_enabled=penalty_settings_form.cleaned_data[
+                                "penalties_enabled"
+                            ],
+                            late_cancel_penalty_amount=penalty_settings_form.cleaned_data[
+                                "late_cancel_penalty_amount"
+                            ],
+                            no_show_penalty_amount=penalty_settings_form.cleaned_data[
+                                "no_show_penalty_amount"
+                            ],
+                            late_arrival_threshold_minutes=penalty_settings_form.cleaned_data[
+                                "late_arrival_threshold_minutes"
+                            ],
+                            late_arrival_penalty_amount=penalty_settings_form.cleaned_data[
+                                "late_arrival_penalty_amount"
+                            ],
+                        )
+                    except (PermissionDenied, ValidationError) as exc:
+                        penalty_settings_form.add_error(None, _error_text(exc))
+                    else:
+                        messages.success(request, "Penalty settings saved.")
+                        return HttpResponseRedirect(
+                            _workspace_url(
+                                partner_id=selected_partner.id,
+                                tab="penalties",
+                            )
+                        )
         else:
             messages.error(request, "This bot workspace tab is read-only for now.")
 
@@ -387,6 +440,7 @@ def workspace(request):
                 notification_settings_form=notification_settings_form,
                 reminder_rules_form=reminder_rules_form,
                 booking_settings_form=booking_settings_form,
+                penalty_settings_form=penalty_settings_form,
             )
         )
     return TemplateResponse(request, "bot/workspace.html", context)
@@ -430,11 +484,11 @@ def _workspace_context(
     notification_settings_form: BotNotificationSettingsWorkspaceForm | None = None,
     reminder_rules_form: BotReminderRulesWorkspaceForm | None = None,
     booking_settings_form: BotBookingSettingsWorkspaceForm | None = None,
+    penalty_settings_form: BotPenaltySettingsWorkspaceForm | None = None,
 ) -> dict:
     bot_instance = bot_instance_for_partner(partner)
     setup_status = get_partner_setup_status(partner)
     primary_contact = primary_master_telegram_contact(partner)
-    penalty_settings = penalty_settings_for_partner(partner=partner)
     overrides = tuple(template_overrides_for_partner(partner))
 
     context = {
@@ -450,7 +504,7 @@ def _workspace_context(
         "notification_settings_form": notification_settings_form,
         "reminder_rules_form": reminder_rules_form,
         "booking_settings_form": booking_settings_form,
-        "penalty_settings": penalty_settings,
+        "penalty_settings_form": penalty_settings_form,
         "content_groups": _content_groups(
             overrides=overrides,
             partner_id=partner.id,
@@ -570,6 +624,40 @@ def _booking_settings_form(
             ),
         }
     )
+
+
+def _penalty_settings_form(
+    settings: PartnerPenaltySettings | None,
+) -> BotPenaltySettingsWorkspaceForm:
+    return BotPenaltySettingsWorkspaceForm(
+        initial={
+            "penalties_enabled": settings.penalties_enabled if settings is not None else False,
+            "late_cancel_penalty": _major_amount(
+                settings.late_cancel_penalty_amount
+                if settings is not None
+                else DEFAULT_LATE_CANCEL_PENALTY_AMOUNT
+            ),
+            "no_show_penalty": _major_amount(
+                settings.no_show_penalty_amount
+                if settings is not None
+                else DEFAULT_NO_SHOW_PENALTY_AMOUNT
+            ),
+            "late_arrival_threshold_minutes": (
+                settings.late_arrival_threshold_minutes
+                if settings is not None
+                else DEFAULT_LATE_ARRIVAL_THRESHOLD_MINUTES
+            ),
+            "late_arrival_penalty": _major_amount(
+                settings.late_arrival_penalty_amount
+                if settings is not None
+                else DEFAULT_LATE_ARRIVAL_PENALTY_AMOUNT
+            ),
+        }
+    )
+
+
+def _major_amount(amount: int) -> Decimal:
+    return Money(amount=amount).to_major_decimal()
 
 
 def _setup_steps(*, setup_status, bot_instance, primary_contact, partner):

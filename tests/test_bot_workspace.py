@@ -15,6 +15,7 @@ from apps.bot.services import (
     set_partner_template_override,
 )
 from apps.bot.telegram import TelegramBotIdentity
+from apps.finance.models import PartnerPenaltySettings
 from apps.notifications.models import PartnerNotificationSettings, ReminderRule
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import PartnerScheduleSettings
@@ -206,7 +207,9 @@ def test_workspace_tab_summaries_stay_partner_scoped(bot_workspace_context) -> N
     assert booking.status_code == 200
     assert "Booking horizon" in booking.content.decode()
     assert penalties.status_code == 200
-    assert "50.00 UAH" in penalties.content.decode()
+    penalty_content = penalties.content.decode()
+    assert 'name="late_cancel_penalty"' in penalty_content
+    assert 'value="50.00"' in penalty_content
 
 
 @pytest.mark.django_db
@@ -439,6 +442,90 @@ def test_booking_workspace_rejects_invalid_bounds_without_mutation(
     assert not AuditEvent.objects.filter(
         partner=partner,
         event_type="schedule.settings_updated",
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_penalty_workspace_saves_major_amounts_as_minor_units_and_audit(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="penalties"),
+        {
+            "action": "save_penalty_settings",
+            "penalties_enabled": "on",
+            "late_cancel_penalty": "65.50",
+            "no_show_penalty": "75.00",
+            "late_arrival_threshold_minutes": "20",
+            "late_arrival_penalty": "25.25",
+        },
+    )
+
+    assert response.status_code == 302
+    settings = PartnerPenaltySettings.objects.get(partner=partner)
+    assert settings.penalties_enabled is True
+    assert settings.late_cancel_penalty_amount == 6_550
+    assert settings.no_show_penalty_amount == 7_500
+    assert settings.late_arrival_threshold_minutes == 20
+    assert settings.late_arrival_penalty_amount == 2_525
+    assert settings.currency == "UAH"
+    event = AuditEvent.objects.get(
+        partner=partner,
+        event_type="penalty.settings_updated",
+    )
+    assert event.actor == context["first"].owner
+    assert event.payload_masked == {
+        "penalties_enabled": True,
+        "late_cancel_penalty_amount": 6_550,
+        "no_show_penalty_amount": 7_500,
+        "late_arrival_threshold_minutes": 20,
+        "late_arrival_penalty_amount": 2_525,
+        "currency": "UAH",
+    }
+
+
+@pytest.mark.django_db
+def test_penalty_workspace_rejects_invalid_amount_without_mutation(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+    settings = PartnerPenaltySettings.objects.get(partner=partner)
+    expected = (
+        settings.penalties_enabled,
+        settings.late_cancel_penalty_amount,
+        settings.no_show_penalty_amount,
+        settings.late_arrival_threshold_minutes,
+        settings.late_arrival_penalty_amount,
+    )
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="penalties"),
+        {
+            "action": "save_penalty_settings",
+            "penalties_enabled": "on",
+            "late_cancel_penalty": "-1.00",
+            "no_show_penalty": "75.00",
+            "late_arrival_threshold_minutes": "20",
+            "late_arrival_penalty": "25.00",
+        },
+    )
+
+    assert response.status_code == 200
+    settings.refresh_from_db()
+    assert (
+        settings.penalties_enabled,
+        settings.late_cancel_penalty_amount,
+        settings.no_show_penalty_amount,
+        settings.late_arrival_threshold_minutes,
+        settings.late_arrival_penalty_amount,
+    ) == expected
+    assert not AuditEvent.objects.filter(
+        partner=partner,
+        event_type="penalty.settings_updated",
     ).exists()
 
 

@@ -10,9 +10,7 @@ from apps.appointments.models import Appointment
 from apps.finance.models import Expense, PartnerPenaltySettings, Penalty
 from apps.finance.selectors import active_unpaid_penalties_for_client
 from apps.finance.services import validate_expense_input
-from core.money import Money
-
-MAX_MAJOR_AMOUNT = Decimal("21474836.47")
+from core.money import MAX_MAJOR_AMOUNT, Money
 
 
 class PenaltyChoiceField(forms.ModelMultipleChoiceField):

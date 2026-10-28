@@ -77,6 +77,10 @@ Status: discovery approved on 2026-08-07.
   booking horizon, near-fit tolerance, cancellation deadline, and required-phone configuration.
   Complete updates pass through the schedule owner service in one transaction and emit one
   business-safe audit event describing the resulting booking rules.
+- 2026-10-28: The Bot Penalties workspace owns partner-facing penalty enablement, configured
+  late-cancellation/no-show/late-arrival amounts, and the late-arrival threshold. The workspace
+  accepts UAH major units, converts them to integer minor units at the form boundary, and delegates
+  the complete transactional update and audit event to the finance owner service.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

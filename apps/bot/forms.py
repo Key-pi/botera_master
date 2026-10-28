@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
 
@@ -23,6 +25,7 @@ from apps.schedule.models import (
     PartnerScheduleSettings,
 )
 from apps.schedule.services import validate_schedule_settings_input
+from core.money import MAX_MAJOR_AMOUNT, Money
 
 BOT_WORKSPACE_ACTION_CHECK_CONNECTION = "check_connection"
 BOT_WORKSPACE_ACTION_LAUNCH = "launch"
@@ -34,6 +37,7 @@ BOT_WORKSPACE_ACTION_RESET_CONTENT = "reset_content"
 BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS = "save_notification_settings"
 BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES = "save_reminder_rules"
 BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS = "save_booking_settings"
+BOT_WORKSPACE_ACTION_SAVE_PENALTY_SETTINGS = "save_penalty_settings"
 
 DURATION_UNIT_CHOICES = (
     ("minutes", "Minutes"),
@@ -388,6 +392,58 @@ class BotBookingSettingsWorkspaceForm(forms.Form):
             )
         except DjangoValidationError as exc:
             _add_domain_errors(self, exc)
+        return cleaned_data
+
+
+class BotPenaltySettingsWorkspaceForm(forms.Form):
+    """Validate one complete partner penalty-rules update."""
+
+    penalties_enabled = forms.BooleanField(
+        label="Enable penalties",
+        required=False,
+    )
+    late_cancel_penalty = forms.DecimalField(
+        label="Late-cancellation penalty",
+        min_value=Decimal("0"),
+        max_value=MAX_MAJOR_AMOUNT,
+        max_digits=10,
+        decimal_places=2,
+        help_text="UAH",
+    )
+    no_show_penalty = forms.DecimalField(
+        label="No-show penalty",
+        min_value=Decimal("0"),
+        max_value=MAX_MAJOR_AMOUNT,
+        max_digits=10,
+        decimal_places=2,
+        help_text="UAH",
+    )
+    late_arrival_threshold_minutes = forms.IntegerField(
+        label="Late-arrival threshold",
+        min_value=1,
+        widget=forms.NumberInput(attrs={"min": 1}),
+        help_text="Minutes",
+    )
+    late_arrival_penalty = forms.DecimalField(
+        label="Late-arrival penalty",
+        min_value=Decimal("0"),
+        max_value=MAX_MAJOR_AMOUNT,
+        max_digits=10,
+        decimal_places=2,
+        help_text="UAH",
+    )
+
+    def clean(self) -> dict:
+        cleaned_data = super().clean()
+        money_fields = {
+            "late_cancel_penalty": "late_cancel_penalty_amount",
+            "no_show_penalty": "no_show_penalty_amount",
+            "late_arrival_penalty": "late_arrival_penalty_amount",
+        }
+        for form_field, service_field in money_fields.items():
+            value = cleaned_data.get(form_field)
+            if value is not None:
+                cleaned_data[service_field] = Money.from_major(value).amount
         return cleaned_data
 
 
