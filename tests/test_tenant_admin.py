@@ -13,12 +13,17 @@ from apps.accounts.models import PartnerMembership, User
 from apps.accounts.permissions import PARTNER_OWNER_GROUP_NAME
 from apps.accounts.selectors import user_can_access_partner
 from apps.accounts.services import ensure_partner_access
+from apps.audit.models import AuditEvent
 from apps.catalog.models import ServiceCategory
 from apps.finance.models import PartnerPenaltySettings
 from apps.partners.admin import PartnerAdmin
 from apps.partners.models import Partner
 from apps.partners.selectors import visible_partners_for_user
-from apps.partners.services import activate_partner_after_setup, create_partner_with_owner
+from apps.partners.services import (
+    activate_partner_after_setup,
+    create_partner_with_owner,
+    update_partner_settings,
+)
 from apps.partners.setup import SetupStep, get_partner_setup_status, is_partner_runtime_eligible
 from apps.schedule.models import AvailabilityWindow, BookingResource, PartnerScheduleSettings
 
@@ -107,6 +112,76 @@ def test_partner_owner_admin_access_is_useful_but_excludes_platform_data(client)
     assert client.get(reverse("admin:accounts_user_changelist")).status_code == 403
     assert client.get(reverse("admin:audit_platformdiagnostic_changelist")).status_code == 403
     assert client.get(reverse("admin:partners_partner_add")).status_code == 403
+
+
+@pytest.mark.django_db
+def test_partner_owner_updates_defaults_through_service_backed_admin(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    created = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Settings Owner",
+        owner_username="settings-owner",
+        owner_password="secret",
+    )
+    client.force_login(created.owner)
+
+    response = client.post(
+        reverse("admin:partners_partner_change", args=[created.partner.id]),
+        {
+            "name": "Settings Owner Updated",
+            "timezone": "Europe/Warsaw",
+            "default_language": "en",
+            "_save": "Save",
+        },
+    )
+
+    assert response.status_code == 302
+    created.partner.refresh_from_db()
+    assert created.partner.name == "Settings Owner Updated"
+    assert created.partner.timezone == "Europe/Warsaw"
+    assert created.partner.default_language == "en"
+    assert created.partner.status == Partner.Status.SETUP_REQUIRED
+    assert AuditEvent.objects.filter(
+        partner=created.partner,
+        actor=created.owner,
+        event_type="partner.settings_updated",
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_partner_settings_service_enforces_scope_and_supported_language() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    first = create_partner_with_owner(
+        actor=superuser,
+        partner_name="First Settings",
+        owner_username="first-settings-owner",
+        owner_password="secret",
+    )
+    second = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Second Settings",
+        owner_username="second-settings-owner",
+        owner_password="secret",
+    )
+
+    with pytest.raises(PermissionDenied):
+        update_partner_settings(
+            actor=first.owner,
+            partner=second.partner,
+            default_language="en",
+        )
+    with pytest.raises(ValidationError):
+        update_partner_settings(
+            actor=first.owner,
+            partner=first.partner,
+            default_language="de",
+        )
+
+    first.partner.refresh_from_db()
+    second.partner.refresh_from_db()
+    assert first.partner.default_language == "uk"
+    assert second.partner.default_language == "uk"
+    assert not AuditEvent.objects.filter(event_type="partner.settings_updated").exists()
 
 
 @pytest.mark.django_db

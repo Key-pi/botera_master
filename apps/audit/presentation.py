@@ -177,6 +177,7 @@ EVENT_PRESENTATIONS = {
         "settings",
     ),
     "bot.settings_updated": ActivityPresentation("Bot settings updated", "settings"),
+    "partner.settings_updated": ActivityPresentation("Partner settings updated", "settings"),
     "client.created": ActivityPresentation("Client created", "clients_catalog"),
     "client.updated": ActivityPresentation("Client updated", "clients_catalog"),
     "catalog.service_created": ActivityPresentation("Service created", "clients_catalog"),

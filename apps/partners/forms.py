@@ -5,14 +5,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.accounts.models import User
-from apps.partners.models import Partner
+from apps.partners.models import PARTNER_LANGUAGE_CHOICES, Partner
 from core.timezones import get_zone
-
-PARTNER_LANGUAGE_CHOICES = (
-    ("uk", "Ukrainian"),
-    ("ru", "Russian"),
-    ("en", "English"),
-)
 
 
 class PartnerOnboardingAdminForm(forms.ModelForm):

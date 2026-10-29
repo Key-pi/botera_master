@@ -5,7 +5,7 @@ from apps.bot.models import BotInstance, PartnerTelegramContact
 from apps.partners.forms import PartnerOnboardingAdminForm
 from apps.partners.models import Partner
 from apps.partners.selectors import visible_partners_for_user
-from apps.partners.services import create_partner_with_owner
+from apps.partners.services import create_partner_with_owner, update_partner_settings
 from apps.partners.setup import SetupStep, get_partner_setup_status
 
 
@@ -117,7 +117,14 @@ class PartnerAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         if change:
-            super().save_model(request, obj, form, change)
+            stored = update_partner_settings(
+                actor=request.user,
+                partner=obj,
+                partner_name=form.cleaned_data["name"],
+                timezone=form.cleaned_data["timezone"],
+                default_language=form.cleaned_data["default_language"],
+            )
+            _copy_partner_state(target=obj, source=stored)
             return
 
         created = create_partner_with_owner(

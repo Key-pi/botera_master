@@ -2,6 +2,13 @@ from django.db import models
 
 from core.database.models import TimeStampedModel
 
+PARTNER_LANGUAGE_CHOICES = (
+    ("uk", "Ukrainian"),
+    ("ru", "Russian"),
+    ("en", "English"),
+)
+SUPPORTED_PARTNER_LANGUAGES = frozenset(value for value, _label in PARTNER_LANGUAGE_CHOICES)
+
 
 class Partner(TimeStampedModel):
     """Platform tenant for one solo master or future service business."""

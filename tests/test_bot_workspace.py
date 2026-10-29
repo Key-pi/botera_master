@@ -213,6 +213,70 @@ def test_workspace_tab_summaries_stay_partner_scoped(bot_workspace_context) -> N
 
 
 @pytest.mark.django_db
+def test_partner_settings_workspace_updates_defaults_and_audit(bot_workspace_context) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="settings"),
+        {
+            "action": "save_partner_settings",
+            "default_language": "ru",
+            "timezone": "Europe/Warsaw",
+        },
+    )
+
+    assert response.status_code == 302
+    partner.refresh_from_db()
+    assert partner.default_language == "ru"
+    assert partner.timezone == "Europe/Warsaw"
+    assert partner.status == partner.Status.SETUP_REQUIRED
+    event = AuditEvent.objects.get(
+        partner=partner,
+        event_type="partner.settings_updated",
+    )
+    assert event.actor == context["first"].owner
+    assert event.payload_masked == {
+        "previous": {
+            "name": "Workspace Studio",
+            "timezone": "Europe/Kiev",
+            "default_language": "uk",
+        },
+        "current": {
+            "name": "Workspace Studio",
+            "timezone": "Europe/Warsaw",
+            "default_language": "ru",
+        },
+    }
+
+
+@pytest.mark.django_db
+def test_partner_settings_workspace_rejects_unknown_timezone_without_mutation(
+    bot_workspace_context,
+) -> None:
+    context = bot_workspace_context
+    partner = context["first"].partner
+
+    response = context["http_client"].post(
+        _workspace_url(partner_id=partner.id, tab="settings"),
+        {
+            "action": "save_partner_settings",
+            "default_language": "en",
+            "timezone": "Mars/Olympus",
+        },
+    )
+
+    assert response.status_code == 200
+    partner.refresh_from_db()
+    assert partner.default_language == "uk"
+    assert partner.timezone == "Europe/Kiev"
+    assert not AuditEvent.objects.filter(
+        partner=partner,
+        event_type="partner.settings_updated",
+    ).exists()
+
+
+@pytest.mark.django_db
 def test_notifications_workspace_saves_partner_timing_and_audit(bot_workspace_context) -> None:
     context = bot_workspace_context
     partner = context["first"].partner

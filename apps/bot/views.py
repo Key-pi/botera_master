@@ -27,12 +27,14 @@ from apps.bot.forms import (
     BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_CONTENT,
     BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS,
+    BOT_WORKSPACE_ACTION_SAVE_PARTNER_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_PENALTY_SETTINGS,
     BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES,
     BotBookingSettingsWorkspaceForm,
     BotContentWorkspaceActionForm,
     BotContentWorkspaceForm,
     BotNotificationSettingsWorkspaceForm,
+    BotPartnerSettingsWorkspaceForm,
     BotPenaltySettingsWorkspaceForm,
     BotReminderRulesWorkspaceForm,
     BotTokenWorkspaceForm,
@@ -81,7 +83,9 @@ from apps.notifications.services import (
     replace_partner_reminder_rules,
     update_partner_notification_settings,
 )
+from apps.partners.models import Partner
 from apps.partners.selectors import visible_partners_for_user
+from apps.partners.services import update_partner_settings
 from apps.partners.setup import SetupStep, get_partner_setup_status
 from apps.schedule.models import (
     DEFAULT_BOOKING_HORIZON_DAYS,
@@ -139,6 +143,7 @@ def workspace(request):
     reminder_rules_form = None
     booking_settings_form = None
     penalty_settings_form = None
+    partner_settings_form = None
     token_form = (
         BotTokenWorkspaceForm(partner=selected_partner) if selected_partner is not None else None
     )
@@ -170,6 +175,8 @@ def workspace(request):
         penalty_settings_form = _penalty_settings_form(
             penalty_settings_for_partner(partner=selected_partner)
         )
+    if selected_partner is not None and selected_tab == "settings":
+        partner_settings_form = _partner_settings_form(selected_partner)
 
     if request.method == "POST":
         if selected_partner is None:
@@ -210,6 +217,31 @@ def workspace(request):
                             return HttpResponseRedirect(
                                 _workspace_url(partner_id=selected_partner.id, tab="instance")
                             )
+        elif selected_tab == "settings":
+            if action != BOT_WORKSPACE_ACTION_SAVE_PARTNER_SETTINGS:
+                messages.error(request, "Unknown partner settings action.")
+            else:
+                partner_settings_form = BotPartnerSettingsWorkspaceForm(request.POST)
+                if partner_settings_form.is_valid():
+                    try:
+                        update_partner_settings(
+                            actor=request.user,
+                            partner=selected_partner,
+                            timezone=partner_settings_form.cleaned_data["timezone"],
+                            default_language=partner_settings_form.cleaned_data[
+                                "default_language"
+                            ],
+                        )
+                    except (PermissionDenied, ValidationError) as exc:
+                        partner_settings_form.add_error(None, _error_text(exc))
+                    else:
+                        messages.success(request, "Partner defaults saved.")
+                        return HttpResponseRedirect(
+                            _workspace_url(
+                                partner_id=selected_partner.id,
+                                tab="settings",
+                            )
+                        )
         elif selected_tab == "content":
             action_form = BotContentWorkspaceActionForm(request.POST)
             if not action_form.is_valid():
@@ -441,6 +473,7 @@ def workspace(request):
                 reminder_rules_form=reminder_rules_form,
                 booking_settings_form=booking_settings_form,
                 penalty_settings_form=penalty_settings_form,
+                partner_settings_form=partner_settings_form,
             )
         )
     return TemplateResponse(request, "bot/workspace.html", context)
@@ -485,6 +518,7 @@ def _workspace_context(
     reminder_rules_form: BotReminderRulesWorkspaceForm | None = None,
     booking_settings_form: BotBookingSettingsWorkspaceForm | None = None,
     penalty_settings_form: BotPenaltySettingsWorkspaceForm | None = None,
+    partner_settings_form: BotPartnerSettingsWorkspaceForm | None = None,
 ) -> dict:
     bot_instance = bot_instance_for_partner(partner)
     setup_status = get_partner_setup_status(partner)
@@ -505,6 +539,7 @@ def _workspace_context(
         "reminder_rules_form": reminder_rules_form,
         "booking_settings_form": booking_settings_form,
         "penalty_settings_form": penalty_settings_form,
+        "partner_settings_form": partner_settings_form,
         "content_groups": _content_groups(
             overrides=overrides,
             partner_id=partner.id,
@@ -528,6 +563,15 @@ def _workspace_context(
             )
         )
     return context
+
+
+def _partner_settings_form(partner: Partner) -> BotPartnerSettingsWorkspaceForm:
+    return BotPartnerSettingsWorkspaceForm(
+        initial={
+            "default_language": partner.default_language,
+            "timezone": partner.timezone,
+        }
+    )
 
 
 def _notification_settings_form(

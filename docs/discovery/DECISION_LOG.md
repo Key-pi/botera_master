@@ -81,6 +81,10 @@ Status: discovery approved on 2026-08-07.
   late-cancellation/no-show/late-arrival amounts, and the late-arrival threshold. The workspace
   accepts UAH major units, converts them to integer minor units at the form boundary, and delegates
   the complete transactional update and audit event to the finance owner service.
+- 2026-10-28: The Bot Settings workspace lets the partner owner change only the default bot
+  language and partner timezone. Partner lifecycle status remains read-only there and continues to
+  be controlled by setup/launch/superuser suspension workflows. Both the workspace and Partner
+  admin delegate mutable defaults to one tenant-checked, locked, audited partner owner service.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

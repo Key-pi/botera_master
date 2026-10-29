@@ -116,6 +116,9 @@
       display: grid;
       gap: 18px;
     }
+    .bot-settings-form--with-summary {
+      margin-top: 18px;
+    }
     .bot-form-grid {
       display: grid;
       gap: 14px 18px;
@@ -661,13 +664,29 @@
 
       {% elif selected_tab == "settings" %}
         <section class="bot-section">
-          <div class="bot-section-heading"><h2>{% translate "Partner defaults" %}</h2><a class="button" href="{% url 'admin:partners_partner_change' selected_partner.pk %}">{% translate "Edit settings" %}</a></div>
+          <div class="bot-section-heading"><h2>{% translate "Partner defaults" %}</h2></div>
           <div class="bot-section-body">
-            <dl class="bot-settings-grid">
-              <div><dt>{% translate "Language" %}</dt><dd>{{ selected_partner.default_language|upper }}</dd></div>
-              <div><dt>{% translate "Timezone" %}</dt><dd>{{ selected_partner.timezone }}</dd></div>
+            <dl class="bot-status-grid">
               <div><dt>{% translate "Partner status" %}</dt><dd>{{ selected_partner.get_status_display }}</dd></div>
             </dl>
+            <form class="bot-settings-form bot-settings-form--with-summary" method="post" data-confirm="{% translate 'Apply language and timezone changes? Existing local-time views will use the selected timezone.' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="save_partner_settings">
+              {% for error in partner_settings_form.non_field_errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+              <div class="bot-form-grid">
+                <div class="bot-form-field">
+                  {{ partner_settings_form.default_language.label_tag }}
+                  {{ partner_settings_form.default_language }}
+                  {% for error in partner_settings_form.default_language.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="bot-form-field">
+                  {{ partner_settings_form.timezone.label_tag }}
+                  {{ partner_settings_form.timezone }}
+                  {% for error in partner_settings_form.timezone.errors %}<p class="bot-field-errors">{{ error }}</p>{% endfor %}
+                </div>
+              </div>
+              <button class="default bot-form-submit" type="submit">{% translate "Save partner defaults" %}</button>
+            </form>
           </div>
         </section>
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from zoneinfo import available_timezones
 
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -17,6 +18,7 @@ from apps.notifications.models import (
     MIN_MASTER_REMINDER_OFFSET_MINUTES,
     MIN_STALE_REQUESTED_INTERVAL_MINUTES,
 )
+from apps.partners.models import PARTNER_LANGUAGE_CHOICES
 from apps.schedule.models import (
     ALLOWED_SLOT_STEPS,
     MAX_BOOKING_HORIZON_DAYS,
@@ -38,6 +40,11 @@ BOT_WORKSPACE_ACTION_SAVE_NOTIFICATION_SETTINGS = "save_notification_settings"
 BOT_WORKSPACE_ACTION_SAVE_REMINDER_RULES = "save_reminder_rules"
 BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS = "save_booking_settings"
 BOT_WORKSPACE_ACTION_SAVE_PENALTY_SETTINGS = "save_penalty_settings"
+BOT_WORKSPACE_ACTION_SAVE_PARTNER_SETTINGS = "save_partner_settings"
+
+PARTNER_TIMEZONE_CHOICES = tuple(
+    (timezone_name, timezone_name) for timezone_name in sorted(available_timezones())
+)
 
 DURATION_UNIT_CHOICES = (
     ("minutes", "Minutes"),
@@ -130,6 +137,19 @@ class BotWorkspaceActionForm(forms.Form):
             (BOT_WORKSPACE_ACTION_PAUSE, "Pause bot"),
             (BOT_WORKSPACE_ACTION_CREATE_MASTER_LINK, "Connect master Telegram"),
         ),
+    )
+
+
+class BotPartnerSettingsWorkspaceForm(forms.Form):
+    """Validate partner-controlled language and timezone defaults."""
+
+    default_language = forms.ChoiceField(
+        label="Default bot language",
+        choices=PARTNER_LANGUAGE_CHOICES,
+    )
+    timezone = forms.ChoiceField(
+        label="Timezone",
+        choices=PARTNER_TIMEZONE_CHOICES,
     )
 
 
