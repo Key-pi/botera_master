@@ -17,6 +17,14 @@ class Command(BaseCommand):
             action="store_true",
             help="Load runtime configs and report skipped bots without starting polling.",
         )
+        parser.add_argument(
+            "--wait",
+            action="store_true",
+            help=(
+                "Stay alive when no bot is eligible. Restart the process after bot "
+                "token/status changes so runtime configs are loaded again."
+            ),
+        )
 
     def handle(self, *args, **options) -> None:
         result = load_runtime_bot_configs()
@@ -33,6 +41,22 @@ class Command(BaseCommand):
             return
         if not result.configs:
             self.stdout.write(self.style.WARNING("No eligible bots to run."))
+            if options["wait"]:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "Bot runner is idle; restart it after launching a partner bot."
+                    )
+                )
+                try:
+                    asyncio.run(wait_until_stopped())
+                except KeyboardInterrupt:
+                    pass
             return
 
         asyncio.run(run_polling(result.configs))
+
+
+async def wait_until_stopped() -> None:
+    """Keep an empty runner container healthy without polling configuration."""
+
+    await asyncio.Event().wait()

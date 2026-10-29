@@ -3,25 +3,56 @@ x-production-environment: &production-environment
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY to a random production value}
   DJANGO_ALLOWED_HOSTS: ${BOTERA_DOMAIN:?Set BOTERA_DOMAIN}
   DJANGO_CSRF_TRUSTED_ORIGINS: https://${BOTERA_DOMAIN:?Set BOTERA_DOMAIN}
+  POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB for production}
+  POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER for production}
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for production}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD for production}@redis:6379/0
+  CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD for production}@redis:6379/0
+  CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD for production}@redis:6379/1
   BOT_TOKEN_ENCRYPTION_KEYS: ${BOT_TOKEN_ENCRYPTION_KEYS:?Set BOT_TOKEN_ENCRYPTION_KEYS for production}
   BOT_TOKEN_CURRENT_KEY_ID: ${BOT_TOKEN_CURRENT_KEY_ID:?Set BOT_TOKEN_CURRENT_KEY_ID for production}
   TOKEN_FINGERPRINT_KEY: ${TOKEN_FINGERPRINT_KEY:?Set TOKEN_FINGERPRINT_KEY for production}
+  DEMO_SEED: "false"
 
 x-production-app: &production-app
+  image: botera-master:production
   build:
     args:
       INSTALL_DEV: "false"
+  user: app
+  env_file: !override
+    - path: ${BOTERA_PRODUCTION_ENV_FILE:-.env.production}
+      required: true
   environment: *production-environment
 
 services:
   postgres:
     environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB for production}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER for production}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for production}
     ports: !reset []
 
   redis:
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?Set REDIS_PASSWORD for production}
+      - --appendonly
+      - "yes"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD for production}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping
     ports: !reset []
+
+  init:
+    <<: *production-app
+    volumes: !reset []
 
   web:
     <<: *production-app
@@ -105,7 +136,7 @@ services:
       - static_data:/srv/static:ro
       - caddy_data:/data
       - caddy_config:/config
-    restart: unless-stopped
+    restart: always
 
 volumes:
   static_data:

@@ -30,29 +30,41 @@ a raw bot token in a command argument, committed file, issue, or log.
 
 ## Docker Compose pilot stack
 
+Docker is the default local workflow. Copy the example once and generate the
+Fernet/fingerprint secrets using the commands beside those variables:
+
 ```bash
-docker compose build
-docker compose run --rm web python manage.py migrate
-docker compose up -d
+cp .env.example .env
+docker compose up --build -d
 docker compose ps
+docker compose logs init
 ```
 
-The stack runs `web`, `bot-runner`, `celery-beat`, isolated notification and
-broadcast workers, a default/maintenance worker, PostgreSQL, and Redis.
+PostgreSQL and Redis become healthy first. The one-shot `init` service validates
+token-security settings, applies migrations, synchronizes owner permissions,
+and ensures an idempotent local `Preview Studio` demo. Only then do `web`,
+`bot-runner`, `celery-beat`, isolated notification/broadcast workers, and the
+default/maintenance worker start.
+
+Admin is at `http://127.0.0.1:8001/admin/`. Demo usernames and passwords are in
+the ignored `.env`; `init` logs the usernames without printing passwords.
+PostgreSQL and Redis are internal by default. Use
+`infrastructure/docker/compose.ports.yml` only when a host-side database or
+Redis client needs loopback access.
 
 ## Production Compose ingress
 
 Public production deploys use the reviewed overlay with Gunicorn and Caddy:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
-docker compose -f docker-compose.yml -f docker-compose.production.yml build
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
-  run --rm web python manage.py migrate
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+cp .env.production.example .env.production
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml config --quiet
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml up --build -d
 ```
 
-Set the production-only values documented in `.env.example` first. DNS must
+Set every production-only value documented in `.env.production.example`. DNS must
 point `BOTERA_DOMAIN` to the server and public TCP ports `80/443` must reach
 Caddy. Django, PostgreSQL, and Redis are not published by the production
 overlay. See `docs/spec/RUNBOOK_DRAFT.md` for the complete deploy and recovery

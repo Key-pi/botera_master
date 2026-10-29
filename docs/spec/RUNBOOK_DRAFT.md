@@ -12,6 +12,7 @@ replace database delivery records.
 MVP may run on a single VPS/server with Docker Compose.
 
 Required production MVP services:
+- `init` (one-shot startup gate)
 - `web`
 - `bot-runner`
 - `celery-beat`
@@ -31,10 +32,10 @@ Rules:
 - `broadcasts` must not share the urgent notification worker in production MVP.
 - `celery-beat` / scheduler must run explicitly; scheduled features are not supported if beat is down.
 - Docker Compose restart policies and healthchecks are enough for MVP process supervision.
-- Base Compose publishes the local/pilot web, PostgreSQL, and Redis host ports
-  on `127.0.0.1` only. The production overlay publishes only Caddy on TCP
-  `80/443` and UDP `443`; Django, PostgreSQL, and Redis stay on the internal
-  Compose network.
+- Base Compose publishes only the local/pilot web port on `127.0.0.1`.
+  PostgreSQL and Redis stay on the internal network unless the explicit
+  `infrastructure/docker/compose.ports.yml` development override is used. The
+  production overlay publishes only Caddy on TCP `80/443` and UDP `443`.
 - Production HTTP is served by Gunicorn behind Caddy. Caddy owns automatic TLS,
   HTTPS redirect, and static-file delivery. Its persistent data/config volumes
   must survive deploys because they contain certificate state.
@@ -46,6 +47,46 @@ Rules:
 
 ## Standard Deploy / Restart Procedure
 
+### Local Docker pilot
+
+Docker Compose is the default local workflow. It uses PostgreSQL rather than a
+separate SQLite state, so locks, migrations, bot runtime, Celery delivery, and
+the admin all exercise the same deployment shape.
+
+1. Copy `.env.example` to ignored `.env`.
+2. Generate the Fernet key and independent fingerprint secret using the
+   commands in that file. Keep those values stable after storing bot tokens.
+3. Run `docker compose up --build -d`.
+4. Inspect `docker compose logs init`. The idempotent init service validates
+   bot-token security, runs checks/migrations, synchronizes owner permissions,
+   and ensures local demo users, catalog, booking settings, and seven upcoming
+   availability windows.
+5. Open `http://127.0.0.1:${WEB_PORT_ON_HOST:-8001}/admin/`. Add the real test
+   token through **Bot instances**; never put it in `.env` or a CLI argument.
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+docker compose ps
+docker compose logs init
+docker compose logs -f web bot-runner notifications-worker broadcast-worker
+```
+
+The web source is bind-mounted and auto-reloads. Restart workers, beat, or the
+bot runner after changing their code. Bot token/status changes also require
+`docker compose restart bot-runner`; `--wait` only keeps an empty runner alive
+and does not implement hot reload.
+
+PostgreSQL and Redis intentionally have no host ports. For temporary host-side
+CLI access, use:
+
+```bash
+docker compose -f docker-compose.yml \
+  -f infrastructure/docker/compose.ports.yml up -d postgres redis
+```
+
+### Public production
+
 The base `docker-compose.yml` remains the local/pilot stack. Public production
 deploys explicitly add `docker-compose.production.yml`. The overlay requires
 Docker Compose 2.24.4 or newer for `!reset` / `!override` merge tags.
@@ -55,43 +96,47 @@ Before the first public deploy:
    broken AAAA record when the host has no working public IPv6.
 2. Allow inbound TCP `80/443`; allow UDP `443` when HTTP/3 is desired. Do not
    expose the Django, PostgreSQL, or Redis container ports.
-3. Prepare `.env` from `.env.example`. Set a random `DJANGO_SECRET_KEY` of at
-   least 50 characters, a strong `POSTGRES_PASSWORD`, the real
-   `BOTERA_DOMAIN`, and all three bot-token encryption/fingerprint settings.
+3. Prepare `.env.production` from `.env.production.example`. Set a random
+   `DJANGO_SECRET_KEY` of at least 50 characters, strong PostgreSQL and Redis
+   passwords, the real `BOTERA_DOMAIN`, and all three bot-token
+   encryption/fingerprint settings.
    Generate the Fernet and fingerprint secrets independently using the commands
-   documented in `.env.example`; do not reuse one secret for both purposes.
+   documented in `.env.production.example`; do not reuse one secret for both
+   purposes.
    Production settings reject development/default secrets, wildcard hosts,
    invalid Fernet key rings, unknown current key ids, and weak/reused
    fingerprint secrets before any production process starts.
-4. Keep `.env` readable only by the deployment account and never commit it.
+4. Keep `.env.production` readable only by the deployment account and never
+   commit it.
 
 Recommended production flow:
 1. Pull the reviewed revision.
 2. Validate the merged Compose configuration.
-3. Build the application image without development dependencies.
-4. Run database migrations before accepting normal traffic.
-5. Start/restart the stack and inspect health.
-6. Run Django checks, owner permission sync, the bot runtime dry-run, and one
+3. Build/start the stack. The one-shot production `init` service runs deployment
+   checks, migrations, and owner permission synchronization before long-running
+   application processes are allowed to start.
+4. Inspect service/init health, run the bot runtime dry-run, and run one
    configured partner readiness check.
-7. Inspect health records and recent masked platform diagnostics.
+5. Inspect health records and recent masked platform diagnostics.
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
-docker compose -f docker-compose.yml -f docker-compose.production.yml build
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
-  run --rm web python manage.py migrate
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
-  exec web python manage.py check --deploy
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
-  exec web python manage.py sync_partner_owner_access
-docker compose -f docker-compose.yml -f docker-compose.production.yml ps
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml config --quiet
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml up --build -d
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml ps
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml logs init
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml \
   exec web python manage.py run_partner_bots --dry-run
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml \
   exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid>
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.production.yml \
   logs --tail=200 caddy web bot-runner celery-beat \
   notifications-worker broadcast-worker default-worker
 ```
@@ -104,8 +149,8 @@ starts; application source comes from the built image, not a host bind mount.
 Use the same two `-f` arguments with `restart bot-runner` after bot
 token/status/setup changes.
 The runner intentionally does not hot-reload configs. A fresh installation with
-no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
-loop; start it after the first partner is eligible.
+no eligible bot stays idle without polling; restart it after the first partner
+becomes eligible.
 
 ## PostgreSQL Backup And Restore Safety
 

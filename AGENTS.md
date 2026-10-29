@@ -129,6 +129,19 @@ Per-app conventions:
   client booking/profile flows.
 - Telegram/network I/O must not happen inside source business transactions.
 
+## Docker workflow rules
+
+- `docker-compose.yml` is the complete local pilot runtime: PostgreSQL, Redis,
+  one-shot init, web, bot runner, beat, and isolated Celery workers.
+- Long-running application services start only after the init service has
+  validated security configuration and applied migrations successfully.
+- PostgreSQL and Redis are internal by default; host ports require the explicit
+  loopback-only development override.
+- Local demo bootstrap is idempotent and must never persist a raw Telegram token.
+- Public production uses `docker-compose.production.yml`, a separate ignored
+  `.env.production`, built image code, an unprivileged application user, and
+  Caddy as the only public ingress.
+
 ## Scheduling and appointment rules
 
 - Availability is based on concrete availability windows, blocked time, booking

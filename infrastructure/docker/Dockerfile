@@ -2,21 +2,30 @@ FROM python:3.12-slim
 
 ARG INSTALL_DEV=false
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --upgrade pip
 
 COPY pyproject.toml README.md /app/
 COPY apps /app/apps
 COPY bot /app/bot
 COPY core /app/core
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
-        pip install --no-cache-dir ".[dev]"; \
+        pip install ".[dev]"; \
     else \
-        pip install --no-cache-dir "."; \
+        pip install "."; \
     fi
 
 COPY . /app
+
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /app/staticfiles \
+    && chown -R app:app /app/staticfiles
+
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

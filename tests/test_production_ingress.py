@@ -23,13 +23,18 @@ def _production_environment(**overrides: str) -> dict[str, str]:
         "DJANGO_ALLOWED_HOSTS": "master.example.com",
         "DJANGO_CSRF_TRUSTED_ORIGINS": "https://master.example.com",
         "BOTERA_DOMAIN": "master.example.com",
+        "POSTGRES_DB": "botera_master",
+        "POSTGRES_USER": "botera_master",
         "POSTGRES_PASSWORD": "database-only-secret",
+        "POSTGRES_HOST": "postgres",
+        "REDIS_PASSWORD": "redis-only-secret-0123456789abcdef",
         "BOT_TOKEN_ENCRYPTION_KEYS": f"main:{PRODUCTION_FERNET_KEY}",
         "BOT_TOKEN_CURRENT_KEY_ID": "main",
         "TOKEN_FINGERPRINT_KEY": "fingerprint-only-secret-0123456789abcdef",
+        "BOTERA_ENV_FILE": ".env.example",
+        "BOTERA_PRODUCTION_ENV_FILE": ".env.production.example",
     }
     environment.pop("DATABASE_URL", None)
-    environment.pop("POSTGRES_DB", None)
     environment.update(overrides)
     return environment
 
@@ -155,6 +160,7 @@ def test_production_compose_exposes_only_caddy_and_uses_image_code() -> None:
     }
 
     app_services = (
+        "init",
         "web",
         "bot-runner",
         "celery-beat",
@@ -170,6 +176,10 @@ def test_production_compose_exposes_only_caddy_and_uses_image_code() -> None:
         assert services[service_name]["environment"]["DJANGO_SETTINGS_MODULE"] == (
             "core.settings.production"
         )
+        assert services[service_name]["user"] == "app"
+
+    assert services["redis"]["command"][:2] == ["redis-server", "--requirepass"]
+    assert services["redis"]["volumes"][0]["target"] == "/data"
 
     web_command = " ".join(services["web"]["command"])
     assert "gunicorn core.wsgi:application" in web_command
