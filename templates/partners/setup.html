@@ -1,0 +1,242 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .setup-workspace {
+      display: grid;
+      gap: 22px;
+      max-width: 1100px;
+    }
+    .setup-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 18px;
+      justify-content: space-between;
+    }
+    .setup-header h1 {
+      font-size: 1.5rem;
+      margin: 0 0 6px;
+    }
+    .setup-subtitle {
+      color: var(--body-quiet-color);
+      margin: 0;
+    }
+    .setup-header-actions,
+    .setup-partner-selector {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .setup-partner-selector label {
+      font-weight: 600;
+    }
+    .setup-partner-selector select {
+      max-width: 280px;
+      min-width: 180px;
+    }
+    .setup-status {
+      border: 1px solid var(--hairline-color);
+      border-radius: 4px;
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 8px;
+      padding: 2px 7px;
+      vertical-align: middle;
+    }
+    .setup-summary {
+      border-left: 4px solid #ba8b00;
+      padding: 4px 0 4px 14px;
+    }
+    .setup-summary--ready {
+      border-left-color: #2e8b57;
+    }
+    .setup-summary h2 {
+      font-size: 1rem;
+      margin: 0 0 8px;
+    }
+    .setup-summary p {
+      margin: 0;
+    }
+    .setup-progress {
+      display: block;
+      margin-top: 10px;
+      max-width: 420px;
+      width: 100%;
+    }
+    .setup-section {
+      margin: 0;
+    }
+    .setup-section-heading {
+      align-items: baseline;
+      background: var(--primary);
+      color: var(--header-color);
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 8px 12px;
+    }
+    .setup-section-heading h2 {
+      background: none;
+      color: inherit;
+      margin: 0;
+      padding: 0;
+    }
+    .setup-section-heading span {
+      color: var(--header-link-color);
+      font-size: 0.8rem;
+    }
+    .setup-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .setup-row {
+      align-items: center;
+      border-bottom: 1px solid var(--hairline-color);
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      padding: 12px;
+    }
+    .setup-row__label {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .setup-row__state {
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      color: #ba8b00;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 7px;
+      white-space: nowrap;
+    }
+    .setup-row__state--done {
+      color: #2e8b57;
+    }
+    .setup-no-access {
+      border-left: 4px solid var(--error-fg);
+      padding-left: 14px;
+    }
+    @media (max-width: 767px) {
+      .setup-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .setup-partner-selector select {
+        max-width: 100%;
+        width: 100%;
+      }
+      .setup-row {
+        align-items: stretch;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .setup-row .button {
+        grid-column: 1 / -1;
+        text-align: center;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+  <main class="setup-workspace">
+    {% if onboarding %}
+      <header class="setup-header">
+        <div>
+          <h1>
+            {% translate "Partner setup" %}: {{ onboarding.partner.name }}
+            <span class="setup-status">{{ onboarding.partner.get_status_display }}</span>
+          </h1>
+          <p class="setup-subtitle">{{ onboarding.partner.timezone }}</p>
+        </div>
+        <div class="setup-header-actions">
+          {% if partners|length > 1 %}
+            <form class="setup-partner-selector" method="get">
+              <label for="setup-partner-select">{% translate "Partner" %}</label>
+              <select id="setup-partner-select" name="partner">
+                {% for partner in partners %}
+                  <option value="{{ partner.pk }}"{% if partner.pk == onboarding.partner.pk %} selected{% endif %}>
+                    {{ partner.name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button type="submit">{% translate "Open" %}</button>
+            </form>
+          {% endif %}
+          <a class="button" href="{% url 'partners:dashboard' %}?partner={{ onboarding.partner.pk }}">
+            {% translate "Back to dashboard" %}
+          </a>
+        </div>
+      </header>
+
+      <section class="setup-summary{% if onboarding.setup_status.is_complete %} setup-summary--ready{% endif %}">
+        <h2>
+          {% blocktranslate with complete=onboarding.required_completed_count total=onboarding.required_total_count %}
+            {{ complete }} of {{ total }} required steps complete
+          {% endblocktranslate %}
+        </h2>
+        {% if onboarding.setup_status.is_complete %}
+          <p>{% translate "Minimum setup is complete. The bot can be launched from Bot controls." %}</p>
+        {% else %}
+          <p>{% translate "Complete every required step before launching the client bot." %}</p>
+        {% endif %}
+        <progress
+          class="setup-progress"
+          value="{{ onboarding.required_completed_count }}"
+          max="{{ onboarding.required_total_count }}"
+        >
+          {{ onboarding.required_completed_count }}/{{ onboarding.required_total_count }}
+        </progress>
+      </section>
+
+      <section class="module setup-section" aria-labelledby="required-setup-heading">
+        <div class="setup-section-heading">
+          <h2 id="required-setup-heading">{% translate "Required setup" %}</h2>
+          <span>{% translate "Required before launch" %}</span>
+        </div>
+        <ol class="setup-list">
+          {% for step in required_steps %}
+            <li class="setup-row">
+              <span class="setup-row__label">{{ step.label }}</span>
+              <span class="setup-row__state{% if step.is_complete %} setup-row__state--done{% endif %}">
+                {% if step.is_complete %}{% translate "Done" %}{% else %}{% translate "Pending" %}{% endif %}
+              </span>
+              <a class="button" href="{{ step.action_url }}">{{ step.action_label }}</a>
+            </li>
+          {% endfor %}
+        </ol>
+      </section>
+
+      <section class="module setup-section" aria-labelledby="operational-setup-heading">
+        <div class="setup-section-heading">
+          <h2 id="operational-setup-heading">{% translate "Connection and launch" %}</h2>
+          <span>{% translate "Operational finish" %}</span>
+        </div>
+        <ol class="setup-list">
+          {% for step in operational_steps %}
+            <li class="setup-row">
+              <span class="setup-row__label">{{ step.label }}</span>
+              <span class="setup-row__state{% if step.is_complete %} setup-row__state--done{% endif %}">
+                {% if step.is_complete %}{% translate "Done" %}{% else %}{% translate "Pending" %}{% endif %}
+              </span>
+              <a class="button" href="{{ step.action_url }}">{{ step.action_label }}</a>
+            </li>
+          {% endfor %}
+        </ol>
+      </section>
+    {% else %}
+      <section class="setup-no-access">
+        <h1>{% translate "Partner setup" %}</h1>
+        <p>{% translate "No partner workspace is available for this account." %}</p>
+      </section>
+    {% endif %}
+  </main>
+{% endblock %}

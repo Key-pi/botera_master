@@ -85,6 +85,11 @@ Status: discovery approved on 2026-08-07.
   language and partner timezone. Partner lifecycle status remains read-only there and continues to
   be controlled by setup/launch/superuser suspension workflows. Both the workspace and Partner
   admin delegate mutable defaults to one tenant-checked, locked, audited partner owner service.
+- 2026-10-29: Partner onboarding uses one composed setup snapshot shared by the owner setup guide,
+  Bot launch checklist, dashboard, and superuser Partner record. The guide links each required and
+  operational step to its tenant-scoped configuration surface; partner selection is always derived
+  from trusted memberships, while the existing superuser-only add form atomically creates the
+  partner, owner account, membership, and module defaults.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

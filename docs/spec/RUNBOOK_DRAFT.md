@@ -75,8 +75,15 @@ Partner creation is controlled by a superuser in the Django admin.
    resource, schedule settings, notification defaults, and penalty defaults.
 4. Give the credentials to the intended owner through an appropriate private
    channel. Do not include credentials in logs or diagnostics.
-5. The owner signs in to the same admin and completes the onboarding checklist
-   shown on their partner record before launching the bot.
+5. The owner signs in to the same admin and opens **Setup guide** from the
+   partner dashboard. Each required and operational step links directly to its
+   tenant-scoped configuration surface.
+
+The setup guide and the superuser Partner record use the same composed setup
+selector, so token, catalog, availability, booking-mode, connection, master
+contact, and launch state cannot drift between the two views. Superusers can
+select any visible partner in the guide; partner owners remain restricted to
+their own membership scope.
 
 Partner-owner access is maintained by one reviewed Django permission group.
 Run `python manage.py sync_partner_owner_access` after deployment when owner
@@ -428,6 +435,5 @@ Forbidden:
 ## Still Implementation-Specific
 
 To finalize in later pilot/admin slices:
-- polished onboarding checklist and dedicated partner creation form
 - production TLS/reverse-proxy and backup/restore commands for the chosen VPS
 - per-bot broadcast parallelism beyond the conservative pilot dispatcher

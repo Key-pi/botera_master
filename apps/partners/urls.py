@@ -6,4 +6,5 @@ app_name = "partners"
 
 urlpatterns = [
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("setup/", views.setup, name="setup"),
 ]

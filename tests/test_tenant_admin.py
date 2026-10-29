@@ -18,7 +18,7 @@ from apps.catalog.models import ServiceCategory
 from apps.finance.models import PartnerPenaltySettings
 from apps.partners.admin import PartnerAdmin
 from apps.partners.models import Partner
-from apps.partners.selectors import visible_partners_for_user
+from apps.partners.selectors import partner_onboarding_snapshot, visible_partners_for_user
 from apps.partners.services import (
     activate_partner_after_setup,
     create_partner_with_owner,
@@ -377,6 +377,68 @@ def test_partner_dashboard_is_partner_scoped(client) -> None:
     assert response.status_code == 200
     assert b"First" in response.content
     assert b"Second" not in response.content
+
+
+@pytest.mark.django_db
+def test_partner_setup_guide_uses_shared_checklist_and_trusted_scope(client) -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    first = create_partner_with_owner(
+        actor=superuser,
+        partner_name="First Setup",
+        owner_username="first-setup-owner",
+        owner_password="secret",
+    )
+    second = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Second Setup",
+        owner_username="second-setup-owner",
+        owner_password="secret",
+    )
+    client.force_login(first.owner)
+
+    response = client.get(reverse("partners:setup"))
+
+    assert response.status_code == 200
+    assert response.context["onboarding"].partner == first.partner
+    assert response.context["onboarding"].required_completed_count == 2
+    assert response.context["onboarding"].required_total_count == 6
+    assert len(response.context["required_steps"]) == 6
+    assert len(response.context["operational_steps"]) == 3
+    assert b"First Setup" in response.content
+    assert b"2 of 6 required steps complete" in response.content
+    assert b"Second Setup" not in response.content
+    assert reverse("bot:workspace").encode() in response.content
+    assert reverse("schedule:calendar").encode() in response.content
+
+    forged_response = client.get(
+        reverse("partners:setup"),
+        {"partner": str(second.partner.id)},
+    )
+
+    assert forged_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_onboarding_snapshot_is_the_shared_source_for_admin_and_bot_checklists() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    created = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Checklist Partner",
+        owner_username="checklist-owner",
+        owner_password="secret",
+    )
+
+    onboarding = partner_onboarding_snapshot(partner=created.partner)
+
+    step_state = {step.key: step.is_complete for step in onboarding.all_steps}
+    assert step_state[SetupStep.LANGUAGE] is True
+    assert step_state[SetupStep.TIMEZONE] is True
+    assert step_state[SetupStep.BOT_TOKEN] is False
+    assert step_state[SetupStep.CATALOG_SERVICE] is False
+    assert step_state[SetupStep.AVAILABILITY_WINDOW] is False
+    assert step_state[SetupStep.BOOKING_CONFIRMATION_MODE] is False
+    assert onboarding.primary_contact is None
+    assert onboarding.bot_instance is None
 
 
 @pytest.mark.django_db

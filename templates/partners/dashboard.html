@@ -259,6 +259,11 @@
               <button type="submit">{% translate "Open" %}</button>
             </form>
           {% endif %}
+          {% if snapshot.missing_setup_labels %}
+            <a class="button" href="{% url 'partners:setup' %}?partner={{ snapshot.partner.pk }}">
+              {% translate "Setup guide" %}
+            </a>
+          {% endif %}
           <a class="button" href="{% url 'admin:appointments_appointment_add' %}">
             {% translate "Create appointment" %}
           </a>
@@ -316,8 +321,10 @@
           <ul>
             {% if snapshot.missing_setup_labels %}
               <li>
-                {% translate "Setup is incomplete:" %}
-                {{ snapshot.missing_setup_labels|join:", " }}.
+                <a href="{% url 'partners:setup' %}?partner={{ snapshot.partner.pk }}">
+                  {% translate "Setup is incomplete:" %}
+                  {{ snapshot.missing_setup_labels|join:", " }}.
+                </a>
               </li>
             {% endif %}
             {% if not snapshot.bot_instance %}

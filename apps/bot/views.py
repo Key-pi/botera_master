@@ -43,7 +43,6 @@ from apps.bot.forms import (
 from apps.bot.models import DEFAULT_TEMPLATE_LANGUAGE, SUPPORTED_TEMPLATE_LANGUAGES, BotInstance
 from apps.bot.selectors import (
     bot_instance_for_partner,
-    primary_master_telegram_contact,
     template_override_for_partner,
     template_overrides_for_partner,
 )
@@ -84,9 +83,8 @@ from apps.notifications.services import (
     update_partner_notification_settings,
 )
 from apps.partners.models import Partner
-from apps.partners.selectors import visible_partners_for_user
+from apps.partners.selectors import partner_onboarding_snapshot, visible_partners_for_user
 from apps.partners.services import update_partner_settings
-from apps.partners.setup import SetupStep, get_partner_setup_status
 from apps.schedule.models import (
     DEFAULT_BOOKING_HORIZON_DAYS,
     DEFAULT_CANCELLATION_DEADLINE_HOURS,
@@ -520,21 +518,17 @@ def _workspace_context(
     penalty_settings_form: BotPenaltySettingsWorkspaceForm | None = None,
     partner_settings_form: BotPartnerSettingsWorkspaceForm | None = None,
 ) -> dict:
-    bot_instance = bot_instance_for_partner(partner)
-    setup_status = get_partner_setup_status(partner)
-    primary_contact = primary_master_telegram_contact(partner)
+    onboarding = partner_onboarding_snapshot(partner=partner)
+    bot_instance = onboarding.bot_instance
     overrides = tuple(template_overrides_for_partner(partner))
 
     context = {
         "bot_instance": bot_instance,
-        "setup_status": setup_status,
-        "setup_steps": _setup_steps(
-            setup_status=setup_status,
-            bot_instance=bot_instance,
-            primary_contact=primary_contact,
-            partner=partner,
+        "setup_status": onboarding.setup_status,
+        "setup_steps": tuple(
+            (step.label, step.is_complete) for step in onboarding.all_steps
         ),
-        "primary_contact": primary_contact,
+        "primary_contact": onboarding.primary_contact,
         "notification_settings_form": notification_settings_form,
         "reminder_rules_form": reminder_rules_form,
         "booking_settings_form": booking_settings_form,
@@ -702,36 +696,6 @@ def _penalty_settings_form(
 
 def _major_amount(amount: int) -> Decimal:
     return Money(amount=amount).to_major_decimal()
-
-
-def _setup_steps(*, setup_status, bot_instance, primary_contact, partner):
-    missing = set(setup_status.missing_steps)
-    checked = bool(
-        bot_instance
-        and bot_instance.last_checked_at
-        and bot_instance.telegram_bot_id
-        and bot_instance.telegram_username
-        and not bot_instance.last_error_code
-    )
-    launched = bool(
-        bot_instance
-        and bot_instance.status == BotInstance.Status.ACTIVE
-        and partner.status == partner.Status.ACTIVE
-    )
-    return (
-        ("Bot token", SetupStep.BOT_TOKEN not in missing),
-        ("Language", SetupStep.LANGUAGE not in missing),
-        ("Timezone", SetupStep.TIMEZONE not in missing),
-        ("Category and service", SetupStep.CATALOG_SERVICE not in missing),
-        ("Availability window", SetupStep.AVAILABILITY_WINDOW not in missing),
-        (
-            "Booking confirmation mode",
-            SetupStep.BOOKING_CONFIRMATION_MODE not in missing,
-        ),
-        ("Telegram connection checked", checked),
-        ("Master Telegram contact", primary_contact is not None),
-        ("Bot launched", launched),
-    )
 
 
 def _content_groups(
