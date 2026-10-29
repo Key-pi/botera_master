@@ -58,7 +58,11 @@ Before the first public deploy:
 3. Prepare `.env` from `.env.example`. Set a random `DJANGO_SECRET_KEY` of at
    least 50 characters, a strong `POSTGRES_PASSWORD`, the real
    `BOTERA_DOMAIN`, and all three bot-token encryption/fingerprint settings.
-   Production settings reject development/default secrets and wildcard hosts.
+   Generate the Fernet and fingerprint secrets independently using the commands
+   documented in `.env.example`; do not reuse one secret for both purposes.
+   Production settings reject development/default secrets, wildcard hosts,
+   invalid Fernet key rings, unknown current key ids, and weak/reused
+   fingerprint secrets before any production process starts.
 4. Keep `.env` readable only by the deployment account and never commit it.
 
 Recommended production flow:

@@ -1,5 +1,6 @@
 from django.core.exceptions import ImproperlyConfigured
 
+from core.security.config import validate_bot_security_configuration
 from core.settings import base as base_settings
 from core.settings.base import *  # noqa: F403
 
@@ -32,6 +33,12 @@ if database["ENGINE"] == "django.db.backends.postgresql" and (
     raise ImproperlyConfigured(
         "POSTGRES_PASSWORD must be a production-only value of at least 16 characters."
     )
+
+validate_bot_security_configuration(
+    encryption_keys=base_settings.BOT_TOKEN_ENCRYPTION_KEYS,
+    current_key_id=base_settings.BOT_TOKEN_CURRENT_KEY_ID,
+    fingerprint_key=base_settings.TOKEN_FINGERPRINT_KEY,
+)
 
 # The application port is private to the Compose network. Only Caddy can reach
 # it, so trusting Caddy's forwarded scheme is safe in this deployment shape.

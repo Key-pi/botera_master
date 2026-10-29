@@ -8,9 +8,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SECRET = "production-only-secret-0123456789abcdef0123456789abcdef"
+PRODUCTION_FERNET_KEY = Fernet.generate_key().decode("utf-8")
 
 
 def _production_environment(**overrides: str) -> dict[str, str]:
@@ -22,9 +24,9 @@ def _production_environment(**overrides: str) -> dict[str, str]:
         "DJANGO_CSRF_TRUSTED_ORIGINS": "https://master.example.com",
         "BOTERA_DOMAIN": "master.example.com",
         "POSTGRES_PASSWORD": "database-only-secret",
-        "BOT_TOKEN_ENCRYPTION_KEYS": "main:test-fernet-key",
+        "BOT_TOKEN_ENCRYPTION_KEYS": f"main:{PRODUCTION_FERNET_KEY}",
         "BOT_TOKEN_CURRENT_KEY_ID": "main",
-        "TOKEN_FINGERPRINT_KEY": "fingerprint-only-secret",
+        "TOKEN_FINGERPRINT_KEY": "fingerprint-only-secret-0123456789abcdef",
     }
     environment.pop("DATABASE_URL", None)
     environment.pop("POSTGRES_DB", None)
@@ -86,6 +88,34 @@ def test_production_settings_reject_default_postgres_password() -> None:
 
     assert result.returncode != 0
     assert "POSTGRES_PASSWORD must be a production-only value" in result.stderr
+
+
+def test_production_settings_reject_invalid_bot_encryption_key() -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "from django.conf import settings; print(settings.DEBUG)"],
+        cwd=REPOSITORY_ROOT,
+        env=_production_environment(BOT_TOKEN_ENCRYPTION_KEYS="main:not-a-fernet-key"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "not a valid Fernet key" in result.stderr
+
+
+def test_production_settings_reject_unknown_current_bot_key() -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "from django.conf import settings; print(settings.DEBUG)"],
+        cwd=REPOSITORY_ROOT,
+        env=_production_environment(BOT_TOKEN_CURRENT_KEY_ID="missing"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "must reference a configured encryption key" in result.stderr
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="Docker Compose is unavailable")
