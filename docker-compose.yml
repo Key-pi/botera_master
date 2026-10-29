@@ -31,7 +31,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-botera_master}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -46,7 +46,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -58,7 +58,7 @@ services:
     <<: *app-service
     command: python manage.py runserver 0.0.0.0:8000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${WEB_HOST_PORT:-8000}:8000"
 
   bot-runner:
     <<: *app-service

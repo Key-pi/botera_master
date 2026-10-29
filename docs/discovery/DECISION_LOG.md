@@ -90,6 +90,10 @@ Status: discovery approved on 2026-08-07.
   operational step to its tenant-scoped configuration surface; partner selection is always derived
   from trusted memberships, while the existing superuser-only add form atomically creates the
   partner, owner account, membership, and module defaults.
+- 2026-10-29: The single-host pilot Compose file publishes web, PostgreSQL, and Redis host ports on
+  loopback only by default. Inter-container traffic stays on the Compose network; PostgreSQL and
+  Redis must not be exposed publicly, and final public web ingress remains a separate reviewed TLS
+  reverse-proxy/application-server decision.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

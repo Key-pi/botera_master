@@ -30,6 +30,13 @@ Rules:
 - `broadcasts` must not share the urgent notification worker in production MVP.
 - `celery-beat` / scheduler must run explicitly; scheduled features are not supported if beat is down.
 - Docker Compose restart policies and healthchecks are enough for MVP process supervision.
+- Compose publishes the pilot web, PostgreSQL, and Redis host ports on
+  `127.0.0.1` only. Containers reach PostgreSQL and Redis through the internal
+  Compose network and service names. Do not expose database or broker ports on
+  `0.0.0.0` or a public VPS interface.
+- Public web traffic must enter through a separately reviewed TLS reverse
+  proxy. The current Compose `web` command is the development/pilot baseline,
+  not the final public production server.
 - Kubernetes/heavier orchestration is not required for MVP.
 - Sentry or equivalent error monitoring is nice-to-have/post-MVP.
 
@@ -37,6 +44,9 @@ Rules:
 
 Recommended flow:
 1. Pull the repository and prepare `.env` from `.env.example` with real secrets.
+   Keep `WEB_HOST_PORT`, `POSTGRES_HOST_PORT`, and `REDIS_HOST_PORT` as
+   loopback-only host mappings; firewall rules are not a substitute for the
+   Compose binding.
 2. Build the application image.
 3. Run database migrations before accepting normal traffic.
 4. Start or restart all services.
