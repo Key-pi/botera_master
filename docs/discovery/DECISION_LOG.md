@@ -94,6 +94,10 @@ Status: discovery approved on 2026-08-07.
   loopback only by default. Inter-container traffic stays on the Compose network; PostgreSQL and
   Redis must not be exposed publicly, and final public web ingress remains a separate reviewed TLS
   reverse-proxy/application-server decision.
+- 2026-10-29: Pilot PostgreSQL backups use custom-format `pg_dump` archives with an immediate
+  `pg_restore --list` verification and off-host storage. Restore rehearsals target a disposable
+  database; restoring the active database remains an explicit incident operation with services
+  stopped and a fresh pre-restore backup, not a one-click repository script.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

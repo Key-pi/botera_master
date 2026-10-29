@@ -99,6 +99,8 @@ ENV/
 [Ll]ib64
 [Ll]ocal
 [Ss]cripts
+!/scripts/
+!/scripts/**
 pyvenv.cfg
 .venv
 pip-selfcheck.json
@@ -128,6 +130,7 @@ pip-selfcheck.json
 .idea/**/dynamic.xml
 .idea/**/uiDesigner.xml
 .idea/**/dbnavigator.xml
+backups/
 
 # Gradle
 .idea/**/gradle.xml

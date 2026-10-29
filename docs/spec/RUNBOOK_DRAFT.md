@@ -73,6 +73,51 @@ The runner intentionally does not hot-reload configs. A fresh installation with
 no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
 loop; start it after the first partner is eligible.
 
+## PostgreSQL Backup And Restore Safety
+
+Create a custom-format PostgreSQL backup from the running Compose database. The
+script writes to the ignored `backups/` directory by default and immediately
+checks that `pg_restore` can read the archive catalog.
+
+```bash
+./scripts/backup_postgres.sh
+BACKUP_DIR=/secure/off-host/path ./scripts/backup_postgres.sh
+./scripts/verify_postgres_backup.sh backups/botera_master_<timestamp>.dump
+```
+
+Rules:
+- Copy successful backups off the VPS and protect them like production data;
+  they contain client and partner business records.
+- A zero-byte file or successful `pg_dump` process alone is not enough. Keep the
+  archive only after the catalog verification succeeds.
+- Rehearse restores into a separate temporary database first. Do not overwrite
+  the active database merely to test a backup.
+- An actual production restore is an incident operation: stop web, bot runner,
+  beat, and workers; create one fresh pre-restore backup; record the selected
+  archive and operator; then restore under an approved recovery plan.
+- Never commit backup archives or place them under the repository working tree
+  for long-term storage.
+
+Example rehearsal against a separate database inside the PostgreSQL container:
+
+```bash
+docker compose exec -T postgres sh -c \
+  'dropdb --if-exists --username="$POSTGRES_USER" botera_master_restore_check'
+docker compose exec -T postgres sh -c \
+  'createdb --username="$POSTGRES_USER" botera_master_restore_check'
+docker compose exec -T postgres sh -c \
+  'pg_restore --exit-on-error --no-owner --no-privileges \
+  --username="$POSTGRES_USER" --dbname=botera_master_restore_check' \
+  < backups/botera_master_<timestamp>.dump
+docker compose exec -T postgres sh -c \
+  'dropdb --username="$POSTGRES_USER" botera_master_restore_check'
+```
+
+The rehearsal commands intentionally target only
+`botera_master_restore_check`. Do not substitute the active database name while
+testing. Final production restore commands depend on the selected VPS backup
+storage and incident procedure and are not automated in the repository.
+
 ## Partner And Owner Onboarding
 
 Partner creation is controlled by a superuser in the Django admin.
