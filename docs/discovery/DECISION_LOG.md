@@ -98,6 +98,14 @@ Status: discovery approved on 2026-08-07.
   `pg_restore --list` verification and off-host storage. Restore rehearsals target a disposable
   database; restoring the active database remains an explicit incident operation with services
   stopped and a fresh pre-restore backup, not a one-click repository script.
+- 2026-10-29: Production ingress dependencies are approved with
+  `PRODUCTION_INGRESS_DEPENDENCIES_APPROVED`. The single-host production overlay uses Gunicorn for
+  Django and pinned Caddy 2.11.7 for automatic TLS/static delivery. Only Caddy publishes public
+  ports; Django, PostgreSQL, and Redis stay internal, and production containers run immutable image
+  code without the local source bind mount.
+- 2026-10-29: Production Django settings fail fast on development/short secrets, wildcard hosts, or
+  missing HTTPS CSRF origins. Caddy/Gunicorn request access logs remain disabled by default because
+  partner admin query strings can contain sensitive business data.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.

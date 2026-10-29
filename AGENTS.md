@@ -19,6 +19,8 @@ approval. Audit, Diagnostics, and Cleanup milestone implementation started on
 2026-10-13 after explicit user approval.
 Pilot Wiring milestone implementation started on 2026-10-13 after explicit
 user approval with `PILOT_WIRING_APPROVED`.
+Production ingress dependencies and the Pilot Wiring ingress slice were
+approved on 2026-10-29 with `PRODUCTION_INGRESS_DEPENDENCIES_APPROVED`.
 Application code is allowed only within the currently approved milestone scope.
 
 ## System summary

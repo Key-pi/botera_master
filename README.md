@@ -39,3 +39,21 @@ docker compose ps
 
 The stack runs `web`, `bot-runner`, `celery-beat`, isolated notification and
 broadcast workers, a default/maintenance worker, PostgreSQL, and Redis.
+
+## Production Compose ingress
+
+Public production deploys use the reviewed overlay with Gunicorn and Caddy:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.production.yml build
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  run --rm web python manage.py migrate
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+```
+
+Set the production-only values documented in `.env.example` first. DNS must
+point `BOTERA_DOMAIN` to the server and public TCP ports `80/443` must reach
+Caddy. Django, PostgreSQL, and Redis are not published by the production
+overlay. See `docs/spec/RUNBOOK_DRAFT.md` for the complete deploy and recovery
+procedure.

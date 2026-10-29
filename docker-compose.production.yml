@@ -1,0 +1,113 @@
+x-production-environment: &production-environment
+  DJANGO_SETTINGS_MODULE: core.settings.production
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY to a random production value}
+  DJANGO_ALLOWED_HOSTS: ${BOTERA_DOMAIN:?Set BOTERA_DOMAIN}
+  DJANGO_CSRF_TRUSTED_ORIGINS: https://${BOTERA_DOMAIN:?Set BOTERA_DOMAIN}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for production}
+  BOT_TOKEN_ENCRYPTION_KEYS: ${BOT_TOKEN_ENCRYPTION_KEYS:?Set BOT_TOKEN_ENCRYPTION_KEYS for production}
+  BOT_TOKEN_CURRENT_KEY_ID: ${BOT_TOKEN_CURRENT_KEY_ID:?Set BOT_TOKEN_CURRENT_KEY_ID for production}
+  TOKEN_FINGERPRINT_KEY: ${TOKEN_FINGERPRINT_KEY:?Set TOKEN_FINGERPRINT_KEY for production}
+
+x-production-app: &production-app
+  build:
+    args:
+      INSTALL_DEV: "false"
+  environment: *production-environment
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for production}
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  web:
+    <<: *production-app
+    command:
+      - sh
+      - -c
+      - >-
+        python manage.py collectstatic --noinput &&
+        exec gunicorn core.wsgi:application
+        --bind 0.0.0.0:8000
+        --workers "$${GUNICORN_WORKERS:-3}"
+        --threads "$${GUNICORN_THREADS:-2}"
+        --timeout "$${GUNICORN_TIMEOUT:-30}"
+        --graceful-timeout 30
+        --keep-alive 5
+        --error-logfile -
+        --capture-output
+    environment:
+      <<: *production-environment
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-30}
+    ports: !reset []
+    expose:
+      - "8000"
+    volumes: !override
+      - static_data:/app/staticfiles
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request;
+          request = urllib.request.Request(
+              'http://127.0.0.1:8000/admin/login/',
+              headers={
+                  'Host': os.environ['DJANGO_ALLOWED_HOSTS'].split(',')[0],
+                  'X-Forwarded-Proto': 'https',
+              },
+          );
+          urllib.request.urlopen(request, timeout=3).read(1)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  bot-runner:
+    <<: *production-app
+    volumes: !reset []
+
+  celery-beat:
+    <<: *production-app
+    volumes: !reset []
+
+  notifications-worker:
+    <<: *production-app
+    volumes: !reset []
+
+  broadcast-worker:
+    <<: *production-app
+    volumes: !reset []
+
+  default-worker:
+    <<: *production-app
+    volumes: !reset []
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    environment:
+      BOTERA_DOMAIN: ${BOTERA_DOMAIN:?Set BOTERA_DOMAIN}
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - static_data:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  static_data:
+  caddy_data:
+  caddy_config:

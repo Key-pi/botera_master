@@ -20,6 +20,7 @@ Required production MVP services:
 - `default-worker`
 - `postgres`
 - `redis`
+- `caddy`
 
 Recommended worker roles:
 - `notifications-worker`: urgent reminders/service notifications, initial concurrency around 4.
@@ -30,45 +31,74 @@ Rules:
 - `broadcasts` must not share the urgent notification worker in production MVP.
 - `celery-beat` / scheduler must run explicitly; scheduled features are not supported if beat is down.
 - Docker Compose restart policies and healthchecks are enough for MVP process supervision.
-- Compose publishes the pilot web, PostgreSQL, and Redis host ports on
-  `127.0.0.1` only. Containers reach PostgreSQL and Redis through the internal
-  Compose network and service names. Do not expose database or broker ports on
-  `0.0.0.0` or a public VPS interface.
-- Public web traffic must enter through a separately reviewed TLS reverse
-  proxy. The current Compose `web` command is the development/pilot baseline,
-  not the final public production server.
+- Base Compose publishes the local/pilot web, PostgreSQL, and Redis host ports
+  on `127.0.0.1` only. The production overlay publishes only Caddy on TCP
+  `80/443` and UDP `443`; Django, PostgreSQL, and Redis stay on the internal
+  Compose network.
+- Production HTTP is served by Gunicorn behind Caddy. Caddy owns automatic TLS,
+  HTTPS redirect, and static-file delivery. Its persistent data/config volumes
+  must survive deploys because they contain certificate state.
+- Caddy and Gunicorn request access logs are disabled by default. Admin search
+  query strings may contain sensitive business data and must not be copied into
+  unredacted technical logs.
 - Kubernetes/heavier orchestration is not required for MVP.
 - Sentry or equivalent error monitoring is nice-to-have/post-MVP.
 
 ## Standard Deploy / Restart Procedure
 
-Recommended flow:
-1. Pull the repository and prepare `.env` from `.env.example` with real secrets.
-   Keep `WEB_HOST_PORT`, `POSTGRES_HOST_PORT`, and `REDIS_HOST_PORT` as
-   loopback-only host mappings; firewall rules are not a substitute for the
-   Compose binding.
-2. Build the application image.
-3. Run database migrations before accepting normal traffic.
-4. Start or restart all services.
-5. Run Django's system check and inspect process state.
-6. Run the bot runtime dry-run and one configured partner readiness check.
+The base `docker-compose.yml` remains the local/pilot stack. Public production
+deploys explicitly add `docker-compose.production.yml`. The overlay requires
+Docker Compose 2.24.4 or newer for `!reset` / `!override` merge tags.
+
+Before the first public deploy:
+1. Point the public DNS A/AAAA records for `BOTERA_DOMAIN` to the VPS. Remove a
+   broken AAAA record when the host has no working public IPv6.
+2. Allow inbound TCP `80/443`; allow UDP `443` when HTTP/3 is desired. Do not
+   expose the Django, PostgreSQL, or Redis container ports.
+3. Prepare `.env` from `.env.example`. Set a random `DJANGO_SECRET_KEY` of at
+   least 50 characters, a strong `POSTGRES_PASSWORD`, the real
+   `BOTERA_DOMAIN`, and all three bot-token encryption/fingerprint settings.
+   Production settings reject development/default secrets and wildcard hosts.
+4. Keep `.env` readable only by the deployment account and never commit it.
+
+Recommended production flow:
+1. Pull the reviewed revision.
+2. Validate the merged Compose configuration.
+3. Build the application image without development dependencies.
+4. Run database migrations before accepting normal traffic.
+5. Start/restart the stack and inspect health.
+6. Run Django checks, owner permission sync, the bot runtime dry-run, and one
+   configured partner readiness check.
 7. Inspect health records and recent masked platform diagnostics.
 
 ```bash
-docker compose build
-docker compose run --rm web python manage.py migrate
-docker compose up -d
-docker compose exec web python manage.py check
-docker compose exec web python manage.py sync_partner_owner_access
-docker compose ps
-docker compose exec web python manage.py run_partner_bots --dry-run
-docker compose exec web python manage.py check_pilot_readiness \
+docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.production.yml build
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  run --rm web python manage.py migrate
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  exec web python manage.py check --deploy
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  exec web python manage.py sync_partner_owner_access
+docker compose -f docker-compose.yml -f docker-compose.production.yml ps
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  exec web python manage.py run_partner_bots --dry-run
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid>
-docker compose logs --tail=200 bot-runner celery-beat \
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  logs --tail=200 caddy web bot-runner celery-beat \
   notifications-worker broadcast-worker default-worker
 ```
 
-Use `docker compose restart bot-runner` after bot token/status/setup changes.
+Verify `https://<BOTERA_DOMAIN>/admin/login/` and one static admin asset after
+startup. Caddy obtains and renews certificates automatically once DNS and public
+ports are correct. `static_data` is populated by `collectstatic` before Gunicorn
+starts; application source comes from the built image, not a host bind mount.
+
+Use the same two `-f` arguments with `restart bot-runner` after bot
+token/status/setup changes.
 The runner intentionally does not hot-reload configs. A fresh installation with
 no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
 loop; start it after the first partner is eligible.
@@ -491,5 +521,5 @@ Forbidden:
 ## Still Implementation-Specific
 
 To finalize in later pilot/admin slices:
-- production TLS/reverse-proxy and backup/restore commands for the chosen VPS
+- concrete VPS provisioning, firewall rules, DNS values, and off-host backup destination
 - per-bot broadcast parallelism beyond the conservative pilot dispatcher
