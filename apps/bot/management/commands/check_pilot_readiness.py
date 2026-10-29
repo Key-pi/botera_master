@@ -6,10 +6,9 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bot.models import BotInstance
-from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import check_bot_connection
 from apps.partners.models import Partner
-from apps.partners.setup import get_partner_setup_status
+from apps.partners.selectors import PartnerOnboardingSnapshot, partner_onboarding_snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,12 +35,13 @@ class Command(BaseCommand):
         except (Partner.DoesNotExist, ValidationError, ValueError) as exc:
             raise CommandError("Partner does not exist.") from exc
 
-        bot_instance = BotInstance.objects.filter(partner=partner).first()
+        onboarding = partner_onboarding_snapshot(partner=partner)
+        bot_instance = onboarding.bot_instance
         if options["check_telegram"] and bot_instance and bot_instance.has_token:
             check_bot_connection(bot_instance)
-            bot_instance.refresh_from_db()
+            onboarding = partner_onboarding_snapshot(partner=partner)
 
-        checks = _readiness_checks(partner=partner, bot_instance=bot_instance)
+        checks = _readiness_checks(onboarding=onboarding)
         self.stdout.write(f"Pilot readiness for {partner.name} ({partner.id})")
         for check in checks:
             marker = "OK" if check.passed else "MISSING"
@@ -57,11 +57,12 @@ class Command(BaseCommand):
 
 def _readiness_checks(
     *,
-    partner: Partner,
-    bot_instance: BotInstance | None,
+    onboarding: PartnerOnboardingSnapshot,
 ) -> tuple[ReadinessCheck, ...]:
-    setup = get_partner_setup_status(partner)
-    master_contact = primary_master_telegram_contact(partner)
+    partner = onboarding.partner
+    setup = onboarding.setup_status
+    bot_instance = onboarding.bot_instance
+    master_contact = onboarding.primary_contact
     bot_status = bot_instance.status if bot_instance else "missing"
     bot_error = bot_instance.last_error_code if bot_instance else ""
     identity_known = bool(

@@ -18,7 +18,6 @@ These are important for quality, but they should not block the high-level final 
 - What exact localized labels and visual/detail treatment should appointment history use for cancelled, rescheduled, completed, no-show, penalty, and failed-notification events?
 - What exact localized copy should Telegram pagination controls use for each supported language?
 - What exact default localized wording should be seeded for the approved multilingual content registry in `uk`, `ru`, and `en`?
-- What exact visual/copy treatment should the partner onboarding checklist/setup guide use in admin?
 - What exact broadcast backoff intervals, global broadcast safety limits, worker thresholds, and alert thresholds should be used beyond the approved 0.5 seconds per bot minimum pacing?
 - What confirmed MVP features can be delayed if implementation gets too large, and what is the minimum pilot path for the first real partner?
 
@@ -36,6 +35,7 @@ These are important for quality, but they should not block the high-level final 
 - `docs/spec/RUNBOOK_DRAFT.md` is approved as the MVP operational runbook direction. Exact Docker Compose service names, Django management commands, URLs, and host log commands are finalized during implementation when those artifacts exist.
 - `docs/spec/DIAGNOSTICS_TAXONOMY.md` is approved as the MVP platform-diagnostic taxonomy. Exact enum/class names, metadata schemas, aggregation/deduplication behavior, and superuser dashboard filters are finalized during implementation.
 - Operational retention direction is approved: noisy delivery/broadcast/system diagnostic records default to 3 months, partner-visible audit to 6 months, and core business history is retained while partner data is retained.
+- Partner onboarding uses a dedicated owner-facing setup guide with required and operational sections, progress, completion states, and direct tenant-scoped action links. Dashboard, Bot workspace, Partner admin, and pilot-readiness checks derive setup facts from the same composed onboarding selector.
 
 ## Product Validation And Risk
 

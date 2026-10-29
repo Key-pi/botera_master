@@ -79,11 +79,12 @@ Partner creation is controlled by a superuser in the Django admin.
    partner dashboard. Each required and operational step links directly to its
    tenant-scoped configuration surface.
 
-The setup guide and the superuser Partner record use the same composed setup
-selector, so token, catalog, availability, booking-mode, connection, master
-contact, and launch state cannot drift between the two views. Superusers can
-select any visible partner in the guide; partner owners remain restricted to
-their own membership scope.
+The setup guide, Bot workspace, superuser Partner record, and
+`check_pilot_readiness` command use the same composed setup selector, so token,
+catalog, availability, booking-mode, connection, master contact, and launch
+state cannot drift between the operational views. Superusers can select any
+visible partner in the guide; partner owners remain restricted to their own
+membership scope.
 
 Partner-owner access is maintained by one reviewed Django permission group.
 Run `python manage.py sync_partner_owner_access` after deployment when owner
