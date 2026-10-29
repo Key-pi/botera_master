@@ -1,7 +1,7 @@
 # BoteraMaster MVP Runbook
 
 Status: implemented operational baseline for the approved Pilot Wiring milestone.
-Last updated: 2026-10-22.
+Last updated: 2026-10-29.
 
 This runbook covers the implemented single-host Docker Compose pilot. Durable
 business state remains in PostgreSQL; Redis and Celery transport work but do not
@@ -202,7 +202,9 @@ encryption and duplicate fingerprint checks are applied.
 
 ## Health Dashboard Checklist
 
-Superuser health dashboard should show:
+Open **Audit > Worker heartbeats** as a superuser. The changelist includes a
+composed health dashboard above the individual durable heartbeat records. It
+shows:
 - overall status: OK / Warning / Critical
 - `web`
 - `bot-runner`
@@ -217,6 +219,17 @@ Superuser health dashboard should show:
 - PostgreSQL connectivity
 - Redis connectivity
 - recent platform diagnostics count by severity
+
+The PostgreSQL row is healthy when the dashboard's composed queries complete.
+The Redis/broker row is intentionally inferred from scheduled Celery heartbeat
+tasks reaching beat and the isolated workers; the web request does not make a
+blocking Redis network call. Use container logs and the Redis checks below when
+that inferred row is Warning or Critical.
+
+The polling runner records its own durable heartbeat once per minute while it
+is running. Celery worker/beat heartbeats are scheduled through their target
+queues, so a stale row indicates a real scheduler, broker, routing, or worker
+problem rather than only an old display value.
 
 Partner-facing admin shows only partner-relevant bot health/status, not internal queue/worker infrastructure.
 
@@ -416,6 +429,5 @@ Forbidden:
 
 To finalize in later pilot/admin slices:
 - polished onboarding checklist and dedicated partner creation form
-- a dedicated composed health dashboard URL beyond current Django admin records
 - production TLS/reverse-proxy and backup/restore commands for the chosen VPS
 - per-bot broadcast parallelism beyond the conservative pilot dispatcher

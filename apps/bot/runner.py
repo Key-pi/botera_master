@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from asgiref.sync import sync_to_async
 
+from apps.audit.models import PlatformDiagnostic
+from apps.audit.services import record_worker_heartbeat
 from apps.bot.context import BotRuntimeContext
 from apps.bot.middleware import PartnerContextMiddleware
 from apps.bot.models import BotInstance
 from apps.bot.routers import build_partner_router
 from apps.bot.runtime import RuntimeBotConfig
+
+BOT_RUNNER_HEARTBEAT_INTERVAL_SECONDS = 60
 
 
 async def run_polling(configs: tuple[RuntimeBotConfig, ...]) -> None:
@@ -19,7 +24,23 @@ async def run_polling(configs: tuple[RuntimeBotConfig, ...]) -> None:
     runtime config, not from callback payloads or visible Telegram data.
     """
 
-    await asyncio.gather(*(_run_single_bot(config) for config in configs))
+    heartbeat_task = asyncio.create_task(_record_bot_runner_heartbeat_loop())
+    try:
+        await asyncio.gather(*(_run_single_bot(config) for config in configs))
+    finally:
+        heartbeat_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
+
+
+async def _record_bot_runner_heartbeat_loop() -> None:
+    """Keep one durable current signal for the polling runner process."""
+
+    while True:
+        await sync_to_async(record_worker_heartbeat, thread_sensitive=True)(
+            component=PlatformDiagnostic.Component.BOT_RUNNER,
+        )
+        await asyncio.sleep(BOT_RUNNER_HEARTBEAT_INTERVAL_SECONDS)
 
 
 async def _run_single_bot(config: RuntimeBotConfig) -> None:

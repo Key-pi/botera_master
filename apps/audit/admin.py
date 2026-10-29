@@ -17,7 +17,12 @@ from apps.audit.presentation import (
     activity_target_presentation,
     activity_title,
 )
-from apps.audit.selectors import audit_events_visible_to_user, platform_diagnostics_visible_to_user
+from apps.audit.selectors import (
+    audit_events_visible_to_user,
+    platform_diagnostics_visible_to_user,
+    platform_health_snapshot,
+)
+from apps.audit.services import evaluate_worker_heartbeat
 from core.admin import PartnerScopedAdminMixin
 from core.timezones import to_partner_time
 
@@ -46,6 +51,23 @@ class ActivityCategoryFilter(admin.SimpleListFilter):
         for prefix in prefixes:
             category_query |= Q(event_type__startswith=prefix)
         return queryset.filter(category_query) if prefixes else queryset.none()
+
+
+class DiagnosticResolutionFilter(admin.SimpleListFilter):
+    """Keep unresolved operational problems one click away from health."""
+
+    title = "resolution"
+    parameter_name = "resolution"
+
+    def lookups(self, request, model_admin):
+        return (("active", "Unresolved"), ("resolved", "Resolved"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "active":
+            return queryset.filter(resolved_at__isnull=True)
+        if self.value() == "resolved":
+            return queryset.filter(resolved_at__isnull=False)
+        return queryset
 
 
 @admin.register(AuditEvent)
@@ -255,7 +277,7 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 @admin.register(PlatformDiagnostic)
 class PlatformDiagnosticAdmin(admin.ModelAdmin):
     list_display = ["component", "severity", "code", "partner", "queue", "worker", "created_at"]
-    list_filter = ["component", "severity", "code", "partner"]
+    list_filter = [DiagnosticResolutionFilter, "component", "severity", "code", "partner"]
     search_fields = ["code", "message", "queue", "worker", "target_type", "target_id"]
     autocomplete_fields = ["partner"]
     readonly_fields = [
@@ -281,11 +303,12 @@ class PlatformDiagnosticAdmin(admin.ModelAdmin):
 
 @admin.register(WorkerHeartbeat)
 class WorkerHeartbeatAdmin(admin.ModelAdmin):
+    change_list_template = "admin/audit/workerheartbeat/change_list.html"
     list_display = [
         "component",
         "queue",
         "worker",
-        "status",
+        "current_status",
         "last_seen_at",
         "last_success_at",
         "last_error_at",
@@ -307,14 +330,36 @@ class WorkerHeartbeatAdmin(admin.ModelAdmin):
         "updated_at",
     ]
 
-    def has_add_permission(self, request):
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset if request.user.is_superuser else queryset.none()
+
+    def changelist_view(self, request, extra_context=None):
+        context = {
+            "title": "Platform health",
+            "health_snapshot": platform_health_snapshot(),
+        }
+        context.update(extra_context or {})
+        return super().changelist_view(request, extra_context=context)
+
+    @admin.display(description="Current status", ordering="status")
+    def current_status(self, obj: WorkerHeartbeat) -> str:
+        return WorkerHeartbeat.Status(evaluate_worker_heartbeat(obj)).label
+
+    def has_module_permission(self, request):
         return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return False
 
     def has_change_permission(self, request, obj=None):
-        return request.user.is_superuser
+        return False
 
     def has_delete_permission(self, request, obj=None):
-        return request.user.is_superuser
+        return False
 
 
 def _partner_datetime(value, timezone_name: str) -> str:
