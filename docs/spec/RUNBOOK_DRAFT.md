@@ -56,8 +56,8 @@ the admin all exercise the same deployment shape.
 1. Copy `.env.example` to ignored `.env`.
 2. Generate the Fernet key and independent fingerprint secret using the
    commands in that file. Keep those values stable after storing bot tokens.
-3. Run `docker compose up --build -d`.
-4. Inspect `docker compose logs init`. The idempotent init service validates
+3. Run `./scripts/compose.sh dev up --build -d`.
+4. Inspect `./scripts/compose.sh dev logs init`. The idempotent init service validates
    bot-token security, runs checks/migrations, synchronizes owner permissions,
    and ensures local demo users, catalog, booking settings, and seven upcoming
    availability windows.
@@ -66,22 +66,22 @@ the admin all exercise the same deployment shape.
 
 ```bash
 cp .env.example .env
-docker compose up --build -d
-docker compose ps
-docker compose logs init
-docker compose logs -f web bot-runner notifications-worker broadcast-worker
+./scripts/compose.sh dev up --build -d
+./scripts/compose.sh dev ps
+./scripts/compose.sh dev logs init
+./scripts/compose.sh dev logs -f web bot-runner notifications-worker broadcast-worker
 ```
 
 The web source is bind-mounted and auto-reloads. Restart workers, beat, or the
 bot runner after changing their code. Bot token/status changes also require
-`docker compose restart bot-runner`; `--wait` only keeps an empty runner alive
+`./scripts/compose.sh dev restart bot-runner`; `--wait` only keeps an empty runner alive
 and does not implement hot reload.
 
 PostgreSQL and Redis intentionally have no host ports. For temporary host-side
 CLI access, use:
 
 ```bash
-docker compose -f docker-compose.yml \
+./scripts/compose.sh dev \
   -f infrastructure/docker/compose.ports.yml up -d postgres redis
 ```
 
@@ -120,24 +120,14 @@ Recommended production flow:
 5. Inspect health records and recent masked platform diagnostics.
 
 ```bash
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml config --quiet
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml up --build -d
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml ps
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml logs init
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml \
-  exec web python manage.py run_partner_bots --dry-run
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml \
-  exec web python manage.py check_pilot_readiness \
+./scripts/compose.sh prod config --quiet
+./scripts/compose.sh prod up --build -d
+./scripts/compose.sh prod ps
+./scripts/compose.sh prod logs init
+./scripts/compose.sh prod exec web python manage.py run_partner_bots --dry-run
+./scripts/compose.sh prod exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid>
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml \
-  logs --tail=200 caddy web bot-runner celery-beat \
+./scripts/compose.sh prod logs --tail=200 caddy web bot-runner celery-beat \
   notifications-worker broadcast-worker default-worker
 ```
 
@@ -146,8 +136,8 @@ startup. Caddy obtains and renews certificates automatically once DNS and public
 ports are correct. `static_data` is populated by `collectstatic` before Gunicorn
 starts; application source comes from the built image, not a host bind mount.
 
-Use the same two `-f` arguments with `restart bot-runner` after bot
-token/status/setup changes.
+Use `./scripts/compose.sh prod restart bot-runner` after bot token/status/setup
+changes.
 The runner intentionally does not hot-reload configs. A fresh installation with
 no eligible bot stays idle without polling; restart it after the first partner
 becomes eligible.
@@ -180,15 +170,15 @@ Rules:
 Example rehearsal against a separate database inside the PostgreSQL container:
 
 ```bash
-docker compose exec -T postgres sh -c \
+./scripts/compose.sh prod exec -T postgres sh -c \
   'dropdb --if-exists --username="$POSTGRES_USER" botera_master_restore_check'
-docker compose exec -T postgres sh -c \
+./scripts/compose.sh prod exec -T postgres sh -c \
   'createdb --username="$POSTGRES_USER" botera_master_restore_check'
-docker compose exec -T postgres sh -c \
+./scripts/compose.sh prod exec -T postgres sh -c \
   'pg_restore --exit-on-error --no-owner --no-privileges \
   --username="$POSTGRES_USER" --dbname=botera_master_restore_check' \
   < backups/botera_master_<timestamp>.dump
-docker compose exec -T postgres sh -c \
+./scripts/compose.sh prod exec -T postgres sh -c \
   'dropdb --username="$POSTGRES_USER" botera_master_restore_check'
 ```
 
@@ -330,12 +320,12 @@ flow.
    reports the missing master contact.
 
 ```bash
-docker compose exec web python manage.py check_bot_connection \
+./scripts/compose.sh dev exec web python manage.py check_bot_connection \
   --partner-id <partner-uuid>
-docker compose exec web python manage.py check_pilot_readiness \
+./scripts/compose.sh dev exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid> --check-telegram
-docker compose restart bot-runner
-docker compose logs --tail=200 -f bot-runner notifications-worker
+./scripts/compose.sh dev restart bot-runner
+./scripts/compose.sh dev logs --tail=200 -f bot-runner notifications-worker
 ```
 
 Do not paste a raw token into shell arguments. Partner token setup must use the
@@ -426,12 +416,12 @@ Check when a bot does not respond or partner says the bot is unavailable:
 Commands:
 
 ```bash
-docker compose exec web python manage.py run_partner_bots --dry-run
-docker compose exec web python manage.py check_bot_connection \
+./scripts/compose.sh prod exec web python manage.py run_partner_bots --dry-run
+./scripts/compose.sh prod exec web python manage.py check_bot_connection \
   --partner-id <partner-uuid>
-docker compose exec web python manage.py check_pilot_readiness \
+./scripts/compose.sh prod exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid>
-docker compose logs --tail=200 bot-runner
+./scripts/compose.sh prod logs --tail=200 bot-runner
 ```
 
 MVP runtime does not hot-reload bot token/status changes. After token/status changes, restart/redeploy `bot-runner` for live polling to pick up the new active bot set.

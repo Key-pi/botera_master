@@ -94,10 +94,8 @@ def test_local_compose_has_ordered_isolated_application_stack() -> None:
     }
     result = subprocess.run(
         [
-            "docker",
-            "compose",
-            "-f",
-            "docker-compose.yml",
+            str(REPOSITORY_ROOT / "scripts" / "compose.sh"),
+            "dev",
             "config",
             "--format",
             "json",
@@ -136,6 +134,9 @@ def test_local_compose_has_ordered_isolated_application_stack() -> None:
     )
     for service_name in app_services:
         assert services[service_name]["user"] == "app"
+        assert services[service_name]["environment"]["DJANGO_SETTINGS_MODULE"] == (
+            "core.settings.local"
+        )
         if service_name != "init":
             assert services[service_name]["depends_on"]["init"]["condition"] == (
                 "service_completed_successfully"
@@ -144,3 +145,16 @@ def test_local_compose_has_ordered_isolated_application_stack() -> None:
     assert services["bot-runner"]["command"][-1] == "--wait"
     assert "--schedule=/tmp/celerybeat-schedule" in services["celery-beat"]["command"]
     assert "/health/" in " ".join(services["web"]["healthcheck"]["test"])
+
+
+def test_compose_launcher_rejects_unknown_mode() -> None:
+    result = subprocess.run(
+        [str(REPOSITORY_ROOT / "scripts" / "compose.sh"), "staging", "config"],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Unknown Docker mode: staging" in result.stderr

@@ -2,7 +2,7 @@
 #
 #   cp .env.example .env
 #   # Generate the two secrets documented in .env.example once.
-#   docker compose up --build
+#   ./scripts/compose.sh dev up --build
 #
 # Start order: PostgreSQL/Redis (healthy) -> init (checks, migrations, local
 # demo) -> web, bot runner, beat, and isolated workers.
@@ -20,6 +20,7 @@ x-app-service: &app-service
     - path: ${BOTERA_ENV_FILE:-.env}
       required: true
   environment:
+    DJANGO_SETTINGS_MODULE: core.settings.local
     POSTGRES_DB: ${POSTGRES_DB:-botera_master}
     POSTGRES_USER: ${POSTGRES_USER:-botera_master}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}

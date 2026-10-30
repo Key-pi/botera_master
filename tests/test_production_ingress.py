@@ -127,12 +127,8 @@ def test_production_settings_reject_unknown_current_bot_key() -> None:
 def test_production_compose_exposes_only_caddy_and_uses_image_code() -> None:
     result = subprocess.run(
         [
-            "docker",
-            "compose",
-            "-f",
-            "docker-compose.yml",
-            "-f",
-            "docker-compose.production.yml",
+            str(REPOSITORY_ROOT / "scripts" / "compose.sh"),
+            "prod",
             "config",
             "--format",
             "json",
@@ -144,7 +140,10 @@ def test_production_compose_exposes_only_caddy_and_uses_image_code() -> None:
         capture_output=True,
         text=True,
     )
-    services = json.loads(result.stdout)["services"]
+    config = json.loads(result.stdout)
+    services = config["services"]
+
+    assert config["name"] == "botera-master-production"
 
     for private_service in ("postgres", "redis", "web"):
         assert not services[private_service].get("ports")

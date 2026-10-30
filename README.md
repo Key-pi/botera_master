@@ -35,9 +35,9 @@ Fernet/fingerprint secrets using the commands beside those variables:
 
 ```bash
 cp .env.example .env
-docker compose up --build -d
-docker compose ps
-docker compose logs init
+./scripts/compose.sh dev up --build -d
+./scripts/compose.sh dev ps
+./scripts/compose.sh dev logs init
 ```
 
 PostgreSQL and Redis become healthy first. The one-shot `init` service validates
@@ -58,10 +58,8 @@ Public production deploys use the reviewed overlay with Gunicorn and Caddy:
 
 ```bash
 cp .env.production.example .env.production
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml config --quiet
-docker compose --env-file .env.production \
-  -f docker-compose.yml -f docker-compose.production.yml up --build -d
+./scripts/compose.sh prod config --quiet
+./scripts/compose.sh prod up --build -d
 ```
 
 Set every production-only value documented in `.env.production.example`. DNS must
@@ -69,3 +67,7 @@ point `BOTERA_DOMAIN` to the server and public TCP ports `80/443` must reach
 Caddy. Django, PostgreSQL, and Redis are not published by the production
 overlay. See `docs/spec/RUNBOOK_DRAFT.md` for the complete deploy and recovery
 procedure.
+
+The mode launcher is intentionally strict: `dev` always uses `.env` and local
+settings, while `prod` always uses `.env.production`, the production settings,
+and a separate `botera-master-production` Compose project.

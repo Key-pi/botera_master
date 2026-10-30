@@ -141,6 +141,9 @@ Per-app conventions:
 - Public production uses `docker-compose.production.yml`, a separate ignored
   `.env.production`, built image code, an unprivileged application user, and
   Caddy as the only public ingress.
+- Use `scripts/compose.sh dev ...` and `scripts/compose.sh prod ...` as the
+  mode-safe entry points. Development and production must select explicit
+  settings, env files, and Compose project names.
 
 ## Scheduling and appointment rules
 

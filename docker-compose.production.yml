@@ -1,3 +1,5 @@
+name: botera-master-production
+
 x-production-environment: &production-environment
   DJANGO_SETTINGS_MODULE: core.settings.production
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY to a random production value}
