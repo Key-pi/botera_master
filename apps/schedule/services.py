@@ -448,7 +448,7 @@ def request_schedule_conflict_reschedules(
     current_time = now or timezone.now()
     with transaction.atomic():
         appointments = tuple(
-            Appointment.objects.select_for_update()
+            Appointment.objects.select_for_update(of=("self",))
             .select_related(
                 "partner",
                 "booking_resource",

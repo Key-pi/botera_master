@@ -1179,7 +1179,7 @@ def _prepare_notification_for_delivery(
 ) -> ScheduledNotification | None:
     with transaction.atomic():
         locked = (
-            ScheduledNotification.objects.select_for_update()
+            ScheduledNotification.objects.select_for_update(of=("self",))
             .select_related(
                 "partner",
                 "appointment",
@@ -1217,7 +1217,7 @@ def _record_delivery_result(
 ) -> str:
     with transaction.atomic():
         locked = (
-            ScheduledNotification.objects.select_for_update()
+            ScheduledNotification.objects.select_for_update(of=("self",))
             .select_related(
                 "partner",
                 "appointment",

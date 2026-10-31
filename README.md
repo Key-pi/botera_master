@@ -16,6 +16,14 @@ pytest
 ruff check .
 ```
 
+Before a pilot/release candidate, also run the suite against the Compose
+PostgreSQL backend. The default fast suite uses SQLite and cannot exercise
+PostgreSQL advisory locks or every `SELECT ... FOR UPDATE` rule:
+
+```bash
+./scripts/compose.sh dev exec web pytest -q
+```
+
 ## Bot runtime smoke check
 
 ```bash

@@ -151,7 +151,7 @@ def update_client_profile(
 
     with transaction.atomic():
         profile = (
-            ClientProfile.objects.select_for_update()
+            ClientProfile.objects.select_for_update(of=("self",))
             .select_related("partner", "telegram_identity")
             .get(id=client_profile.id)
         )

@@ -528,7 +528,7 @@ def _prepare_recipient_for_delivery(
             .get(id=recipient.campaign_id)
         )
         locked = (
-            BroadcastRecipient.objects.select_for_update()
+            BroadcastRecipient.objects.select_for_update(of=("self",))
             .select_related(
                 "partner",
                 "campaign",
@@ -573,7 +573,7 @@ def _record_broadcast_delivery_result(
             .get(id=recipient.campaign_id)
         )
         locked = (
-            BroadcastRecipient.objects.select_for_update()
+            BroadcastRecipient.objects.select_for_update(of=("self",))
             .select_related("partner", "campaign", "client_profile")
             .get(id=recipient.id)
         )

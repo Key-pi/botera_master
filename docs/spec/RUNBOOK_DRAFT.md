@@ -77,6 +77,15 @@ bot runner after changing their code. Bot token/status changes also require
 `./scripts/compose.sh dev restart bot-runner`; `--wait` only keeps an empty runner alive
 and does not implement hot reload.
 
+Before treating a pilot/release candidate as ready, run the complete suite in
+the web container as well as the fast host-side suite. The container run uses
+an isolated PostgreSQL test database and covers backend-specific advisory-lock
+and row-lock behavior that SQLite cannot validate:
+
+```bash
+./scripts/compose.sh dev exec web pytest -q
+```
+
 PostgreSQL and Redis intentionally have no host ports. For temporary host-side
 CLI access, use:
 

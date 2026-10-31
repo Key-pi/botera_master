@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -341,7 +341,15 @@ def test_confirmed_creation_uses_booking_resource_lock_wrapper(
 
 
 @pytest.mark.django_db
-def test_strict_postgres_advisory_lock_helper_fails_on_sqlite():
+def test_strict_postgres_advisory_lock_helper_matches_database_backend():
+    if connection.vendor == "postgresql":
+        with transaction.atomic():
+            acquire_postgres_advisory_xact_lock(
+                namespace=BOOKING_RESOURCE_ADVISORY_LOCK_NAMESPACE,
+                lock_key=1,
+            )
+        return
+
     with transaction.atomic(), pytest.raises(RuntimeError, match="PostgreSQL"):
         acquire_postgres_advisory_xact_lock(
             namespace=BOOKING_RESOURCE_ADVISORY_LOCK_NAMESPACE,

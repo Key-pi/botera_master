@@ -104,7 +104,7 @@ def _prepare_message_for_delivery(
     now = timezone.now()
     with transaction.atomic():
         locked = (
-            ConversationMessage.objects.select_for_update()
+            ConversationMessage.objects.select_for_update(of=("self",))
             .select_related("partner", "client_profile", "client_profile__telegram_identity")
             .get(id=message.id)
         )
@@ -132,7 +132,7 @@ def _record_message_delivery_result(
     now = timezone.now()
     with transaction.atomic():
         locked = (
-            ConversationMessage.objects.select_for_update()
+            ConversationMessage.objects.select_for_update(of=("self",))
             .select_related("partner", "client_profile")
             .get(id=message.id)
         )

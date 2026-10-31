@@ -610,7 +610,7 @@ def select_client_requested_alternative_time(
 
     with transaction.atomic():
         proposal = (
-            AppointmentProposal.objects.select_for_update()
+            AppointmentProposal.objects.select_for_update(of=("self",))
             .select_related("partner", "appointment", "created_by")
             .get(id=proposal.id)
         )
