@@ -1,4 +1,7 @@
+import asyncio
 from datetime import time, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -22,6 +25,7 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTelegramContactLink
+from apps.bot.routers import build_partner_router
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     bind_master_contact_from_start_payload,
@@ -200,7 +204,66 @@ def test_start_command_without_admin_payload_resolves_partner_client_profile(
 
     assert result.master_contact_bound is False
     assert result.client_profile_id
+    assert result.client_language == "ru"
     assert result.text == f"Добро пожаловать в бот {created.partner.name}."
+
+
+def test_start_router_sends_client_navigation_with_welcome(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(
+            id=555008,
+            username="client",
+            first_name="Client",
+            last_name="",
+            is_premium=False,
+            language_code="ru",
+        ),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+
+    monkeypatch.setattr(
+        "apps.bot.routers.handle_start_command",
+        lambda **_kwargs: SimpleNamespace(
+            text="Добро пожаловать в бот Pilot Partner.",
+            client_language="ru",
+            master_contact_bound=False,
+        ),
+    )
+    router = build_partner_router()
+    start_handler = next(
+        handler.callback
+        for handler in router.message.handlers
+        if handler.callback.__name__ == "start_handler"
+    )
+
+    asyncio.run(
+        start_handler(
+            message=message,
+            command=SimpleNamespace(args=None),
+            partner=partner,
+            state=state,
+        )
+    )
+
+    state.clear.assert_awaited_once()
+    message.answer.assert_awaited_once()
+    text, = message.answer.await_args.args
+    reply_markup = message.answer.await_args.kwargs["reply_markup"]
+    callbacks = {
+        button.callback_data
+        for row in reply_markup.inline_keyboard
+        for button in row
+    }
+    assert text == "Добро пожаловать в бот Pilot Partner."
+    assert callbacks == {
+        "bk:cat:1",
+        "pf:contact",
+        "pf:future:1",
+        "pf:history:1",
+        "pf:lang",
+    }
 
 
 @pytest.mark.django_db

@@ -1,7 +1,8 @@
 # BoteraMaster Implementation Plan
 
-Status: approved implementation-planning document after `IMPLEMENTATION_PLAN_APPROVED` on 2026-10-08; early milestone implementation is in progress after explicit approvals.
-Last updated: 2026-10-13.
+Status: approved implementation plan after `IMPLEMENTATION_PLAN_APPROVED` on
+2026-10-08; all explicitly approved MVP milestones are implemented.
+Last updated: 2026-11-01.
 
 This document translates the approved MVP specification into an implementation sequence. It does not create or approve future application code, migrations, dependencies, AGENTS.md changes, or project skills by itself.
 
@@ -469,8 +470,9 @@ Exit criteria:
 
 ## Pilot Wiring Milestone
 
-Status: implementation started on 2026-10-13 after explicit approval with
-`PILOT_WIRING_APPROVED`.
+Status: implemented on 2026-11-01 after explicit approval with
+`PILOT_WIRING_APPROVED`; production ingress dependencies were approved with
+`PRODUCTION_INGRESS_DEPENDENCIES_APPROVED` on 2026-10-29.
 
 Goal:
 - Turn the implemented domain foundations into a runnable first pilot path

@@ -23,6 +23,7 @@ from apps.bot.profile import (
     build_appointment_history_reply,
     build_appointment_proposal_reply,
     build_cancel_appointment_reply,
+    build_client_start_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
@@ -154,6 +155,21 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     assert "pf:lang" in callbacks
     assert "pf:contact" in callbacks
     assert "bk:cat:1" in callbacks
+
+
+def test_client_start_reply_keeps_welcome_text_and_adds_navigation():
+    reply = build_client_start_reply(
+        text="Добро пожаловать в бот Preview Studio.",
+        language="ru",
+    )
+
+    callbacks = _button_callbacks(reply)
+    assert reply.text == "Добро пожаловать в бот Preview Studio."
+    assert "bk:cat:1" in callbacks
+    assert "pf:future:1" in callbacks
+    assert "pf:history:1" in callbacks
+    assert "pf:lang" in callbacks
+    assert "pf:contact" in callbacks
 
 
 @pytest.mark.django_db

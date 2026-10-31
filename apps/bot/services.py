@@ -68,6 +68,7 @@ class StartCommandResult:
     text: str
     telegram_identity: TelegramIdentity
     client_profile_id: str = ""
+    client_language: str = ""
     master_contact_id: str = ""
     master_contact_bound: bool = False
 
@@ -182,6 +183,7 @@ def handle_start_command(
         text=text,
         telegram_identity=identity,
         client_profile_id=str(profile.id),
+        client_language=profile.language,
     )
 
 

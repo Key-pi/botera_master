@@ -51,6 +51,15 @@ class BotProfileReply:
     reply_markup: InlineKeyboardMarkup | None = None
 
 
+def build_client_start_reply(*, text: str, language: str) -> BotProfileReply:
+    """Attach the existing client navigation to the rendered welcome text."""
+
+    return BotProfileReply(
+        text=text,
+        reply_markup=_profile_main_markup(language=language),
+    )
+
+
 def build_profile_main_reply(
     *,
     partner: Partner,
@@ -73,6 +82,13 @@ def build_profile_main_reply(
             "extra_text": client_profile.extra_client_text,
         },
     )
+    return BotProfileReply(
+        text=text,
+        reply_markup=_profile_main_markup(language=language),
+    )
+
+
+def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
@@ -105,7 +121,7 @@ def build_profile_main_reply(
             )
         ],
     ]
-    return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_contact_master_prompt_reply(

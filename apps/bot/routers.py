@@ -85,6 +85,7 @@ from apps.bot.profile import (
     build_appointment_history_reply,
     build_appointment_proposal_reply,
     build_cancel_appointment_reply,
+    build_client_start_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_profile_language_reply,
@@ -260,7 +261,15 @@ def build_partner_router() -> Router:
                 language_code=user.language_code or "",
                 start_payload=payload,
             )
-            await message.answer(result.text)
+            if result.master_contact_bound:
+                await message.answer(result.text)
+                return
+
+            reply = build_client_start_reply(
+                text=result.text,
+                language=result.client_language or partner.default_language,
+            )
+            await message.answer(reply.text, reply_markup=reply.reply_markup)
         except ValidationError:
             text = await sync_to_async(render_invalid_master_contact_link_message)(partner=partner)
             await message.answer(text)
