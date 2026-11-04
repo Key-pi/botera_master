@@ -541,6 +541,24 @@ def build_partner_router() -> Router:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message()
+    async def fallback_client_menu_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        """Keep unmatched client input from ending in a silent bot response."""
+
+        await state.clear()
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        if profile is None:
+            return
+        reply = await sync_to_async(build_profile_main_reply)(
+            partner=partner,
+            client_profile=profile,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.callback_query(F.data.startswith(f"{BROADCAST_CALLBACK_PREFIX}:"))
     async def broadcast_callback_handler(
         callback: CallbackQuery,

@@ -92,21 +92,19 @@ def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                text=_label("future", language),
-                callback_data=_callback("future", 1),
+                text=_label("book", language),
+                callback_data="bk:cat:1",
             )
         ],
         [
+            InlineKeyboardButton(
+                text=_label("future", language),
+                callback_data=_callback("future", 1),
+            ),
             InlineKeyboardButton(
                 text=_label("history", language),
                 callback_data=_callback("history", 1),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=_label("language", language),
-                callback_data=_callback("lang"),
-            )
+            ),
         ],
         [
             InlineKeyboardButton(
@@ -116,8 +114,8 @@ def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text=_label("book", language),
-                callback_data="bk:cat:1",
+                text=_label("language", language),
+                callback_data=_callback("lang"),
             )
         ],
     ]
@@ -363,6 +361,14 @@ def build_appointment_details_reply(
                 )
             ]
         )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("contact_master", language),
+                    callback_data=_callback("contact"),
+                )
+            ]
+        )
     rows.append([_back_button(_callback(return_action, return_page), language)])
     return BotProfileReply(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
@@ -538,13 +544,30 @@ def build_reschedule_final_confirm_reply(
         start_at=start_at,
         now=now,
     )
+    local_date = to_partner_time(start_at, partner.timezone).date()
     if slot is None:
         return BotProfileReply(
             text=_render(
                 partner=partner,
                 key="booking.slot_taken",
                 language=client_profile.language,
-            )
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        _back_button(
+                            _callback(
+                                "rss",
+                                appointment.id.hex,
+                                local_date.strftime("%Y%m%d"),
+                                return_page,
+                                1,
+                            ),
+                            client_profile.language,
+                        )
+                    ]
+                ]
+            ),
         )
 
     language = client_profile.language
@@ -568,7 +591,6 @@ def build_reschedule_final_confirm_reply(
             context={"tolerance_minutes": str(settings.near_fit_tolerance_minutes)},
         )
         text = f"{text}\n\n{notice}"
-    local_date = to_partner_time(start_at, partner.timezone).date()
     rows = [
         [
             InlineKeyboardButton(
@@ -954,16 +976,35 @@ def build_requested_alternative_final_confirm_reply(
         start_at=start_at,
         now=now,
     )
+    language = client_profile.language
+    return_token = _return_action_token(return_action)
+    local_date = to_partner_time(start_at, partner.timezone).date()
     if slot is None:
         return BotProfileReply(
             text=_render(
                 partner=partner,
                 key="booking.slot_taken",
-                language=client_profile.language,
-            )
+                language=language,
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        _back_button(
+                            _callback(
+                                "pas",
+                                proposal.id.hex,
+                                local_date.strftime("%Y%m%d"),
+                                return_token,
+                                return_page,
+                                1,
+                            ),
+                            language,
+                        )
+                    ]
+                ]
+            ),
         )
 
-    language = client_profile.language
     text = _render(
         partner=partner,
         key="appointment.reschedule_requested",
@@ -985,8 +1026,6 @@ def build_requested_alternative_final_confirm_reply(
         )
         text = f"{text}\n\n{notice}"
 
-    return_token = _return_action_token(return_action)
-    local_date = to_partner_time(start_at, partner.timezone).date()
     rows = [
         [
             InlineKeyboardButton(

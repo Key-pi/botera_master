@@ -266,6 +266,58 @@ def test_start_router_sends_client_navigation_with_welcome(monkeypatch):
     }
 
 
+def test_unmatched_client_message_returns_main_menu(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    profile = SimpleNamespace(language="uk")
+    reply_markup = SimpleNamespace(inline_keyboard=[])
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(
+            id=555009,
+            username="client",
+            first_name="Client",
+            last_name="",
+            is_premium=False,
+            language_code="uk",
+        ),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+    profile_resolver = AsyncMock(return_value=profile)
+
+    monkeypatch.setattr(
+        "apps.bot.routers._client_profile_for_message",
+        profile_resolver,
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers.build_profile_main_reply",
+        lambda **_kwargs: SimpleNamespace(
+            text="Головне меню",
+            reply_markup=reply_markup,
+        ),
+    )
+    router = build_partner_router()
+    fallback_handler = next(
+        handler.callback
+        for handler in router.message.handlers
+        if handler.callback.__name__ == "fallback_client_menu_handler"
+    )
+
+    asyncio.run(
+        fallback_handler(
+            message=message,
+            partner=partner,
+            state=state,
+        )
+    )
+
+    state.clear.assert_awaited_once()
+    profile_resolver.assert_awaited_once_with(message=message, partner=partner)
+    message.answer.assert_awaited_once_with(
+        "Головне меню",
+        reply_markup=reply_markup,
+    )
+
+
 @pytest.mark.django_db
 def test_start_command_with_admin_payload_binds_master_contact(partner_with_bot_username):
     created = partner_with_bot_username

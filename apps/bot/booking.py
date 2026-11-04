@@ -67,7 +67,14 @@ def build_booking_categories_reply(
     selected_ids = _coerce_service_ids(selected_service_ids)
     category_page = booking_category_page(partner=partner, page=page)
     if not category_page.items:
-        return _reply(partner=partner, key="booking.no_categories", language=language)
+        return _reply(
+            partner=partner,
+            key="booking.no_categories",
+            language=language,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=_empty_catalog_rows(language=language),
+            ),
+        )
 
     rows = [
         [
@@ -114,7 +121,17 @@ def build_booking_services_reply(
         page=page,
     )
     if not services_page.items:
-        return _reply(partner=partner, key="booking.no_services", language=language)
+        return _reply(
+            partner=partner,
+            key="booking.no_services",
+            language=language,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [_back_button(_callback("cat", 1), language)],
+                    *_empty_catalog_rows(language=language),
+                ],
+            ),
+        )
 
     rows = [
         [
@@ -447,6 +464,12 @@ def build_booking_slots_reply(
                             callback_data="pf:contact",
                         )
                     ],
+                    [
+                        InlineKeyboardButton(
+                            text=_label("main_menu", language),
+                            callback_data="pf:main",
+                        )
+                    ],
                 ]
             ),
         )
@@ -726,15 +749,23 @@ def confirm_booking_reply(
         if result.requires_master_confirmation
         else "booking.confirmed_created"
     )
+    appointment = result.appointment
     return _reply(
         partner=partner,
         key=key,
         language=language,
         context={
             "partner_name": partner.name,
-            "services": _appointment_services_label(result.appointment),
+            "services": _appointment_services_label(appointment),
         }
-        | _datetime_context(partner=partner, start_at=result.appointment.start_at),
+        | _datetime_context(partner=partner, start_at=appointment.start_at),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=_booking_created_rows(
+                appointment_id=appointment.id,
+                is_requested=result.requires_master_confirmation,
+                language=language,
+            ),
+        ),
     )
 
 
@@ -968,7 +999,69 @@ def _no_dates_rows(*, language: str) -> list[list[InlineKeyboardButton]]:
                 callback_data="pf:contact",
             )
         ],
+        [
+            InlineKeyboardButton(
+                text=_label("main_menu", language),
+                callback_data="pf:main",
+            )
+        ],
     ]
+
+
+def _empty_catalog_rows(*, language: str) -> list[list[InlineKeyboardButton]]:
+    return [
+        [
+            InlineKeyboardButton(
+                text=_label("contact_master", language),
+                callback_data="pf:contact",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=_label("main_menu", language),
+                callback_data="pf:main",
+            )
+        ],
+    ]
+
+
+def _booking_created_rows(
+    *,
+    appointment_id: UUID,
+    is_requested: bool,
+    language: str,
+) -> list[list[InlineKeyboardButton]]:
+    rows: list[list[InlineKeyboardButton]] = []
+    if is_requested:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("cancel_request", language),
+                    callback_data=(
+                        f"pf:cancel:{appointment_id.hex}:future:1"
+                    ),
+                )
+            ]
+        )
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_label("open_appointment", language),
+                    callback_data=(
+                        f"pf:details:{appointment_id.hex}:future:1"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=_label("main_menu", language),
+                    callback_data="pf:main",
+                )
+            ],
+        ]
+    )
+    return rows
 
 
 def _back_button(callback_data: str, language: str) -> InlineKeyboardButton:
@@ -1169,6 +1262,21 @@ def _label(key: str, language: str) -> str:
             "uk": "Написати майстру",
             "ru": "Написать мастеру",
             "en": "Message master",
+        },
+        "main_menu": {
+            "uk": "Головне меню",
+            "ru": "Главное меню",
+            "en": "Main menu",
+        },
+        "open_appointment": {
+            "uk": "Відкрити запис",
+            "ru": "Открыть запись",
+            "en": "Open appointment",
+        },
+        "cancel_request": {
+            "uk": "Скасувати заявку",
+            "ru": "Отменить заявку",
+            "en": "Cancel request",
         },
         "done": {"uk": "Готово", "ru": "Готово", "en": "Done"},
         "remove": {"uk": "Прибрати", "ru": "Убрать", "en": "Remove"},

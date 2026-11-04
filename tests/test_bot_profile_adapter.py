@@ -150,6 +150,7 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     callbacks = _button_callbacks(reply)
     assert "Profile: Ira" in reply.text
     assert "Visits: 1" in reply.text
+    assert reply.reply_markup.inline_keyboard[0][0].callback_data == "bk:cat:1"
     assert "pf:future:1" in callbacks
     assert "pf:history:1" in callbacks
     assert "pf:lang" in callbacks
@@ -165,6 +166,7 @@ def test_client_start_reply_keeps_welcome_text_and_adds_navigation():
 
     callbacks = _button_callbacks(reply)
     assert reply.text == "Добро пожаловать в бот Preview Studio."
+    assert reply.reply_markup.inline_keyboard[0][0].callback_data == "bk:cat:1"
     assert "bk:cat:1" in callbacks
     assert "pf:future:1" in callbacks
     assert "pf:history:1" in callbacks
@@ -260,6 +262,7 @@ def test_profile_future_history_and_details_are_paginated(
     assert "confirmed" in details_reply.text
     assert f"pf:cancel:{future.id.hex}:future:1" in _button_callbacks(details_reply)
     assert f"pf:rsd:{future.id.hex}:1:1" in _button_callbacks(details_reply)
+    assert "pf:contact" in _button_callbacks(details_reply)
 
 
 @pytest.mark.django_db
@@ -306,6 +309,14 @@ def test_profile_auto_reschedule_flow_moves_booking_and_notifies_master(
         start_at=new_start,
         now=current_time,
     )
+    stale_start = profile_start + timedelta(days=1)
+    stale = build_reschedule_final_confirm_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        start_at=stale_start,
+        now=current_time,
+    )
     with django_capture_on_commit_callbacks(execute=True):
         confirmed = confirm_reschedule_reply(
             partner=context["partner"],
@@ -320,6 +331,9 @@ def test_profile_auto_reschedule_flow_moves_booking_and_notifies_master(
     )
     assert f"pf:rsf:{appointment.id.hex}:{int(new_start.timestamp())}:1" in _button_callbacks(slots)
     assert f"pf:rsg:{appointment.id.hex}:{int(new_start.timestamp())}:1" in _button_callbacks(final)
+    assert _button_callbacks(stale) == [
+        f"pf:rss:{appointment.id.hex}:{stale_start:%Y%m%d}:1:1"
+    ]
     assert "Booking moved" in confirmed.text
     appointment.refresh_from_db()
     assert appointment.start_at == new_start
@@ -518,6 +532,14 @@ def test_profile_client_can_choose_own_time_for_requested_alternatives(
         start_at=new_start,
         now=current_time,
     )
+    stale_start = profile_start + timedelta(days=1)
+    stale = build_requested_alternative_final_confirm_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+        start_at=stale_start,
+        now=current_time,
+    )
     with django_capture_on_commit_callbacks(execute=True):
         confirmed = confirm_requested_alternative_reply(
             partner=context["partner"],
@@ -537,6 +559,9 @@ def test_profile_client_can_choose_own_time_for_requested_alternatives(
     assert f"pf:pas:{proposal.id.hex}:{profile_start:%Y%m%d}:f:1:1" in callbacks
     assert f"pf:paf:{proposal.id.hex}:{int(new_start.timestamp())}:f:1" in callbacks
     assert f"pf:pag:{proposal.id.hex}:{int(new_start.timestamp())}:f:1" in callbacks
+    assert _button_callbacks(stale) == [
+        f"pf:pas:{proposal.id.hex}:{stale_start:%Y%m%d}:f:1:1"
+    ]
     assert max(len(callback.encode()) for callback in callbacks) <= 64
     assert "Booking moved" in confirmed.text
     appointment.refresh_from_db()
