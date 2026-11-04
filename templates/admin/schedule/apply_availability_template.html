@@ -3,8 +3,8 @@
 
 {% block content %}
   <p>
-    Apply <strong>{{ template_object }}</strong> to concrete availability windows.
-    Existing identical windows from this template are kept and are not duplicated.
+    {% blocktranslate with template=template_object %}Apply <strong>{{ template }}</strong> to concrete availability windows.
+    Existing identical windows from this template are kept and are not duplicated.{% endblocktranslate %}
   </p>
 
   <form method="post">
@@ -15,8 +15,8 @@
     <input type="hidden" name="select_across" value="0">
     <input type="hidden" name="confirm_apply" value="1">
     <div class="submit-row">
-      <input type="submit" value="Apply template" class="default">
-      <a href="{% url opts|admin_urlname:'changelist' %}">Cancel</a>
+      <input type="submit" value="{% translate 'Apply template' %}" class="default">
+      <a href="{% url opts|admin_urlname:'changelist' %}">{% translate "Cancel" %}</a>
     </div>
   </form>
 {% endblock %}

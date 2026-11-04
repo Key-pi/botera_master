@@ -11,6 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from apps.bot.content import (
     SYSTEM_TEMPLATE_DEFINITION_BY_KEY,
@@ -98,23 +99,96 @@ from core.money import Money
 
 BOT_WORKSPACE_DEFAULT_TAB = "instance"
 BOT_WORKSPACE_TAB_LABELS = {
-    "instance": "Instance",
-    "settings": "Settings",
-    "content": "Content",
-    "notifications": "Notifications",
-    "booking": "Booking",
-    "penalties": "Penalties",
+    "instance": _("Instance"),
+    "settings": _("Settings"),
+    "content": _("Content"),
+    "notifications": _("Notifications"),
+    "booking": _("Booking"),
+    "penalties": _("Penalties"),
 }
 CONTENT_GROUP_LABELS = {
-    "start": "Start and welcome",
-    "booking": "Booking",
-    "appointment": "Appointments",
-    "master": "Master notifications",
-    "reminder": "Reminders",
-    "profile": "Client profile",
-    "penalty": "Penalties",
-    "messaging": "Messaging",
-    "broadcast": "Broadcast buttons",
+    "start": _("Start and welcome"),
+    "booking": _("Booking"),
+    "appointment": _("Appointments"),
+    "master": _("Master notifications"),
+    "reminder": _("Reminders"),
+    "profile": _("Client profile"),
+    "penalty": _("Penalties"),
+    "messaging": _("Messaging"),
+    "broadcast": _("Broadcast buttons"),
+}
+CONTENT_TEMPLATE_LABELS = {
+    "start.welcome": _("Welcome"),
+    "start.choose_language": _("Language selection"),
+    "start.profile_incomplete": _("Incomplete profile"),
+    "booking.category_select": _("Category selection"),
+    "booking.service_select": _("Service selection"),
+    "booking.summary": _("Booking summary"),
+    "booking.date_select": _("Date selection"),
+    "booking.time_select": _("Time selection"),
+    "booking.near_fit_notice": _("Near-fit notice"),
+    "booking.comment_prompt": _("Booking comment prompt"),
+    "booking.final_confirm": _("Final booking confirmation"),
+    "booking.requested_created": _("Booking request created"),
+    "booking.confirmed_created": _("Booking confirmed"),
+    "booking.request_cancelled_by_client": _("Request cancelled by client"),
+    "booking.request_confirmed_by_master": _("Request confirmed by master"),
+    "booking.request_declined_by_master": _("Request declined by master"),
+    "appointment.cancel_confirm_prompt": _("Cancellation confirmation"),
+    "appointment.cancelled_by_client": _("Cancelled by client"),
+    "appointment.cancelled_by_master": _("Cancelled by master"),
+    "appointment.completed": _("Appointment completed"),
+    "appointment.no_show": _("Appointment no-show"),
+    "appointment.late_cancel_penalty_warning": _("Late cancellation warning"),
+    "appointment.late_cancelled_with_penalty": _("Late cancellation with penalty"),
+    "appointment.reschedule_start": _("Reschedule start"),
+    "appointment.schedule_conflict_reschedule_requested": _(
+        "Schedule conflict reschedule requested"
+    ),
+    "appointment.reschedule_requested": _("Reschedule requested"),
+    "appointment.reschedule_auto_confirmed": _("Reschedule auto-confirmed"),
+    "appointment.reschedule_proposed": _("Reschedule proposed"),
+    "appointment.reschedule_proposal_accepted": _("Reschedule proposal accepted"),
+    "appointment.reschedule_proposal_declined": _("Reschedule proposal declined"),
+    "appointment.reschedule_proposal_expired": _("Reschedule proposal expired"),
+    "master.booking_request": _("New booking request"),
+    "master.client_booked_appointment": _("Client booked appointment"),
+    "master.client_cancelled_appointment": _("Client cancelled appointment"),
+    "master.client_requested_reschedule": _("Client requested reschedule"),
+    "master.client_accepted_reschedule": _("Client accepted reschedule"),
+    "master.client_declined_reschedule": _("Client declined reschedule"),
+    "master.appointment_proposal_expired": _("Appointment proposal expired"),
+    "reminder.client_before_appointment": _("Client appointment reminder"),
+    "reminder.master_before_appointment": _("Master appointment reminder"),
+    "reminder.master_morning_digest_empty": _("Empty morning digest"),
+    "reminder.master_morning_digest": _("Morning digest"),
+    "reminder.stale_requested": _("Pending request reminder"),
+    "reminder.failed_delivery_to_master": _("Failed delivery to master"),
+    "profile.main": _("Profile main screen"),
+    "profile.missing_fields_prompt": _("Missing profile fields"),
+    "profile.future_appointments_empty": _("No future appointments"),
+    "profile.future_appointments_list": _("Future appointments list"),
+    "profile.history_empty": _("Empty appointment history"),
+    "profile.history_list": _("Appointment history list"),
+    "profile.appointment_details": _("Appointment details"),
+    "profile.penalties_empty": _("No active penalties"),
+    "profile.penalties_list": _("Active penalties list"),
+    "profile.contact_master_prompt": _("Contact master prompt"),
+    "penalty.created_late_cancel": _("Late-cancellation penalty created"),
+    "penalty.created_no_show": _("No-show penalty created"),
+    "penalty.created_late_arrival": _("Late-arrival penalty created"),
+    "penalty.applied_to_appointment": _("Penalty applied to appointment"),
+    "penalty.paid": _("Penalty paid"),
+    "penalty.waived": _("Penalty waived"),
+    "master.penalty_created": _("Penalty created for client"),
+    "master.penalty_paid": _("Client penalty paid"),
+    "master.penalty_waived": _("Client penalty waived"),
+    "messaging.contact_master_prompt": _("Contact master prompt"),
+    "messaging.client_message_received_for_master": _("Client message for master"),
+    "messaging.master_reply_received_for_client": _("Master reply for client"),
+    "broadcast.default_cta_book": _("Default Book button"),
+    "broadcast.default_cta_my_appointments": _("Default My appointments button"),
+    "broadcast.default_cta_external_link": _("Default external link button"),
 }
 
 
@@ -178,7 +252,7 @@ def workspace(request):
 
     if request.method == "POST":
         if selected_partner is None:
-            raise Http404("Partner not found.")
+            raise Http404(_("Partner not found."))
         action = request.POST.get("action", "").strip()
         if selected_tab == "instance":
             if action == "replace_token":
@@ -191,7 +265,7 @@ def workspace(request):
                     )
                     messages.success(
                         request,
-                        "Bot token saved securely. Check the connection next.",
+                        _("Bot token saved securely. Check the connection next."),
                     )
                     return HttpResponseRedirect(
                         _workspace_url(partner_id=selected_partner.id, tab="instance")
@@ -199,7 +273,7 @@ def workspace(request):
             else:
                 action_form = BotWorkspaceActionForm(request.POST)
                 if not action_form.is_valid():
-                    messages.error(request, "Unknown bot action.")
+                    messages.error(request, _("Unknown bot action."))
                 else:
                     try:
                         generated_master_link = _perform_instance_action(
@@ -217,7 +291,7 @@ def workspace(request):
                             )
         elif selected_tab == "settings":
             if action != BOT_WORKSPACE_ACTION_SAVE_PARTNER_SETTINGS:
-                messages.error(request, "Unknown partner settings action.")
+                messages.error(request, _("Unknown partner settings action."))
             else:
                 partner_settings_form = BotPartnerSettingsWorkspaceForm(request.POST)
                 if partner_settings_form.is_valid():
@@ -226,14 +300,12 @@ def workspace(request):
                             actor=request.user,
                             partner=selected_partner,
                             timezone=partner_settings_form.cleaned_data["timezone"],
-                            default_language=partner_settings_form.cleaned_data[
-                                "default_language"
-                            ],
+                            default_language=partner_settings_form.cleaned_data["default_language"],
                         )
                     except (PermissionDenied, ValidationError) as exc:
                         partner_settings_form.add_error(None, _error_text(exc))
                     else:
-                        messages.success(request, "Partner defaults saved.")
+                        messages.success(request, _("Partner defaults saved."))
                         return HttpResponseRedirect(
                             _workspace_url(
                                 partner_id=selected_partner.id,
@@ -243,7 +315,7 @@ def workspace(request):
         elif selected_tab == "content":
             action_form = BotContentWorkspaceActionForm(request.POST)
             if not action_form.is_valid():
-                messages.error(request, "Unknown content action.")
+                messages.error(request, _("Unknown content action."))
             elif action == BOT_WORKSPACE_ACTION_RESET_CONTENT:
                 try:
                     reset_partner_template_override(
@@ -255,7 +327,7 @@ def workspace(request):
                 except (PermissionDenied, ValidationError) as exc:
                     messages.warning(request, _error_text(exc))
                 else:
-                    messages.success(request, "Content reset to the system default.")
+                    messages.success(request, _("Content reset to the system default."))
                     return HttpResponseRedirect(
                         _workspace_url(
                             partner_id=selected_partner.id,
@@ -297,7 +369,7 @@ def workspace(request):
                         content_form.add_error(None, _error_text(exc))
                     else:
                         if action == BOT_WORKSPACE_ACTION_SAVE_CONTENT:
-                            messages.success(request, "Localized bot content saved.")
+                            messages.success(request, _("Localized bot content saved."))
                             return HttpResponseRedirect(
                                 _workspace_url(
                                     partner_id=selected_partner.id,
@@ -338,7 +410,7 @@ def workspace(request):
                     except (PermissionDenied, ValidationError) as exc:
                         notification_settings_form.add_error(None, _error_text(exc))
                     else:
-                        messages.success(request, "Notification schedule saved.")
+                        messages.success(request, _("Notification schedule saved."))
                         return HttpResponseRedirect(
                             _workspace_url(
                                 partner_id=selected_partner.id,
@@ -362,7 +434,7 @@ def workspace(request):
                     except (PermissionDenied, ValidationError) as exc:
                         reminder_rules_form.add_error(None, _error_text(exc))
                     else:
-                        messages.success(request, "Appointment reminder rules saved.")
+                        messages.success(request, _("Appointment reminder rules saved."))
                         return HttpResponseRedirect(
                             _workspace_url(
                                 partner_id=selected_partner.id,
@@ -370,10 +442,10 @@ def workspace(request):
                             )
                         )
             else:
-                messages.error(request, "Unknown notification settings action.")
+                messages.error(request, _("Unknown notification settings action."))
         elif selected_tab == "booking":
             if action != BOT_WORKSPACE_ACTION_SAVE_BOOKING_SETTINGS:
-                messages.error(request, "Unknown booking settings action.")
+                messages.error(request, _("Unknown booking settings action."))
             else:
                 booking_settings_form = BotBookingSettingsWorkspaceForm(request.POST)
                 if booking_settings_form.is_valid():
@@ -403,7 +475,7 @@ def workspace(request):
                     except (PermissionDenied, ValidationError) as exc:
                         booking_settings_form.add_error(None, _error_text(exc))
                     else:
-                        messages.success(request, "Booking settings saved.")
+                        messages.success(request, _("Booking settings saved."))
                         return HttpResponseRedirect(
                             _workspace_url(
                                 partner_id=selected_partner.id,
@@ -412,7 +484,7 @@ def workspace(request):
                         )
         elif selected_tab == "penalties":
             if action != BOT_WORKSPACE_ACTION_SAVE_PENALTY_SETTINGS:
-                messages.error(request, "Unknown penalty settings action.")
+                messages.error(request, _("Unknown penalty settings action."))
             else:
                 penalty_settings_form = BotPenaltySettingsWorkspaceForm(request.POST)
                 if penalty_settings_form.is_valid():
@@ -439,7 +511,7 @@ def workspace(request):
                     except (PermissionDenied, ValidationError) as exc:
                         penalty_settings_form.add_error(None, _error_text(exc))
                     else:
-                        messages.success(request, "Penalty settings saved.")
+                        messages.success(request, _("Penalty settings saved."))
                         return HttpResponseRedirect(
                             _workspace_url(
                                 partner_id=selected_partner.id,
@@ -447,12 +519,12 @@ def workspace(request):
                             )
                         )
         else:
-            messages.error(request, "This bot workspace tab is read-only for now.")
+            messages.error(request, _("This bot workspace tab is read-only for now."))
 
     context = {
         **admin.site.each_context(request),
         "is_nav_sidebar_enabled": False,
-        "title": "Bot",
+        "title": _("Bot"),
         "partners": partners,
         "selected_partner": selected_partner,
         "selected_tab": selected_tab,
@@ -480,14 +552,14 @@ def workspace(request):
 def _perform_instance_action(*, actor, partner, action: str):
     bot_instance = bot_instance_for_partner(partner)
     if bot_instance is None:
-        raise ValidationError("Save a bot token before using this action.")
+        raise ValidationError(_("Save a bot token before using this action."))
 
     if action == BOT_WORKSPACE_ACTION_CHECK_CONNECTION:
         checked = check_bot_connection(bot_instance, actor=actor)
         if checked.last_error_code:
             raise ValidationError(
                 checked.last_error_message_masked
-                or "Telegram did not accept the current bot configuration."
+                or _("Telegram did not accept the current bot configuration.")
             )
         return None
     if action == BOT_WORKSPACE_ACTION_LAUNCH:
@@ -502,7 +574,7 @@ def _perform_instance_action(*, actor, partner, action: str):
         return None
     if action == BOT_WORKSPACE_ACTION_CREATE_MASTER_LINK:
         return create_master_contact_link(actor=actor, partner=partner)
-    raise ValidationError("Unknown bot action.")
+    raise ValidationError(_("Unknown bot action."))
 
 
 def _workspace_context(
@@ -525,9 +597,7 @@ def _workspace_context(
     context = {
         "bot_instance": bot_instance,
         "setup_status": onboarding.setup_status,
-        "setup_steps": tuple(
-            (step.label, step.is_complete) for step in onboarding.all_steps
-        ),
+        "setup_steps": tuple((step.label, step.is_complete) for step in onboarding.all_steps),
         "primary_contact": onboarding.primary_contact,
         "notification_settings_form": notification_settings_form,
         "reminder_rules_form": reminder_rules_form,
@@ -814,11 +884,11 @@ def _content_editor_context(
         "content_preview": effective_preview,
         "content_preview_is_draft": preview is not None,
         "content_preview_source": {
-            "draft": "Unsaved draft",
-            "partner_override": "Partner override",
-            "system_default": "System default",
+            "draft": _("Unsaved draft"),
+            "partner_override": _("Partner override"),
+            "system_default": _("System default"),
         }.get(effective_preview.source, effective_preview.source),
-        "content_type_label": definition.content_type.replace("_", " ").title(),
+        "content_type_label": _content_type_label(definition.content_type),
     }
 
 
@@ -835,9 +905,9 @@ def _workspace_tabs(*, partner_id) -> tuple[BotWorkspaceTab, ...]:
 
 def _instance_action_success(action: str) -> str:
     return {
-        BOT_WORKSPACE_ACTION_CHECK_CONNECTION: "Telegram connection checked.",
-        BOT_WORKSPACE_ACTION_LAUNCH: "Bot launched. Restart the polling runner if needed.",
-        BOT_WORKSPACE_ACTION_PAUSE: "Bot paused.",
+        BOT_WORKSPACE_ACTION_CHECK_CONNECTION: _("Telegram connection checked."),
+        BOT_WORKSPACE_ACTION_LAUNCH: _("Bot launched. Restart the polling runner if needed."),
+        BOT_WORKSPACE_ACTION_PAUSE: _("Bot paused."),
     }[action]
 
 
@@ -863,17 +933,17 @@ def _selected_partner(*, request, partners):
     try:
         selected_uuid = UUID(selected_partner_id)
     except (TypeError, ValueError) as exc:
-        raise Http404("Partner not found.") from exc
+        raise Http404(_("Partner not found.")) from exc
     for partner in partners:
         if partner.id == selected_uuid:
             return partner
-    raise Http404("Partner not found.")
+    raise Http404(_("Partner not found."))
 
 
 def _selected_tab(request) -> str:
     selected_tab = request.GET.get("tab", BOT_WORKSPACE_DEFAULT_TAB).strip()
     if selected_tab not in BOT_WORKSPACE_TAB_LABELS:
-        raise Http404("Bot workspace tab not found.")
+        raise Http404(_("Bot workspace tab not found."))
     return selected_tab
 
 
@@ -886,7 +956,7 @@ def _selected_content_definition(request) -> TemplateDefinition:
         return editable_definitions[0]
     definition = SYSTEM_TEMPLATE_DEFINITION_BY_KEY.get(selected_key)
     if definition is None or not definition.editable:
-        raise Http404("Editable content template not found.")
+        raise Http404(_("Editable content template not found."))
     return definition
 
 
@@ -895,13 +965,23 @@ def _selected_content_language(*, request, partner) -> str:
     if not selected_language:
         selected_language = partner.default_language or DEFAULT_TEMPLATE_LANGUAGE
     if selected_language not in SUPPORTED_TEMPLATE_LANGUAGES:
-        raise Http404("Content language not found.")
+        raise Http404(_("Content language not found."))
     return selected_language
 
 
 def _template_label(key: str) -> str:
+    label = CONTENT_TEMPLATE_LABELS.get(key)
+    if label is not None:
+        return label
     suffix = key.split(".", 1)[-1]
     return suffix.replace("_", " ").strip().title()
+
+
+def _content_type_label(content_type: str) -> str:
+    return {
+        "button": _("Button"),
+        "message": _("Message"),
+    }.get(content_type, content_type.replace("_", " ").title())
 
 
 def _error_text(exc: PermissionDenied | ValidationError) -> str:

@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.catalog.forms import ServiceAdminForm, ServiceCategoryAdminForm
@@ -29,13 +30,13 @@ SERVICE_CATEGORY_INACTIVE = "category_inactive"
 class CategoryServiceStateFilter(admin.SimpleListFilter):
     """Find configured or empty categories using list annotations."""
 
-    title = "services"
+    title = _("services")
     parameter_name = "service_state"
 
     def lookups(self, request, model_admin):
         return (
-            (CATALOG_HAS_SERVICES, "Has services"),
-            (CATALOG_EMPTY, "Empty category"),
+            (CATALOG_HAS_SERVICES, _("Has services")),
+            (CATALOG_EMPTY, _("Empty category")),
         )
 
     def queryset(self, request, queryset):
@@ -49,14 +50,14 @@ class CategoryServiceStateFilter(admin.SimpleListFilter):
 class ServiceBookingStateFilter(admin.SimpleListFilter):
     """Expose why a catalog service is or is not visible to clients."""
 
-    title = "booking visibility"
+    title = _("booking visibility")
     parameter_name = "booking_state"
 
     def lookups(self, request, model_admin):
         return (
-            (SERVICE_BOOKABLE, "Bookable"),
-            (SERVICE_INACTIVE, "Service inactive"),
-            (SERVICE_CATEGORY_INACTIVE, "Hidden by category"),
+            (SERVICE_BOOKABLE, _("Bookable")),
+            (SERVICE_INACTIVE, _("Service inactive")),
+            (SERVICE_CATEGORY_INACTIVE, _("Hidden by category")),
         )
 
     def queryset(self, request, queryset):
@@ -99,12 +100,12 @@ class ServiceCategoryAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             readonly_fields.append("partner")
         return readonly_fields
 
-    @admin.display(description="Services", ordering="ops_total_service_count")
+    @admin.display(description=_("Services"), ordering="ops_total_service_count")
     def services_summary(self, obj):
         url = reverse("admin:catalog_service_changelist")
         query = urlencode({"category__id__exact": obj.id})
         return format_html(
-            '<a href="{}?{}">{} active / {} total</a>',
+            _('<a href="{}?{}">{} active / {} total</a>'),
             url,
             query,
             obj.ops_active_service_count,
@@ -171,22 +172,22 @@ class ServiceAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             readonly_fields.append("partner")
         return readonly_fields
 
-    @admin.display(description="Price", ordering="price_amount")
+    @admin.display(description=_("Price"), ordering="price_amount")
     def price_display(self, obj):
         amount = Money(amount=obj.price_amount, currency=obj.currency)
         return f"{amount.to_major_decimal()} {amount.currency}"
 
-    @admin.display(description="Duration", ordering="duration_minutes")
+    @admin.display(description=_("Duration"), ordering="duration_minutes")
     def duration_display(self, obj):
-        return f"{obj.duration_minutes} min"
+        return _("%(minutes)s min") % {"minutes": obj.duration_minutes}
 
-    @admin.display(description="Booking visibility", ordering="is_active")
+    @admin.display(description=_("Booking visibility"), ordering="is_active")
     def booking_visibility(self, obj):
         if not obj.is_active:
-            return "Service inactive"
+            return _("Service inactive")
         if not obj.category.is_active:
-            return "Hidden by category"
-        return "Bookable"
+            return _("Hidden by category")
+        return _("Bookable")
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "category" and not request.user.is_superuser:

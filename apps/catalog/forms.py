@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import Service, ServiceCategory
 from apps.catalog.services import (
@@ -58,8 +59,8 @@ class ServiceAdminForm(forms.ModelForm):
         max_value=Decimal("21474836.47"),
         max_digits=10,
         decimal_places=2,
-        label="Price",
-        help_text="Enter the client-facing amount, for example 500.00.",
+        label=_("Price"),
+        help_text=_("Enter the client-facing amount, for example 500.00."),
     )
 
     class Meta:

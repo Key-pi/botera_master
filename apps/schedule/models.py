@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from core.database.models import PartnerBoundModel
 
@@ -32,24 +33,28 @@ class BookingResource(PartnerBoundModel):
     """Calendar resource whose confirmed appointments must not overlap."""
 
     class ResourceType(models.TextChoices):
-        SOLO_MASTER = "solo_master", "Solo master"
+        SOLO_MASTER = "solo_master", _("Solo master")
 
-    name = models.CharField(max_length=255)
+    name = models.CharField(_("name"), max_length=255)
     type = models.CharField(
+        _("type"),
         max_length=32,
         choices=ResourceType.choices,
         default=ResourceType.SOLO_MASTER,
     )
-    is_default = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
-    sort_order = models.PositiveIntegerField(default=0)
+    is_default = models.BooleanField(_("default"), default=False)
+    is_active = models.BooleanField(_("active"), default=True)
+    sort_order = models.PositiveIntegerField(_("sort order"), default=0)
     advisory_lock_key = models.PositiveIntegerField(
+        _("advisory lock key"),
         unique=True,
         editable=False,
         default=generate_advisory_lock_key,
     )
 
     class Meta:
+        verbose_name = _("booking resource")
+        verbose_name_plural = _("booking resources")
         ordering = ["partner__name", "sort_order", "name"]
         constraints = [
             models.UniqueConstraint(
@@ -78,30 +83,40 @@ class PartnerScheduleSettings(PartnerBoundModel):
     """Partner-controlled booking behavior owned by the schedule domain."""
 
     class ConfirmationMode(models.TextChoices):
-        AUTO = "auto", "Auto"
-        MANUAL = "manual", "Manual"
+        AUTO = "auto", _("Auto")
+        MANUAL = "manual", _("Manual")
 
     partner = models.OneToOneField(
         "partners.Partner",
         on_delete=models.CASCADE,
         related_name="schedule_settings",
+        verbose_name=_("partner"),
     )
     confirmation_mode = models.CharField(
+        _("confirmation mode"),
         max_length=16,
         choices=ConfirmationMode.choices,
         blank=True,
     )
-    slot_step_minutes = models.PositiveIntegerField(default=DEFAULT_SLOT_STEP_MINUTES)
-    booking_horizon_days = models.PositiveIntegerField(default=DEFAULT_BOOKING_HORIZON_DAYS)
+    slot_step_minutes = models.PositiveIntegerField(
+        _("slot step in minutes"), default=DEFAULT_SLOT_STEP_MINUTES
+    )
+    booking_horizon_days = models.PositiveIntegerField(
+        _("booking horizon in days"), default=DEFAULT_BOOKING_HORIZON_DAYS
+    )
     near_fit_tolerance_minutes = models.PositiveIntegerField(
+        _("near-fit tolerance in minutes"),
         default=DEFAULT_NEAR_FIT_TOLERANCE_MINUTES,
     )
     cancellation_deadline_hours = models.PositiveIntegerField(
+        _("cancellation deadline in hours"),
         default=DEFAULT_CANCELLATION_DEADLINE_HOURS,
     )
-    require_phone_for_booking = models.BooleanField(default=False)
+    require_phone_for_booking = models.BooleanField(_("require phone for booking"), default=False)
 
     class Meta:
+        verbose_name = _("partner schedule settings")
+        verbose_name_plural = _("partner schedule settings")
         indexes = [
             models.Index(fields=["partner", "confirmation_mode"]),
         ]
@@ -134,11 +149,13 @@ class PartnerScheduleSettings(PartnerBoundModel):
 class AvailabilityTemplate(PartnerBoundModel):
     """Reusable weekly availability pattern that can be applied into real windows."""
 
-    name = models.CharField(max_length=255)
-    is_active = models.BooleanField(default=True)
-    sort_order = models.PositiveIntegerField(default=0)
+    name = models.CharField(_("name"), max_length=255)
+    is_active = models.BooleanField(_("active"), default=True)
+    sort_order = models.PositiveIntegerField(_("sort order"), default=0)
 
     class Meta:
+        verbose_name = _("availability template")
+        verbose_name_plural = _("availability templates")
         ordering = ["partner__name", "sort_order", "name"]
         indexes = [
             models.Index(fields=["partner", "is_active", "sort_order"]),
@@ -155,12 +172,15 @@ class AvailabilityTemplateWindow(models.Model):
         "schedule.AvailabilityTemplate",
         on_delete=models.CASCADE,
         related_name="windows",
+        verbose_name=_("template"),
     )
-    weekday = models.PositiveSmallIntegerField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
+    weekday = models.PositiveSmallIntegerField(_("weekday"))
+    start_time = models.TimeField(_("start time"))
+    end_time = models.TimeField(_("end time"))
 
     class Meta:
+        verbose_name = _("availability template window")
+        verbose_name_plural = _("availability template windows")
         ordering = ["template__sort_order", "weekday", "start_time"]
         constraints = [
             models.CheckConstraint(
@@ -187,15 +207,17 @@ class AvailabilityWindow(PartnerBoundModel):
         "schedule.BookingResource",
         on_delete=models.CASCADE,
         related_name="availability_windows",
+        verbose_name=_("booking resource"),
     )
-    start_at = models.DateTimeField()
-    end_at = models.DateTimeField()
+    start_at = models.DateTimeField(_("start at"))
+    end_at = models.DateTimeField(_("end at"))
     source_template = models.ForeignKey(
         "schedule.AvailabilityTemplate",
         on_delete=models.SET_NULL,
         related_name="generated_windows",
         null=True,
         blank=True,
+        verbose_name=_("source template"),
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -203,9 +225,12 @@ class AvailabilityWindow(PartnerBoundModel):
         related_name="created_availability_windows",
         null=True,
         blank=True,
+        verbose_name=_("created by"),
     )
 
     class Meta:
+        verbose_name = _("availability window")
+        verbose_name_plural = _("availability windows")
         ordering = ["start_at", "end_at"]
         constraints = [
             models.CheckConstraint(
@@ -230,19 +255,23 @@ class BlockedTime(PartnerBoundModel):
         "schedule.BookingResource",
         on_delete=models.CASCADE,
         related_name="blocked_times",
+        verbose_name=_("booking resource"),
     )
-    start_at = models.DateTimeField()
-    end_at = models.DateTimeField()
-    reason = models.TextField(blank=True)
+    start_at = models.DateTimeField(_("start at"))
+    end_at = models.DateTimeField(_("end at"))
+    reason = models.TextField(_("reason"), blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         related_name="created_blocked_times",
         null=True,
         blank=True,
+        verbose_name=_("created by"),
     )
 
     class Meta:
+        verbose_name = _("blocked time")
+        verbose_name_plural = _("blocked times")
         ordering = ["start_at", "end_at"]
         constraints = [
             models.CheckConstraint(
@@ -267,17 +296,21 @@ class ScheduleConflictAcknowledgement(PartnerBoundModel):
         "appointments.Appointment",
         on_delete=models.CASCADE,
         related_name="schedule_conflict_acknowledgement",
+        verbose_name=_("appointment"),
     )
-    fingerprint = models.CharField(max_length=64)
+    fingerprint = models.CharField(_("fingerprint"), max_length=64)
     acknowledged_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         related_name="acknowledged_schedule_conflicts",
         null=True,
         blank=True,
+        verbose_name=_("acknowledged by"),
     )
 
     class Meta:
+        verbose_name = _("schedule conflict acknowledgement")
+        verbose_name_plural = _("schedule conflict acknowledgements")
         ordering = ["-updated_at"]
         indexes = [
             models.Index(fields=["partner", "updated_at"]),

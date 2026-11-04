@@ -5,6 +5,7 @@ from decimal import Decimal
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import MinValueValidator
+from django.utils.translation import gettext_lazy as _
 
 from apps.appointments.models import Appointment
 from apps.finance.models import Expense, PartnerPenaltySettings, Penalty
@@ -30,7 +31,7 @@ class AppointmentPenaltyAdminForm(forms.Form):
     penalties = PenaltyChoiceField(
         queryset=Penalty.objects.none(),
         widget=forms.CheckboxSelectMultiple,
-        help_text="Only unpaid penalties for this appointment client are available.",
+        help_text=_("Only unpaid penalties for this appointment client are available."),
     )
 
     def __init__(self, *args, appointment: Appointment, **kwargs) -> None:
@@ -49,14 +50,14 @@ class ClientPenaltyActionAdminForm(forms.Form):
 
     action = forms.ChoiceField(
         choices=(
-            (Action.MARK_PAID, "Mark as paid"),
-            (Action.WAIVE, "Waive penalty"),
+            (Action.MARK_PAID, _("Mark as paid")),
+            (Action.WAIVE, _("Waive penalty")),
         ),
     )
     note = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Optional note. It is saved when the penalty is waived.",
+        help_text=_("Optional note. It is saved when the penalty is waived."),
     )
 
     def clean_note(self) -> str:
@@ -69,7 +70,7 @@ class NoShowPenaltyAdminForm(forms.Form):
     note = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Optional note visible in the partner penalty record.",
+        help_text=_("Optional note visible in the partner penalty record."),
     )
 
     def clean_note(self) -> str:
@@ -81,7 +82,7 @@ class LateArrivalPenaltyAdminForm(NoShowPenaltyAdminForm):
 
     late_by_minutes = forms.IntegerField(
         min_value=1,
-        label="Late by (minutes)",
+        label=_("Late by (minutes)"),
     )
 
     def __init__(self, *args, threshold_minutes: int, **kwargs) -> None:
@@ -90,7 +91,9 @@ class LateArrivalPenaltyAdminForm(NoShowPenaltyAdminForm):
         field.min_value = threshold_minutes
         field.validators.append(MinValueValidator(threshold_minutes))
         field.widget.attrs["min"] = threshold_minutes
-        field.help_text = f"The configured late-arrival threshold is {threshold_minutes} minutes."
+        field.help_text = _("The configured late-arrival threshold is %(count)s minutes.") % {
+            "count": threshold_minutes
+        }
 
 
 class PartnerPenaltySettingsAdminForm(forms.ModelForm):
@@ -101,21 +104,21 @@ class PartnerPenaltySettingsAdminForm(forms.ModelForm):
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,
         decimal_places=2,
-        label="Late-cancellation penalty",
+        label=_("Late-cancellation penalty"),
     )
     no_show_penalty = forms.DecimalField(
         min_value=Decimal("0"),
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,
         decimal_places=2,
-        label="No-show penalty",
+        label=_("No-show penalty"),
     )
     late_arrival_penalty = forms.DecimalField(
         min_value=Decimal("0"),
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,
         decimal_places=2,
-        label="Late-arrival penalty",
+        label=_("Late-arrival penalty"),
     )
 
     class Meta:
@@ -160,7 +163,7 @@ class ExpenseAdminForm(forms.ModelForm):
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,
         decimal_places=2,
-        label="Amount",
+        label=_("Amount"),
     )
 
     class Meta:

@@ -5,6 +5,7 @@ from zoneinfo import available_timezones
 
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.translation import gettext_lazy as _
 
 from apps.bot.content import TemplateDefinition
 from apps.bot.models import BotInstance
@@ -47,9 +48,9 @@ PARTNER_TIMEZONE_CHOICES = tuple(
 )
 
 DURATION_UNIT_CHOICES = (
-    ("minutes", "Minutes"),
-    ("hours", "Hours"),
-    ("days", "Days"),
+    ("minutes", _("Minutes")),
+    ("hours", _("Hours")),
+    ("days", _("Days")),
 )
 DURATION_UNIT_MULTIPLIERS = {
     "minutes": 1,
@@ -62,14 +63,14 @@ class BotInstanceAdminForm(forms.ModelForm):
     """Admin adapter form that accepts a token without ever rendering it back."""
 
     new_token = forms.CharField(
-        label="New bot token",
+        label=_("New bot token"),
         required=False,
         strip=True,
         widget=forms.PasswordInput(
             render_value=False,
             attrs={"autocomplete": "new-password"},
         ),
-        help_text=(
+        help_text=_(
             "Enter a token from BotFather. The saved token is encrypted and cannot be shown "
             "again. Leave blank to keep the current token."
         ),
@@ -83,7 +84,7 @@ class BotInstanceAdminForm(forms.ModelForm):
         raw_token = self.cleaned_data.get("new_token", "")
         if not raw_token:
             if not self.instance.pk or not self.instance.has_token:
-                raise forms.ValidationError("A Telegram bot token is required.")
+                raise forms.ValidationError(_("A Telegram bot token is required."))
             return ""
 
         partner = self.cleaned_data.get("partner")
@@ -102,13 +103,13 @@ class BotTokenWorkspaceForm(forms.Form):
     """Accept a replacement token without ever rendering the stored value."""
 
     new_token = forms.CharField(
-        label="New bot token",
+        label=_("New bot token"),
         strip=True,
         widget=forms.PasswordInput(
             render_value=False,
             attrs={"autocomplete": "new-password"},
         ),
-        help_text="The saved token remains encrypted and is never shown again.",
+        help_text=_("The saved token remains encrypted and is never shown again."),
     )
 
     def __init__(self, *args, partner, **kwargs) -> None:
@@ -132,10 +133,10 @@ class BotWorkspaceActionForm(forms.Form):
     action = forms.ChoiceField(
         widget=forms.HiddenInput,
         choices=(
-            (BOT_WORKSPACE_ACTION_CHECK_CONNECTION, "Check connection"),
-            (BOT_WORKSPACE_ACTION_LAUNCH, "Launch bot"),
-            (BOT_WORKSPACE_ACTION_PAUSE, "Pause bot"),
-            (BOT_WORKSPACE_ACTION_CREATE_MASTER_LINK, "Connect master Telegram"),
+            (BOT_WORKSPACE_ACTION_CHECK_CONNECTION, _("Check connection")),
+            (BOT_WORKSPACE_ACTION_LAUNCH, _("Launch bot")),
+            (BOT_WORKSPACE_ACTION_PAUSE, _("Pause bot")),
+            (BOT_WORKSPACE_ACTION_CREATE_MASTER_LINK, _("Connect master Telegram")),
         ),
     )
 
@@ -144,11 +145,11 @@ class BotPartnerSettingsWorkspaceForm(forms.Form):
     """Validate partner-controlled language and timezone defaults."""
 
     default_language = forms.ChoiceField(
-        label="Default bot language",
+        label=_("Default bot language"),
         choices=PARTNER_LANGUAGE_CHOICES,
     )
     timezone = forms.ChoiceField(
-        label="Timezone",
+        label=_("Timezone"),
         choices=PARTNER_TIMEZONE_CHOICES,
     )
 
@@ -159,9 +160,9 @@ class BotContentWorkspaceActionForm(forms.Form):
     action = forms.ChoiceField(
         widget=forms.HiddenInput,
         choices=(
-            (BOT_WORKSPACE_ACTION_SAVE_CONTENT, "Save content"),
-            (BOT_WORKSPACE_ACTION_PREVIEW_CONTENT, "Preview content"),
-            (BOT_WORKSPACE_ACTION_RESET_CONTENT, "Reset content"),
+            (BOT_WORKSPACE_ACTION_SAVE_CONTENT, _("Save content")),
+            (BOT_WORKSPACE_ACTION_PREVIEW_CONTENT, _("Preview content")),
+            (BOT_WORKSPACE_ACTION_RESET_CONTENT, _("Reset content")),
         ),
     )
 
@@ -170,17 +171,17 @@ class BotContentWorkspaceForm(forms.Form):
     """Validate one localized partner override without trusting submitted metadata."""
 
     body = forms.CharField(
-        label="Custom text",
+        label=_("Custom text"),
         required=False,
         strip=True,
         widget=forms.Textarea(
             attrs={
                 "rows": 10,
                 "spellcheck": "true",
-                "placeholder": "Leave empty to use the system default.",
+                "placeholder": _("Leave empty to use the system default."),
             }
         ),
-        help_text="Leave empty and save to restore the system default for this language.",
+        help_text=_("Leave empty and save to restore the system default for this language."),
     )
 
     def __init__(self, *args, definition: TemplateDefinition, **kwargs) -> None:
@@ -209,30 +210,30 @@ class BotNotificationSettingsWorkspaceForm(forms.Form):
     """Validate partner-controlled notification timing settings."""
 
     quiet_hours_enabled = forms.BooleanField(
-        label="Quiet hours enabled",
+        label=_("Quiet hours enabled"),
         required=False,
     )
     quiet_hours_start_local = forms.TimeField(
-        label="Quiet hours start",
+        label=_("Quiet hours start"),
         input_formats=("%H:%M",),
         widget=forms.TimeInput(format="%H:%M", attrs={"type": "time"}),
     )
     quiet_hours_end_local = forms.TimeField(
-        label="Quiet hours end",
+        label=_("Quiet hours end"),
         input_formats=("%H:%M",),
         widget=forms.TimeInput(format="%H:%M", attrs={"type": "time"}),
     )
     morning_digest_enabled = forms.BooleanField(
-        label="Morning digest enabled",
+        label=_("Morning digest enabled"),
         required=False,
     )
     morning_digest_time_local = forms.TimeField(
-        label="Morning digest time",
+        label=_("Morning digest time"),
         input_formats=("%H:%M",),
         widget=forms.TimeInput(format="%H:%M", attrs={"type": "time"}),
     )
     stale_requested_base_interval_minutes = forms.IntegerField(
-        label="First pending-request reminder after",
+        label=_("First pending-request reminder after"),
         min_value=MIN_STALE_REQUESTED_INTERVAL_MINUTES,
         max_value=MAX_STALE_REQUESTED_INTERVAL_MINUTES,
         widget=forms.NumberInput(
@@ -242,7 +243,7 @@ class BotNotificationSettingsWorkspaceForm(forms.Form):
                 "step": 5,
             }
         ),
-        help_text="Minutes",
+        help_text=_("Minutes"),
     )
 
 
@@ -250,41 +251,43 @@ class BotReminderRulesWorkspaceForm(forms.Form):
     """Collect up to five client reminder offsets and one optional master rule."""
 
     master_enabled = forms.BooleanField(
-        label="Master reminder enabled",
+        label=_("Master reminder enabled"),
         required=False,
     )
     master_value = forms.IntegerField(
-        label="Master reminder",
+        label=_("Master reminder"),
         min_value=1,
         required=False,
-        widget=forms.NumberInput(attrs={"min": 1, "aria-label": "Master reminder amount"}),
+        widget=forms.NumberInput(attrs={"min": 1, "aria-label": _("Master reminder amount")}),
     )
     master_unit = forms.ChoiceField(
-        label="Master reminder unit",
+        label=_("Master reminder unit"),
         choices=DURATION_UNIT_CHOICES,
         initial="minutes",
-        widget=forms.Select(attrs={"aria-label": "Master reminder unit"}),
+        widget=forms.Select(attrs={"aria-label": _("Master reminder unit")}),
     )
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         for index in range(1, MAX_CLIENT_REMINDER_RULES + 1):
             self.fields[f"client_{index}_value"] = forms.IntegerField(
-                label=f"Client reminder {index}",
+                label=_("Client reminder %(number)s") % {"number": index},
                 min_value=1,
                 required=False,
                 widget=forms.NumberInput(
                     attrs={
                         "min": 1,
-                        "aria-label": f"Client reminder {index} amount",
+                        "aria-label": _("Client reminder %(number)s amount") % {"number": index},
                     }
                 ),
             )
             self.fields[f"client_{index}_unit"] = forms.ChoiceField(
-                label=f"Client reminder {index} unit",
+                label=_("Client reminder %(number)s unit") % {"number": index},
                 choices=DURATION_UNIT_CHOICES,
                 initial="minutes",
-                widget=forms.Select(attrs={"aria-label": f"Client reminder {index} unit"}),
+                widget=forms.Select(
+                    attrs={"aria-label": _("Client reminder %(number)s unit") % {"number": index}}
+                ),
             )
 
     @property
@@ -316,20 +319,20 @@ class BotReminderRulesWorkspaceForm(forms.Form):
             ):
                 self.add_error(
                     f"client_{index}_value",
-                    "Client reminders must be between 15 minutes and 30 days.",
+                    _("Client reminders must be between 15 minutes and 30 days."),
                 )
                 continue
             client_offsets.append(offset)
 
         if len(set(client_offsets)) != len(client_offsets):
-            raise forms.ValidationError("Client reminder times must be unique.")
+            raise forms.ValidationError(_("Client reminder times must be unique."))
 
         master_offset = None
         if cleaned_data.get("master_enabled"):
             master_value = cleaned_data.get("master_value")
             master_unit = cleaned_data.get("master_unit")
             if master_value is None:
-                self.add_error("master_value", "Enter a master reminder time.")
+                self.add_error("master_value", _("Enter a master reminder time."))
             elif master_unit is not None:
                 master_offset = master_value * DURATION_UNIT_MULTIPLIERS[master_unit]
                 if (
@@ -339,7 +342,7 @@ class BotReminderRulesWorkspaceForm(forms.Form):
                 ):
                     self.add_error(
                         "master_value",
-                        "Master reminder must be between 5 minutes and 7 days.",
+                        _("Master reminder must be between 5 minutes and 7 days."),
                     )
 
         cleaned_data["client_offsets_minutes"] = tuple(sorted(client_offsets, reverse=True))
@@ -351,41 +354,41 @@ class BotBookingSettingsWorkspaceForm(forms.Form):
     """Validate one complete partner booking-rules update."""
 
     confirmation_mode = forms.ChoiceField(
-        label="Booking confirmation",
+        label=_("Booking confirmation"),
         choices=(
-            ("", "Select confirmation mode"),
-            (PartnerScheduleSettings.ConfirmationMode.AUTO, "Auto-confirm"),
-            (PartnerScheduleSettings.ConfirmationMode.MANUAL, "Manual confirmation"),
+            ("", _("Select confirmation mode")),
+            (PartnerScheduleSettings.ConfirmationMode.AUTO, _("Auto-confirm")),
+            (PartnerScheduleSettings.ConfirmationMode.MANUAL, _("Manual confirmation")),
         ),
     )
     slot_step_minutes = forms.TypedChoiceField(
-        label="Slot step",
+        label=_("Slot step"),
         choices=tuple((value, f"{value} minutes") for value in ALLOWED_SLOT_STEPS),
         coerce=int,
     )
     booking_horizon_days = forms.IntegerField(
-        label="Booking horizon",
+        label=_("Booking horizon"),
         min_value=1,
         max_value=MAX_BOOKING_HORIZON_DAYS,
         widget=forms.NumberInput(attrs={"min": 1, "max": MAX_BOOKING_HORIZON_DAYS}),
-        help_text="Days",
+        help_text=_("Days"),
     )
     near_fit_tolerance_minutes = forms.IntegerField(
-        label="Near-fit tolerance",
+        label=_("Near-fit tolerance"),
         min_value=0,
         max_value=MAX_NEAR_FIT_TOLERANCE_MINUTES,
         widget=forms.NumberInput(attrs={"min": 0, "max": MAX_NEAR_FIT_TOLERANCE_MINUTES}),
-        help_text="Minutes",
+        help_text=_("Minutes"),
     )
     cancellation_deadline_hours = forms.IntegerField(
-        label="Cancellation deadline",
+        label=_("Cancellation deadline"),
         min_value=0,
         max_value=MAX_CANCELLATION_DEADLINE_HOURS,
         widget=forms.NumberInput(attrs={"min": 0, "max": MAX_CANCELLATION_DEADLINE_HOURS}),
-        help_text="Hours before appointment",
+        help_text=_("Hours before appointment"),
     )
     require_phone_for_booking = forms.BooleanField(
-        label="Require phone for booking",
+        label=_("Require phone for booking"),
         required=False,
     )
 
@@ -419,11 +422,11 @@ class BotPenaltySettingsWorkspaceForm(forms.Form):
     """Validate one complete partner penalty-rules update."""
 
     penalties_enabled = forms.BooleanField(
-        label="Enable penalties",
+        label=_("Enable penalties"),
         required=False,
     )
     late_cancel_penalty = forms.DecimalField(
-        label="Late-cancellation penalty",
+        label=_("Late-cancellation penalty"),
         min_value=Decimal("0"),
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,
@@ -431,7 +434,7 @@ class BotPenaltySettingsWorkspaceForm(forms.Form):
         help_text="UAH",
     )
     no_show_penalty = forms.DecimalField(
-        label="No-show penalty",
+        label=_("No-show penalty"),
         min_value=Decimal("0"),
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,
@@ -439,13 +442,13 @@ class BotPenaltySettingsWorkspaceForm(forms.Form):
         help_text="UAH",
     )
     late_arrival_threshold_minutes = forms.IntegerField(
-        label="Late-arrival threshold",
+        label=_("Late-arrival threshold"),
         min_value=1,
         widget=forms.NumberInput(attrs={"min": 1}),
-        help_text="Minutes",
+        help_text=_("Minutes"),
     )
     late_arrival_penalty = forms.DecimalField(
-        label="Late-arrival penalty",
+        label=_("Late-arrival penalty"),
         min_value=Decimal("0"),
         max_value=MAX_MAJOR_AMOUNT,
         max_digits=10,

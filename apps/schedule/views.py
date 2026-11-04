@@ -12,6 +12,8 @@ from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from apps.appointments.models import Appointment
 from apps.appointments.selectors import appointment_for_booking_resource_by_id
@@ -112,7 +114,7 @@ def calendar(request):
 
     copy_scope = _selected_copy_scope(request=request)
     if form_action == "copy_schedule" and copy_scope is None:
-        raise Http404("Calendar copy scope not found.")
+        raise Http404(_("Calendar copy scope not found."))
     copy_source_date = (
         _selected_copy_source_date(
             request=request,
@@ -161,7 +163,7 @@ def calendar(request):
     context = {
         **admin.site.each_context(request),
         "is_nav_sidebar_enabled": False,
-        "title": "Calendar",
+        "title": _("Calendar"),
         "partners": partners,
         "selected_partner": selected_partner,
         "resources": resources,
@@ -196,9 +198,7 @@ def conflict_list(request):
 
     partners = tuple(visible_partners_for_user(request.user).order_by("name", "id"))
     selected_partner = _selected_partner(request=request, partners=partners)
-    resources = (
-        tuple(booking_resources_for_partner(selected_partner)) if selected_partner else ()
-    )
+    resources = tuple(booking_resources_for_partner(selected_partner)) if selected_partner else ()
     selected_resource = _selected_optional_resource(request=request, resources=resources)
     all_conflicts = (
         upcoming_schedule_conflicts_for_partner(
@@ -209,16 +209,10 @@ def conflict_list(request):
         if selected_partner is not None
         else ()
     )
-    active_conflicts = tuple(
-        conflict for conflict in all_conflicts if not conflict.is_acknowledged
-    )
-    kept_conflicts = tuple(
-        conflict for conflict in all_conflicts if conflict.is_acknowledged
-    )
+    active_conflicts = tuple(conflict for conflict in all_conflicts if not conflict.is_acknowledged)
+    kept_conflicts = tuple(conflict for conflict in all_conflicts if conflict.is_acknowledged)
     conflict_mode = _selected_conflict_mode(request=request)
-    conflicts = (
-        kept_conflicts if conflict_mode == CONFLICT_MODE_KEPT_AS_IS else active_conflicts
-    )
+    conflicts = kept_conflicts if conflict_mode == CONFLICT_MODE_KEPT_AS_IS else active_conflicts
     action_form = ScheduleConflictActionForm(
         request.POST if request.method == "POST" else None,
         conflicts=all_conflicts,
@@ -233,7 +227,11 @@ def conflict_list(request):
                         appointment_ids=action_form.appointment_ids,
                     )
                 )
-                success_message = f"Kept {changed_count} schedule conflict(s) as is."
+                success_message = ngettext(
+                    "Kept %(count)s schedule conflict as is.",
+                    "Kept %(count)s schedule conflicts as is.",
+                    changed_count,
+                ) % {"count": changed_count}
                 redirect_mode = CONFLICT_MODE_ACTIVE
             elif action_form.cleaned_data["action"] == ScheduleConflictActionForm.REOPEN:
                 changed_count = reopen_schedule_conflicts(
@@ -241,7 +239,11 @@ def conflict_list(request):
                     partner=selected_partner,
                     appointment_ids=action_form.appointment_ids,
                 )
-                success_message = f"Reopened {changed_count} schedule conflict(s)."
+                success_message = ngettext(
+                    "Reopened %(count)s schedule conflict.",
+                    "Reopened %(count)s schedule conflicts.",
+                    changed_count,
+                ) % {"count": changed_count}
                 redirect_mode = CONFLICT_MODE_KEPT_AS_IS
             else:
                 result = request_schedule_conflict_reschedules(
@@ -249,14 +251,17 @@ def conflict_list(request):
                     partner=selected_partner,
                     appointment_ids=action_form.appointment_ids,
                 )
-                success_message = (
-                    f"Queued reschedule request(s) for {result.requested_count} client(s)."
-                )
+                success_message = ngettext(
+                    "Queued a reschedule request for %(count)s client.",
+                    "Queued reschedule requests for %(count)s clients.",
+                    result.requested_count,
+                ) % {"count": result.requested_count}
                 if result.skipped_without_telegram_count:
-                    success_message += (
-                        f" Skipped {result.skipped_without_telegram_count} client(s) without "
-                        "a Telegram connection."
-                    )
+                    success_message += " " + ngettext(
+                        "Skipped %(count)s client without a Telegram connection.",
+                        "Skipped %(count)s clients without a Telegram connection.",
+                        result.skipped_without_telegram_count,
+                    ) % {"count": result.skipped_without_telegram_count}
                 redirect_mode = CONFLICT_MODE_ACTIVE
         except ValidationError as exc:
             for error in exc.messages:
@@ -293,7 +298,7 @@ def conflict_list(request):
     context = {
         **admin.site.each_context(request),
         "is_nav_sidebar_enabled": False,
-        "title": "Schedule conflicts",
+        "title": _("Schedule conflicts"),
         "partners": partners,
         "selected_partner": selected_partner,
         "resources": resources,
@@ -345,7 +350,7 @@ def _run_quick_create(
             start_at=form.cleaned_data["start_at"],
             end_at=form.cleaned_data["end_at"],
         )
-        success_message = "Availability window created."
+        success_message = _("Availability window created.")
     else:
         create_blocked_time(
             actor=request.user,
@@ -355,7 +360,7 @@ def _run_quick_create(
             end_at=form.cleaned_data["end_at"],
             reason=form.cleaned_data["reason"],
         )
-        success_message = "Blocked time created."
+        success_message = _("Blocked time created.")
 
     messages.success(request, success_message)
     return HttpResponseRedirect(
@@ -399,16 +404,26 @@ def _run_schedule_copy(
     if result.created_total:
         messages.success(
             request,
-            (
-                f"Copied {result.availability_created} availability window(s) and "
-                f"{result.blocked_created} blocked interval(s). "
-                f"Skipped {result.skipped_existing} existing item(s)."
-            ),
+            _(
+                "Copied %(availability)s availability windows and %(blocked)s blocked "
+                "intervals. Skipped %(skipped)s existing items."
+            )
+            % {
+                "availability": result.availability_created,
+                "blocked": result.blocked_created,
+                "skipped": result.skipped_existing,
+            },
         )
     elif result.skipped_existing:
-        messages.info(request, "All matching schedule items already exist in the target period.")
+        messages.info(
+            request,
+            _("All matching schedule items already exist in the target period."),
+        )
     else:
-        messages.info(request, "No availability or blocked time starts in the source period.")
+        messages.info(
+            request,
+            _("No availability or blocked time starts in the source period."),
+        )
 
     return HttpResponseRedirect(
         _calendar_url(
@@ -425,11 +440,11 @@ def _selected_partner(*, request, partners):
     if not raw_partner_id:
         return partners[0] if partners else None
 
-    selected_id = _parse_uuid(raw_partner_id, message="Partner not found.")
+    selected_id = _parse_uuid(raw_partner_id, message=_("Partner not found."))
     for partner in partners:
         if partner.id == selected_id:
             return partner
-    raise Http404("Partner not found.")
+    raise Http404(_("Partner not found."))
 
 
 def _selected_resource(*, request, resources):
@@ -440,11 +455,11 @@ def _selected_resource(*, request, resources):
             resources[0] if resources else None,
         )
 
-    selected_id = _parse_uuid(raw_resource_id, message="Calendar resource not found.")
+    selected_id = _parse_uuid(raw_resource_id, message=_("Calendar resource not found."))
     for resource in resources:
         if resource.id == selected_id:
             return resource
-    raise Http404("Calendar resource not found.")
+    raise Http404(_("Calendar resource not found."))
 
 
 def _selected_optional_resource(*, request, resources):
@@ -452,17 +467,17 @@ def _selected_optional_resource(*, request, resources):
     if not raw_resource_id:
         return None
 
-    selected_id = _parse_uuid(raw_resource_id, message="Calendar resource not found.")
+    selected_id = _parse_uuid(raw_resource_id, message=_("Calendar resource not found."))
     for resource in resources:
         if resource.id == selected_id:
             return resource
-    raise Http404("Calendar resource not found.")
+    raise Http404(_("Calendar resource not found."))
 
 
 def _selected_conflict_mode(*, request) -> str:
     mode = request.GET.get("show", CONFLICT_MODE_ACTIVE).strip()
     if mode not in CONFLICT_MODES:
-        raise Http404("Schedule conflict view not found.")
+        raise Http404(_("Schedule conflict view not found."))
     return mode
 
 
@@ -471,16 +486,16 @@ def _selected_calendar_appointment(*, request, partner, booking_resource):
     if not raw_appointment_id:
         return None
     if partner is None or booking_resource is None:
-        raise Http404("Appointment not found.")
+        raise Http404(_("Appointment not found."))
 
-    appointment_id = _parse_uuid(raw_appointment_id, message="Appointment not found.")
+    appointment_id = _parse_uuid(raw_appointment_id, message=_("Appointment not found."))
     appointment = appointment_for_booking_resource_by_id(
         partner=partner,
         booking_resource=booking_resource,
         appointment_id=appointment_id,
     )
     if appointment is None:
-        raise Http404("Appointment not found.")
+        raise Http404(_("Appointment not found."))
     return appointment
 
 
@@ -556,7 +571,7 @@ def _calendar_appointment_actions(*, request, appointment):
 def _selected_calendar_view(*, request) -> str:
     selected_view = request.GET.get("view", CALENDAR_VIEW_WEEK).strip()
     if selected_view not in CALENDAR_VIEWS:
-        raise Http404("Calendar view not found.")
+        raise Http404(_("Calendar view not found."))
     return selected_view
 
 
@@ -570,15 +585,12 @@ def _selected_calendar_date(*, request, partner) -> date:
         try:
             selected_day = date.fromisoformat(raw_date)
         except ValueError as exc:
-            raise Http404("Calendar date not found.") from exc
+            raise Http404(_("Calendar date not found.")) from exc
     else:
         selected_day = timezone.localdate(timezone=get_zone(partner.timezone))
 
-    if (
-        selected_day < date.min + timedelta(days=31)
-        or selected_day > date.max - timedelta(days=31)
-    ):
-        raise Http404("Calendar date not found.")
+    if selected_day < date.min + timedelta(days=31) or selected_day > date.max - timedelta(days=31):
+        raise Http404(_("Calendar date not found."))
     return selected_day
 
 
@@ -589,7 +601,7 @@ def _selected_quick_create_day(*, request, fallback: date) -> date:
     try:
         return date.fromisoformat(raw_day)
     except ValueError as exc:
-        raise Http404("Calendar date not found.") from exc
+        raise Http404(_("Calendar date not found.")) from exc
 
 
 def _selected_copy_scope(*, request) -> str | None:
@@ -597,7 +609,7 @@ def _selected_copy_scope(*, request) -> str | None:
     if not raw_scope:
         return None
     if raw_scope not in CalendarCopyScheduleForm.SCOPES:
-        raise Http404("Calendar copy scope not found.")
+        raise Http404(_("Calendar copy scope not found."))
     return raw_scope
 
 
@@ -607,11 +619,11 @@ def _selected_copy_source_date(*, request, scope: str, fallback: date) -> date:
         try:
             source_date = date.fromisoformat(raw_source_date)
         except ValueError as exc:
-            raise Http404("Calendar copy source not found.") from exc
+            raise Http404(_("Calendar copy source not found.")) from exc
     else:
         source_date = fallback
     if source_date < date.min + timedelta(days=31) or source_date > date.max - timedelta(days=31):
-        raise Http404("Calendar copy source not found.")
+        raise Http404(_("Calendar copy source not found."))
     if scope == CalendarCopyScheduleForm.WEEK:
         return source_date - timedelta(days=source_date.weekday())
     return source_date
@@ -640,9 +652,7 @@ def _calendar_url(*, partner_id, resource_id, calendar_view: str, selected_date:
 def _calendar_appointment_url(appointment: Appointment) -> str | None:
     if not appointment.booking_resource.is_active:
         return None
-    selected_date = appointment.start_at.astimezone(
-        get_zone(appointment.partner.timezone)
-    ).date()
+    selected_date = appointment.start_at.astimezone(get_zone(appointment.partner.timezone)).date()
     return (
         _calendar_url(
             partner_id=appointment.partner_id,

@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import QuerySet
 from django.forms import BaseFormSet, formset_factory
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.models import Appointment
@@ -30,28 +31,28 @@ class ManualAppointmentAdminForm(forms.Form):
     partner = forms.ModelChoiceField(queryset=Partner.objects.none())
     booking_resource = forms.ModelChoiceField(
         queryset=BookingResource.objects.none(),
-        label="Calendar resource",
+        label=_("Calendar resource"),
     )
     start_at = forms.SplitDateTimeField(
-        label="Start time",
+        label=_("Start time"),
         widget=AdminSplitDateTime,
     )
     client_profile = forms.ModelChoiceField(
         queryset=ClientProfile.objects.none(),
         required=False,
-        label="Existing client",
-        help_text="Choose an existing client, or create a manual client below.",
+        label=_("Existing client"),
+        help_text=_("Choose an existing client, or create a manual client below."),
     )
     new_client_name = forms.CharField(
         max_length=255,
         required=False,
-        label="New client name",
+        label=_("New client name"),
     )
     new_client_phone = forms.CharField(
         max_length=32,
         required=False,
-        label="New client phone",
-        help_text="A new manual client needs at least a name or phone.",
+        label=_("New client phone"),
+        help_text=_("A new manual client needs at least a name or phone."),
     )
     client_comment = forms.CharField(
         required=False,
@@ -80,13 +81,15 @@ class ManualAppointmentAdminForm(forms.Form):
                 is_active=True,
             )
             clients = ClientProfile.objects.filter(partner_id=selected_partner_id)
-            self.fields["start_at"].help_text = f"Enter local time in {selected_partner.timezone}."
+            self.fields["start_at"].help_text = _("Enter local time in %(timezone)s.") % {
+                "timezone": selected_partner.timezone,
+            }
         elif actor.is_superuser:
             resources = BookingResource.objects.filter(is_active=True)
             clients = ClientProfile.objects.all()
-            self.fields[
-                "start_at"
-            ].help_text = "The entered time uses the selected partner's timezone."
+            self.fields["start_at"].help_text = _(
+                "The entered time uses the selected partner's timezone."
+            )
         else:
             resources = BookingResource.objects.filter(
                 partner_id__in=visible_partner_ids,
@@ -123,7 +126,7 @@ class ManualAppointmentAdminForm(forms.Form):
         if partner is not None and resource is not None and resource.partner_id != partner.id:
             self.add_error(
                 "booking_resource",
-                "Calendar resource must belong to the selected partner.",
+                _("Calendar resource must belong to the selected partner."),
             )
         if (
             partner is not None
@@ -132,19 +135,19 @@ class ManualAppointmentAdminForm(forms.Form):
         ):
             self.add_error(
                 "client_profile",
-                "Client must belong to the selected partner.",
+                _("Client must belong to the selected partner."),
             )
 
         has_new_client = bool(new_client_name or new_client_phone)
         if client_profile is not None and has_new_client:
             self.add_error(
                 "client_profile",
-                "Choose an existing client or enter a new client, not both.",
+                _("Choose an existing client or enter a new client, not both."),
             )
         elif client_profile is None and not has_new_client:
             self.add_error(
                 "client_profile",
-                "Choose an existing client or enter a new client name or phone.",
+                _("Choose an existing client or enter a new client name or phone."),
             )
 
         cleaned_data["new_client_name"] = new_client_name
@@ -170,30 +173,32 @@ class ManualAppointmentAdminForm(forms.Form):
 class AppointmentStatusAdminForm(forms.Form):
     """Collect one allowed status transition or final-status correction."""
 
-    new_status = forms.ChoiceField(label="New status")
+    new_status = forms.ChoiceField(label=_("New status"))
     reason = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Shown to the client for cancellations. Required for final-status corrections.",
+        help_text=_(
+            "Shown to the client for cancellations. Required for final-status corrections."
+        ),
     )
 
     def __init__(self, *args, appointment: Appointment, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.appointment = appointment
         targets = available_appointment_status_targets(appointment=appointment)
-        self.fields["new_status"].choices = [("", "Select status")] + [
+        self.fields["new_status"].choices = [("", _("Select status"))] + [
             (status, Appointment.Status(status).label) for status in targets
         ]
         if appointment.is_final:
             self.fields["reason"].required = True
-            self.fields[
-                "reason"
-            ].help_text = "Required audit reason for correcting a final appointment status."
+            self.fields["reason"].help_text = _(
+                "Required audit reason for correcting a final appointment status."
+            )
 
     def clean_reason(self) -> str:
         reason = self.cleaned_data.get("reason", "").strip()
         if self.appointment.is_final and not reason:
-            raise forms.ValidationError("Correction reason is required.")
+            raise forms.ValidationError(_("Correction reason is required."))
         return reason
 
 
@@ -203,12 +208,12 @@ class AppointmentProposalAdminForm(forms.Form):
     message = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Optional message shown to the client with the proposed times.",
+        help_text=_("Optional message shown to the client with the proposed times."),
     )
     reason = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
-        help_text=(
+        help_text=_(
             "Optional client-visible reason. For a requested appointment, this is also "
             "used if the unanswered proposal expires and the request is cancelled."
         ),
@@ -225,14 +230,16 @@ class AppointmentProposalOptionAdminForm(forms.Form):
     """Collect one alternative start time in the appointment partner's timezone."""
 
     start_at = forms.SplitDateTimeField(
-        label="Proposed start time",
+        label=_("Proposed start time"),
         widget=AdminSplitDateTime,
     )
 
     def __init__(self, *args, appointment: Appointment, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.appointment = appointment
-        self.fields["start_at"].help_text = f"Enter local time in {appointment.partner.timezone}."
+        self.fields["start_at"].help_text = _("Enter local time in %(timezone)s.") % {
+            "timezone": appointment.partner.timezone,
+        }
 
     def clean_start_at(self):
         start_at = self.cleaned_data["start_at"]
@@ -247,9 +254,9 @@ class AppointmentProposalOptionAdminForm(forms.Form):
             get_zone(self.appointment.partner.timezone),
         )
         if localized <= timezone.now():
-            raise forms.ValidationError("Proposed time must be in the future.")
+            raise forms.ValidationError(_("Proposed time must be in the future."))
         if localized == self.appointment.start_at:
-            raise forms.ValidationError("Choose a time different from the current booking.")
+            raise forms.ValidationError(_("Choose a time different from the current booking."))
         return localized
 
 
@@ -271,10 +278,10 @@ class BaseAppointmentProposalOptionFormSet(BaseFormSet):
                 continue
             active_forms += 1
             if start_at in seen:
-                form.add_error("start_at", "Each proposed time must be unique.")
+                form.add_error("start_at", _("Each proposed time must be unique."))
             seen.add(start_at)
         if active_forms == 0:
-            raise DjangoValidationError("Add at least one proposed time.")
+            raise DjangoValidationError(_("Add at least one proposed time."))
 
     def build_options(self) -> tuple[AppointmentProposalOptionInput, ...]:
         if not self.is_valid():
@@ -306,16 +313,16 @@ class ManualAppointmentServiceItemForm(forms.Form):
     service = forms.ModelChoiceField(
         queryset=Service.objects.none(),
         required=False,
-        label="Catalog service",
+        label=_("Catalog service"),
     )
     custom_name = forms.CharField(
         max_length=255,
         required=False,
-        label="Custom service name",
+        label=_("Custom service name"),
     )
     description = forms.CharField(
         required=False,
-        label="Description override / custom description",
+        label=_("Description override / custom description"),
         widget=forms.Textarea(attrs={"rows": 2}),
     )
     price = forms.DecimalField(
@@ -323,14 +330,14 @@ class ManualAppointmentServiceItemForm(forms.Form):
         min_value=Decimal("0"),
         max_digits=12,
         decimal_places=2,
-        label="Price / override, UAH",
-        help_text="Leave blank to use the catalog price.",
+        label=_("Price / override, UAH"),
+        help_text=_("Leave blank to use the catalog price."),
     )
     duration_minutes = forms.IntegerField(
         required=False,
         min_value=1,
-        label="Duration / override, minutes",
-        help_text="Leave blank to use the catalog duration.",
+        label=_("Duration / override, minutes"),
+        help_text=_("Leave blank to use the catalog duration."),
     )
 
     def __init__(self, *args, service_queryset, **kwargs) -> None:
@@ -351,18 +358,18 @@ class ManualAppointmentServiceItemForm(forms.Form):
             if custom_name:
                 self.add_error(
                     "custom_name",
-                    "Leave custom name blank when a catalog service is selected.",
+                    _("Leave custom name blank when a catalog service is selected."),
                 )
             return cleaned_data
 
         if not custom_name:
-            self.add_error("custom_name", "Custom service name is required.")
+            self.add_error("custom_name", _("Custom service name is required."))
         if cleaned_data.get("price") is None:
-            self.add_error("price", "Custom service price is required.")
+            self.add_error("price", _("Custom service price is required."))
         if cleaned_data.get("duration_minutes") is None:
             self.add_error(
                 "duration_minutes",
-                "Custom service duration is required.",
+                _("Custom service duration is required."),
             )
         return cleaned_data
 
@@ -391,7 +398,7 @@ class BaseManualAppointmentServiceItemFormSet(BaseFormSet):
             for form in self.forms
             if not self._should_delete_form(form)
         ):
-            raise DjangoValidationError("Add at least one service line.")
+            raise DjangoValidationError(_("Add at least one service line."))
 
     def build_service_items(
         self,
@@ -411,7 +418,7 @@ class BaseManualAppointmentServiceItemFormSet(BaseFormSet):
             service = data.get("service")
             if service is not None and service.partner_id != partner.id:
                 raise DjangoValidationError(
-                    {"service_items": "Every service must belong to the selected partner."}
+                    {"service_items": _("Every service must belong to the selected partner.")}
                 )
             price = data.get("price")
             items.append(

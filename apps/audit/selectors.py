@@ -5,6 +5,8 @@ from datetime import timedelta
 
 from django.db.models import Count, Min, QuerySet
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.audit.models import AuditEvent, PlatformDiagnostic, WorkerHeartbeat
@@ -18,11 +20,11 @@ BROADCAST_STALL_WARNING_AFTER = timedelta(minutes=15)
 BROADCAST_STALL_CRITICAL_AFTER = timedelta(minutes=60)
 
 EXPECTED_RUNTIME_COMPONENTS = (
-    (PlatformDiagnostic.Component.BOT_RUNNER, "Bot runner"),
-    (PlatformDiagnostic.Component.CELERY_BEAT, "Celery beat"),
-    (PlatformDiagnostic.Component.NOTIFICATIONS_WORKER, "Notifications worker"),
-    (PlatformDiagnostic.Component.BROADCAST_WORKER, "Broadcast worker"),
-    (PlatformDiagnostic.Component.DEFAULT_WORKER, "Default / maintenance worker"),
+    (PlatformDiagnostic.Component.BOT_RUNNER, _("Bot runner")),
+    (PlatformDiagnostic.Component.CELERY_BEAT, _("Celery beat")),
+    (PlatformDiagnostic.Component.NOTIFICATIONS_WORKER, _("Notifications worker")),
+    (PlatformDiagnostic.Component.BROADCAST_WORKER, _("Broadcast worker")),
+    (PlatformDiagnostic.Component.DEFAULT_WORKER, _("Default / maintenance worker")),
 )
 
 _STATUS_RANK = {
@@ -160,26 +162,28 @@ def platform_health_snapshot(*, now=None) -> PlatformHealthSnapshot:
     infrastructure_checks = (
         PlatformHealthCheck(
             key="web",
-            label="Web",
+            label=_("Web"),
             status=WorkerHeartbeat.Status.OK,
-            summary="This authenticated dashboard request completed successfully.",
+            summary=_("This authenticated dashboard request completed successfully."),
         ),
         PlatformHealthCheck(
             key="postgres",
-            label="PostgreSQL",
+            label=_("PostgreSQL"),
             status=WorkerHeartbeat.Status.OK,
-            summary="Health dashboard queries completed successfully.",
+            summary=_("Health dashboard queries completed successfully."),
         ),
         PlatformHealthCheck(
             key="redis",
-            label="Redis / Celery broker",
+            label=_("Redis / Celery broker"),
             status=celery_status,
             summary=(
-                "Scheduled heartbeat tasks are flowing through the broker."
+                _("Scheduled heartbeat tasks are flowing through the broker.")
                 if celery_status == WorkerHeartbeat.Status.OK
                 else (
-                    "Inferred from stale or missing Celery heartbeat tasks; "
-                    "inspect Redis and workers."
+                    _(
+                        "Inferred from stale or missing Celery heartbeat tasks; "
+                        "inspect Redis and workers."
+                    )
                 )
             ),
         ),
@@ -216,14 +220,17 @@ def _runtime_component_check(
             key=component,
             label=label,
             status=WorkerHeartbeat.Status.CRITICAL,
-            summary="No heartbeat has been recorded.",
+            summary=_("No heartbeat has been recorded."),
         )
 
     status = evaluate_worker_heartbeat(heartbeat, now=now)
     age = _age_label(now=now, value=heartbeat.last_seen_at)
-    summary = f"Last heartbeat {age}."
+    summary = _("Last heartbeat %(age)s.") % {"age": age}
     if heartbeat.last_error_code and status == WorkerHeartbeat.Status.CRITICAL:
-        summary = f"Last heartbeat {age}; error: {heartbeat.last_error_code}."
+        summary = _("Last heartbeat %(age)s; error: %(error)s.") % {
+            "age": age,
+            "error": heartbeat.last_error_code,
+        }
     return PlatformHealthCheck(
         key=component,
         label=label,
@@ -242,9 +249,9 @@ def _notification_lag_check(*, now) -> PlatformHealthCheck:
     if not total or oldest_due_at is None:
         return PlatformHealthCheck(
             key="notification_lag",
-            label="Due notifications",
+            label=_("Due notifications"),
             status=WorkerHeartbeat.Status.OK,
-            summary="No overdue queued notifications.",
+            summary=_("No overdue queued notifications."),
         )
 
     lag = now - oldest_due_at
@@ -255,9 +262,14 @@ def _notification_lag_check(*, now) -> PlatformHealthCheck:
     )
     return PlatformHealthCheck(
         key="notification_lag",
-        label="Due notifications",
+        label=_("Due notifications"),
         status=status,
-        summary=f"{total} queued; oldest is {_duration_label(lag)} late.",
+        summary=ngettext(
+            "%(count)s queued notification; oldest is %(age)s late.",
+            "%(count)s queued notifications; oldest is %(age)s late.",
+            total,
+        )
+        % {"count": total, "age": _duration_label(lag)},
     )
 
 
@@ -265,9 +277,13 @@ def _broadcast_progress_check(
     *,
     now,
 ) -> tuple[PlatformHealthCheck, tuple[ActiveBroadcastHealth, ...]]:
-    campaigns = BroadcastCampaign.objects.filter(
-        status__in=[BroadcastCampaign.Status.QUEUED, BroadcastCampaign.Status.SENDING],
-    ).select_related("partner").order_by("updated_at", "created_at")
+    campaigns = (
+        BroadcastCampaign.objects.filter(
+            status__in=[BroadcastCampaign.Status.QUEUED, BroadcastCampaign.Status.SENDING],
+        )
+        .select_related("partner")
+        .order_by("updated_at", "created_at")
+    )
     rows: list[ActiveBroadcastHealth] = []
     for campaign in campaigns:
         age = max(now - campaign.updated_at, timedelta(0))
@@ -286,9 +302,7 @@ def _broadcast_progress_check(
                 health_status=health_status,
                 processed_count=processed_count,
                 total_count=total_count,
-                progress_percent=(
-                    round(processed_count / total_count * 100) if total_count else 0
-                ),
+                progress_percent=(round(processed_count / total_count * 100) if total_count else 0),
                 updated_at=campaign.updated_at,
                 progress_age=_duration_label(age),
             )
@@ -299,22 +313,29 @@ def _broadcast_progress_check(
         return (
             PlatformHealthCheck(
                 key="broadcast_progress",
-                label="Broadcast progress",
+                label=_("Broadcast progress"),
                 status=WorkerHeartbeat.Status.OK,
-                summary="No active broadcasts.",
+                summary=_("No active broadcasts."),
             ),
             active_broadcasts,
         )
 
     status = _worst_status(row.health_status for row in active_broadcasts)
     stalled = sum(row.health_status != WorkerHeartbeat.Status.OK for row in active_broadcasts)
-    summary = f"{len(active_broadcasts)} active campaign(s)."
+    summary = ngettext(
+        "%(count)s active campaign.",
+        "%(count)s active campaigns.",
+        len(active_broadcasts),
+    ) % {"count": len(active_broadcasts)}
     if stalled:
-        summary = f"{len(active_broadcasts)} active; {stalled} without recent progress."
+        summary = _("%(active)s active; %(stalled)s without recent progress.") % {
+            "active": len(active_broadcasts),
+            "stalled": stalled,
+        }
     return (
         PlatformHealthCheck(
             key="broadcast_progress",
-            label="Broadcast progress",
+            label=_("Broadcast progress"),
             status=status,
             summary=summary,
         ),
@@ -322,8 +343,7 @@ def _broadcast_progress_check(
     )
 
 
-def _diagnostic_problem_check(
-) -> tuple[PlatformHealthCheck, tuple[PlatformDiagnostic, ...]]:
+def _diagnostic_problem_check() -> tuple[PlatformHealthCheck, tuple[PlatformDiagnostic, ...]]:
     problems = active_platform_problems()
     severity_counts = {
         row["severity"]: row["total"]
@@ -341,17 +361,22 @@ def _diagnostic_problem_check(
         status = WorkerHeartbeat.Status.OK
     total = critical_count + error_count + warning_count
     summary = (
-        "No unresolved warning, error, or critical diagnostics."
+        _("No unresolved warning, error, or critical diagnostics.")
         if not total
         else (
-            f"{total} unresolved: {critical_count} critical, "
-            f"{error_count} error, {warning_count} warning."
+            _("%(total)s unresolved: %(critical)s critical, %(error)s error, %(warning)s warning.")
+            % {
+                "total": total,
+                "critical": critical_count,
+                "error": error_count,
+                "warning": warning_count,
+            }
         )
     )
     return (
         PlatformHealthCheck(
             key="diagnostics",
-            label="Platform diagnostics",
+            label=_("Platform diagnostics"),
             status=status,
             summary=summary,
         ),
@@ -373,19 +398,29 @@ def _worst_status(statuses) -> str:
 
 def _age_label(*, now, value) -> str:
     if value is None:
-        return "never"
-    return f"{_duration_label(max(now - value, timedelta(0)))} ago"
+        return _("never")
+    return _("%(duration)s ago") % {"duration": _duration_label(max(now - value, timedelta(0)))}
 
 
 def _duration_label(value: timedelta) -> str:
     seconds = max(0, int(value.total_seconds()))
     if seconds < 60:
-        return f"{seconds}s"
+        return _("%(count)ss") % {"count": seconds}
     minutes = seconds // 60
     if minutes < 60:
-        return f"{minutes}m"
+        return _("%(count)sm") % {"count": minutes}
     hours, remaining_minutes = divmod(minutes, 60)
     if hours < 24:
-        return f"{hours}h {remaining_minutes}m" if remaining_minutes else f"{hours}h"
+        if remaining_minutes:
+            return _("%(hours)sh %(minutes)sm") % {
+                "hours": hours,
+                "minutes": remaining_minutes,
+            }
+        return _("%(count)sh") % {"count": hours}
     days, remaining_hours = divmod(hours, 24)
-    return f"{days}d {remaining_hours}h" if remaining_hours else f"{days}d"
+    if remaining_hours:
+        return _("%(days)sd %(hours)sh") % {
+            "days": days,
+            "hours": remaining_hours,
+        }
+    return _("%(count)sd") % {"count": days}

@@ -5,17 +5,18 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from apps.partners.models import Partner
 
 
 class SetupStep(models.TextChoices):
-    BOT_TOKEN = "bot_token", "Bot token"
-    LANGUAGE = "language", "Language"
-    TIMEZONE = "timezone", "Timezone"
-    CATALOG_SERVICE = "catalog_service", "Catalog service"
-    AVAILABILITY_WINDOW = "availability_window", "Availability window"
-    BOOKING_CONFIRMATION_MODE = "booking_confirmation_mode", "Booking confirmation mode"
+    BOT_TOKEN = "bot_token", _("Bot token")
+    LANGUAGE = "language", _("Language")
+    TIMEZONE = "timezone", _("Timezone")
+    CATALOG_SERVICE = "catalog_service", _("Catalog service")
+    AVAILABILITY_WINDOW = "availability_window", _("Availability window")
+    BOOKING_CONFIRMATION_MODE = "booking_confirmation_mode", _("Booking confirmation mode")
 
 
 EXTERNAL_SETUP_STEPS = (

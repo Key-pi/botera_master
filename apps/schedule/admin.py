@@ -7,6 +7,7 @@ from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.core.exceptions import ValidationError
 from django.template.response import TemplateResponse
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.schedule.forms import (
@@ -222,12 +223,12 @@ class AvailabilityTemplateAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         for template in queryset.select_related("partner"):
             delete_availability_template(actor=request.user, template=template)
 
-    @admin.action(description="Apply selected template to a date range")
+    @admin.action(description=_("Apply selected template to a date range"))
     def apply_selected_template(self, request, queryset):
         if queryset.count() != 1:
             self.message_user(
                 request,
-                "Select exactly one availability template to apply.",
+                _("Select exactly one availability template to apply."),
                 level=messages.WARNING,
             )
             return None
@@ -255,7 +256,8 @@ class AvailabilityTemplateAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 else:
                     self.message_user(
                         request,
-                        f"Applied {template.name}; created {len(windows)} availability window(s).",
+                        _("Applied %(template)s; created %(count)s availability window(s).")
+                        % {"template": template.name, "count": len(windows)},
                     )
                     return None
         else:
@@ -273,7 +275,7 @@ class AvailabilityTemplateAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Apply availability template",
+            "title": _("Apply availability template"),
             "opts": self.model._meta,
             "template_object": template,
             "form": form,

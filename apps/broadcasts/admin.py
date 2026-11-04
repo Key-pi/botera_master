@@ -6,6 +6,7 @@ from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.broadcasts.forms import (
@@ -85,7 +86,7 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         if obj is not None and obj.status not in EDITABLE_CAMPAIGN_STATUSES:
             return (
                 (
-                    "Campaign",
+                    _("Campaign"),
                     {
                         "fields": (
                             "partner",
@@ -105,10 +106,10 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 ),
             )
         return (
-            ("Content", {"fields": ("partner", "text", "photo")}),
-            ("Audience", {"fields": ("audience", "service", "long_absent_days")}),
+            (_("Content"), {"fields": ("partner", "text", "photo")}),
+            (_("Audience"), {"fields": ("audience", "service", "long_absent_days")}),
             (
-                "Buttons",
+                _("Buttons"),
                 {
                     "fields": (
                         "include_book_button",
@@ -120,7 +121,7 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                     )
                 },
             ),
-            ("Delivery", {"fields": ("delivery_mode", "scheduled_at")}),
+            (_("Delivery"), {"fields": ("delivery_mode", "scheduled_at")}),
         )
 
     def get_readonly_fields(self, request, obj=None):
@@ -156,22 +157,22 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 initial.update(campaign_form_initial_from_template(template))
         return initial
 
-    @admin.display(description="Message")
+    @admin.display(description=_("Message"))
     def content_summary(self, obj):
         if obj.text:
             return obj.text[:80] + ("…" if len(obj.text) > 80 else "")
-        return f"Photo: {obj.photo[:64]}"
+        return _("Photo: %(photo)s") % {"photo": obj.photo[:64]}
 
-    @admin.display(description="Content")
+    @admin.display(description=_("Content"))
     def content_detail(self, obj):
         parts = []
         if obj.text:
             parts.append(obj.text)
         if obj.photo:
-            parts.append(f"Photo: {obj.photo}")
-        return "\n".join(parts) or "No content"
+            parts.append(_("Photo: %(photo)s") % {"photo": obj.photo})
+        return "\n".join(parts) or _("No content")
 
-    @admin.display(description="Audience")
+    @admin.display(description=_("Audience"))
     def audience_display(self, obj):
         filters = obj.filters or {}
         if filters.get("service_id"):
@@ -183,31 +184,43 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 .values_list("name", flat=True)
                 .first()
             )
-            return f"Completed service: {service_name or 'removed service'}"
+            return _("Completed service: %(service)s") % {
+                "service": service_name or _("removed service")
+            }
         if filters.get("long_absent_days"):
-            return f"Absent for {filters['long_absent_days']}+ days"
+            return _("Absent for %(days)s+ days") % {"days": filters["long_absent_days"]}
         if filters.get("has_future_appointment") is True:
-            return "Has future appointment"
+            return _("Has future appointment")
         if filters.get("without_future_appointment") is True:
-            return "Without future appointment"
-        return "All reachable subscribed clients"
+            return _("Without future appointment")
+        return _("All reachable subscribed clients")
 
-    @admin.display(description="Buttons")
+    @admin.display(description=_("Buttons"))
     def buttons_display(self, obj):
         labels = [button.get("label", "") for button in (obj.buttons or [])]
-        return ", ".join(label for label in labels if label) or "None"
+        return ", ".join(label for label in labels if label) or _("None")
 
-    @admin.display(description="Progress")
+    @admin.display(description=_("Progress"))
     def progress_display(self, obj):
         total = obj.queued_count + obj.sent_count + obj.failed_count + obj.skipped_count
         if not total:
-            return "0 recipients" if obj.status != BroadcastCampaign.Status.DRAFT else "Not started"
+            return (
+                _("0 recipients")
+                if obj.status != BroadcastCampaign.Status.DRAFT
+                else _("Not started")
+            )
         finished = obj.sent_count + obj.failed_count + obj.skipped_count
         percent = round(finished * 100 / total)
-        label = (
-            f"{percent}% · {obj.sent_count} sent · {obj.failed_count} failed · "
-            f"{obj.skipped_count} skipped · {obj.queued_count} pending"
-        )
+        label = _(
+            "%(percent)s%% · %(sent)s sent · %(failed)s failed · "
+            "%(skipped)s skipped · %(pending)s pending"
+        ) % {
+            "percent": percent,
+            "sent": obj.sent_count,
+            "failed": obj.failed_count,
+            "skipped": obj.skipped_count,
+            "pending": obj.queued_count,
+        }
         url = reverse("admin:broadcasts_broadcastrecipient_changelist")
         query = urlencode({"campaign__id__exact": obj.id})
         return format_html('<a href="{}?{}">{}</a>', url, query, label)
@@ -222,7 +235,7 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         }
         if change:
             if obj.status not in EDITABLE_CAMPAIGN_STATUSES:
-                raise PermissionDenied("A started broadcast cannot be edited.")
+                raise PermissionDenied(_("A started broadcast cannot be edited."))
             stored = update_broadcast_campaign(
                 actor=request.user,
                 campaign=obj,
@@ -243,7 +256,7 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             return False
         return super().has_change_permission(request, obj)
 
-    @admin.action(description="Start selected campaigns now")
+    @admin.action(description=_("Start selected campaigns now"))
     def start_selected_campaigns(self, request, queryset):
         started = 0
         rejected = 0
@@ -258,15 +271,19 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             else:
                 started += 1
         if started:
-            self.message_user(request, f"Started {started} broadcast campaign(s).")
+            self.message_user(
+                request,
+                _("Started %(count)s broadcast campaign(s).") % {"count": started},
+            )
         if rejected:
             self.message_user(
                 request,
-                f"Could not start {rejected} campaign(s) from their current status.",
+                _("Could not start %(count)s campaign(s) from their current status.")
+                % {"count": rejected},
                 level=messages.WARNING,
             )
 
-    @admin.action(description="Cancel selected campaigns")
+    @admin.action(description=_("Cancel selected campaigns"))
     def cancel_selected_campaigns(self, request, queryset):
         cancelled = 0
         rejected = 0
@@ -285,11 +302,14 @@ class BroadcastCampaignAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             else:
                 cancelled += 1
         if cancelled:
-            self.message_user(request, f"Cancelled {cancelled} broadcast campaign(s).")
+            self.message_user(
+                request,
+                _("Cancelled %(count)s broadcast campaign(s).") % {"count": cancelled},
+            )
         if rejected:
             self.message_user(
                 request,
-                f"Could not cancel {rejected} finished campaign(s).",
+                _("Could not cancel %(count)s finished campaign(s).") % {"count": rejected},
                 level=messages.WARNING,
             )
 
@@ -373,22 +393,22 @@ class BroadcastTemplateAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             initial["partner"] = partner_ids[0]
         return initial
 
-    @admin.display(description="Message")
+    @admin.display(description=_("Message"))
     def content_summary(self, obj):
         if obj.text:
             return obj.text[:80] + ("…" if len(obj.text) > 80 else "")
-        return f"Photo: {obj.photo[:64]}"
+        return _("Photo: %(photo)s") % {"photo": obj.photo[:64]}
 
-    @admin.display(description="Buttons")
+    @admin.display(description=_("Buttons"))
     def buttons_display(self, obj):
         labels = [button.get("label", "") for button in (obj.buttons or [])]
-        return ", ".join(label for label in labels if label) or "None"
+        return ", ".join(label for label in labels if label) or _("None")
 
-    @admin.display(description="Reuse")
+    @admin.display(description=_("Reuse"))
     def create_campaign_link(self, obj):
         url = reverse("admin:broadcasts_broadcastcampaign_add")
         query = urlencode({"partner": obj.partner_id, "template": obj.id})
-        return format_html('<a href="{}?{}">Create campaign</a>', url, query)
+        return format_html(_('<a href="{}?{}">Create campaign</a>'), url, query)
 
     def save_model(self, request, obj, form, change):
         values = {

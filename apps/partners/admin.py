@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
+from django.utils.translation import gettext_lazy as _
 
 from apps.partners.forms import PartnerOnboardingAdminForm
 from apps.partners.models import Partner
@@ -14,11 +15,11 @@ class PartnerAdmin(admin.ModelAdmin):
     add_form = PartnerOnboardingAdminForm
     add_fieldsets = (
         (
-            "Partner",
+            _("Partner"),
             {"fields": ("name", "timezone", "default_language")},
         ),
         (
-            "Owner account",
+            _("Owner account"),
             {
                 "fields": (
                     "owner_username",
@@ -64,29 +65,29 @@ class PartnerAdmin(admin.ModelAdmin):
         visible_ids = visible_partners_for_user(request.user).values_list("id", flat=True)
         return queryset.filter(id__in=visible_ids)
 
-    @admin.display(boolean=True, description="Setup complete")
+    @admin.display(boolean=True, description=_("Setup complete"))
     def setup_complete(self, obj: Partner) -> bool:
         return get_partner_setup_status(obj).is_complete
 
-    @admin.display(description="Missing setup")
+    @admin.display(description=_("Missing setup"))
     def missing_setup_steps(self, obj: Partner) -> str:
         missing_steps = get_partner_setup_status(obj).missing_steps
-        return ", ".join(missing_steps) if missing_steps else "Ready"
+        return ", ".join(missing_steps) if missing_steps else _("Ready")
 
-    @admin.display(description="Onboarding checklist")
+    @admin.display(description=_("Onboarding checklist"))
     def onboarding_checklist(self, obj: Partner) -> str:
         onboarding = partner_onboarding_snapshot(partner=obj)
         checklist = format_html_join(
             "",
             "<div><strong>{}</strong>: {}</div>",
             (
-                (step.label, "Done" if step.is_complete else "Pending")
+                (step.label, _("Done") if step.is_complete else _("Pending"))
                 for step in onboarding.all_steps
             ),
         )
         setup_url = f"{reverse('partners:setup')}?partner={obj.pk}"
         return format_html(
-            '{}<p><a class="button" href="{}">Open setup guide</a></p>',
+            _('{}<p><a class="button" href="{}">Open setup guide</a></p>'),
             checklist,
             setup_url,
         )

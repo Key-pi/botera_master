@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from core.database.models import PartnerBoundModel, TimeStampedModel
 
@@ -8,15 +9,17 @@ from core.database.models import PartnerBoundModel, TimeStampedModel
 class TelegramIdentity(TimeStampedModel):
     """Technical Telegram user identity shared across partner-specific profiles."""
 
-    telegram_user_id = models.BigIntegerField(unique=True, db_index=True)
-    username = models.CharField(max_length=255, blank=True)
-    first_name = models.CharField(max_length=255, blank=True)
-    last_name = models.CharField(max_length=255, blank=True)
-    is_premium = models.BooleanField(default=False)
-    language_code = models.CharField(max_length=16, blank=True)
-    last_seen_at = models.DateTimeField(null=True, blank=True)
+    telegram_user_id = models.BigIntegerField(_("Telegram user ID"), unique=True, db_index=True)
+    username = models.CharField(_("username"), max_length=255, blank=True)
+    first_name = models.CharField(_("first name"), max_length=255, blank=True)
+    last_name = models.CharField(_("last name"), max_length=255, blank=True)
+    is_premium = models.BooleanField(_("Telegram Premium"), default=False)
+    language_code = models.CharField(_("language code"), max_length=16, blank=True)
+    last_seen_at = models.DateTimeField(_("last seen at"), null=True, blank=True)
 
     class Meta:
+        verbose_name = _("Telegram identity")
+        verbose_name_plural = _("Telegram identities")
         ordering = ["telegram_user_id"]
 
     def __str__(self) -> str:
@@ -33,18 +36,25 @@ class ClientProfile(PartnerBoundModel):
         related_name="client_profiles",
         null=True,
         blank=True,
+        verbose_name=_("Telegram identity"),
     )
-    name = models.CharField(max_length=255, blank=True)
-    phone = models.CharField(max_length=32, blank=True)
-    language = models.CharField(max_length=8, default="uk")
-    private_master_note = models.TextField(blank=True)
-    extra_client_text = models.TextField(blank=True)
-    marketing_opt_out = models.BooleanField(default=False)
-    bot_unreachable = models.BooleanField(default=False)
-    last_delivery_failure_code = models.CharField(max_length=128, blank=True)
-    last_delivery_failure_at = models.DateTimeField(null=True, blank=True)
+    name = models.CharField(_("client name"), max_length=255, blank=True)
+    phone = models.CharField(_("phone"), max_length=32, blank=True)
+    language = models.CharField(_("language"), max_length=8, default="uk")
+    private_master_note = models.TextField(_("private master note"), blank=True)
+    extra_client_text = models.TextField(_("extra client text"), blank=True)
+    marketing_opt_out = models.BooleanField(_("marketing opt-out"), default=False)
+    bot_unreachable = models.BooleanField(_("bot unreachable"), default=False)
+    last_delivery_failure_code = models.CharField(
+        _("last delivery failure code"), max_length=128, blank=True
+    )
+    last_delivery_failure_at = models.DateTimeField(
+        _("last delivery failure at"), null=True, blank=True
+    )
 
     class Meta:
+        verbose_name = _("client profile")
+        verbose_name_plural = _("client profiles")
         ordering = ["partner__name", "name", "created_at"]
         constraints = [
             models.UniqueConstraint(
@@ -72,7 +82,7 @@ class ClientProfile(PartnerBoundModel):
             return str(self.telegram_identity)
         if self.phone:
             return self.phone
-        return "Manual client"
+        return str(_("Manual client"))
 
     @property
     def has_telegram_identity(self) -> bool:

@@ -1,6 +1,7 @@
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.utils.html import format_html, format_html_join
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.bot.forms import BotInstanceAdminForm
@@ -112,7 +113,7 @@ class BotInstanceAdmin(admin.ModelAdmin):
         )
         _copy_model_state(target=obj, source=stored)
 
-    @admin.action(description="Check Telegram connection")
+    @admin.action(description=_("Check Telegram connection"))
     def check_connection(self, request, queryset):
         checked_count = 0
         failed_count = 0
@@ -126,14 +127,18 @@ class BotInstanceAdmin(admin.ModelAdmin):
         if failed_count:
             self.message_user(
                 request,
-                f"Checked {checked_count} bot(s), {failed_count} need attention.",
+                _("Checked %(checked)s bot(s), %(failed)s need attention.")
+                % {"checked": checked_count, "failed": failed_count},
                 level=messages.WARNING,
             )
             return
 
-        self.message_user(request, f"Checked {checked_count} bot(s).")
+        self.message_user(
+            request,
+            _("Checked %(count)s bot(s).") % {"count": checked_count},
+        )
 
-    @admin.action(description="Launch selected bots after setup checks")
+    @admin.action(description=_("Launch selected bots after setup checks"))
     def launch_bots(self, request, queryset):
         launched_count = 0
         failures: list[str] = []
@@ -146,11 +151,14 @@ class BotInstanceAdmin(admin.ModelAdmin):
                 launched_count += 1
 
         if launched_count:
-            self.message_user(request, f"Launched {launched_count} bot(s).")
+            self.message_user(
+                request,
+                _("Launched %(count)s bot(s).") % {"count": launched_count},
+            )
         if failures:
             self.message_user(request, " | ".join(failures), level=messages.WARNING)
 
-    @admin.action(description="Pause selected bots")
+    @admin.action(description=_("Pause selected bots"))
     def pause_bots(self, request, queryset):
         paused_count = 0
         failures: list[str] = []
@@ -167,11 +175,14 @@ class BotInstanceAdmin(admin.ModelAdmin):
                 paused_count += 1
 
         if paused_count:
-            self.message_user(request, f"Paused {paused_count} bot(s).")
+            self.message_user(
+                request,
+                _("Paused %(count)s bot(s).") % {"count": paused_count},
+            )
         if failures:
             self.message_user(request, " | ".join(failures), level=messages.WARNING)
 
-    @admin.action(description="Create my master Telegram link")
+    @admin.action(description=_("Create my master Telegram link"))
     def create_master_contact_links(self, request, queryset):
         links = []
         failures: list[str] = []
@@ -189,13 +200,13 @@ class BotInstanceAdmin(admin.ModelAdmin):
         if links:
             rendered_links = format_html_join(
                 "",
-                '<li><a href="{}" target="_blank" rel="noopener">{}</a> (expires {})</li>',
+                _('<li><a href="{}" target="_blank" rel="noopener">{}</a> (expires {})</li>'),
                 ((url, partner_name, expires_at) for partner_name, url, expires_at in links),
             )
             self.message_user(
                 request,
                 format_html(
-                    "Open the signed link in the master's Telegram:<ul>{}</ul>",
+                    _("Open the signed link in the master's Telegram:<ul>{}</ul>"),
                     rendered_links,
                 ),
             )
@@ -263,10 +274,13 @@ class SystemTemplateAdmin(admin.ModelAdmin):
     readonly_fields = ["created_at", "updated_at"]
     actions = ["sync_registry_defaults"]
 
-    @admin.action(description="Sync system templates from registry")
+    @admin.action(description=_("Sync system templates from registry"))
     def sync_registry_defaults(self, request, queryset):
         count = seed_system_templates()
-        self.message_user(request, f"Synchronized {count} system template rows.")
+        self.message_user(
+            request,
+            _("Synchronized %(count)s system template rows.") % {"count": count},
+        )
 
 
 @admin.register(PartnerTemplateOverride)

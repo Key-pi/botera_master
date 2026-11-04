@@ -1,0 +1,37 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_("BoteraMaster admin") }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'core/admin_language.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_("BoteraMaster administration") }}</a></div>
+  {% if user.is_anonymous %}
+    {% include "admin/color_theme_toggle.html" %}
+  {% endif %}
+{% endblock %}
+
+{% block userlinks %}
+  {% get_current_language as current_language %}
+  {% get_available_languages as available_languages %}
+  {% get_language_info_list for available_languages as languages %}
+  <form class="admin-language-form" action="{% url 'set_language' %}" method="post">
+    {% csrf_token %}
+    <input name="next" type="hidden" value="{{ request.get_full_path }}">
+    <label class="admin-language-label" for="admin-language">{% translate "Interface language" %}</label>
+    <select id="admin-language" name="language" aria-label="{% translate 'Interface language' %}" onchange="this.form.submit()">
+      {% for language in languages %}
+        <option value="{{ language.code }}"{% if language.code == current_language %} selected{% endif %}>{{ language.name_local }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit">{% translate "Apply language" %}</button></noscript>
+  </form>
+  <span class="admin-userlink-separator" aria-hidden="true">/</span>
+  {{ block.super }}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

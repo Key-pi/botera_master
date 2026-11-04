@@ -8,6 +8,8 @@ from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
+from django.utils.translation import gettext, ngettext
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.forms import (
@@ -134,15 +136,15 @@ class AppointmentProposalOptionInline(admin.TabularInline):
     readonly_fields = fields
     can_delete = False
 
-    @admin.display(description="Start at (partner time)")
+    @admin.display(description=_("Start at (partner time)"))
     def start_at_partner_time(self, obj):
         return _partner_datetime(obj.start_at, obj.proposal.partner.timezone)
 
-    @admin.display(description="End at (partner time)")
+    @admin.display(description=_("End at (partner time)"))
     def end_at_partner_time(self, obj):
         return _partner_datetime(obj.end_at, obj.proposal.partner.timezone)
 
-    @admin.display(description="Selected at (partner time)")
+    @admin.display(description=_("Selected at (partner time)"))
     def selected_at_partner_time(self, obj):
         return _partner_datetime(obj.selected_at, obj.proposal.partner.timezone)
 
@@ -156,17 +158,17 @@ class AppointmentProposalOptionInline(admin.TabularInline):
 class AppointmentOperationalPeriodFilter(admin.SimpleListFilter):
     """Expose useful date presets using each appointment partner's timezone."""
 
-    title = "appointment period"
+    title = _("appointment period")
     parameter_name = "period"
 
     def lookups(self, request, model_admin):
         return (
-            (APPOINTMENT_PERIOD_TODAY, "Today"),
-            (APPOINTMENT_PERIOD_TOMORROW, "Tomorrow"),
-            (APPOINTMENT_PERIOD_NEXT_7_DAYS, "Next 7 days"),
-            (APPOINTMENT_PERIOD_NEXT_30_DAYS, "Next 30 days"),
-            (APPOINTMENT_PERIOD_UPCOMING, "All upcoming"),
-            (APPOINTMENT_PERIOD_PAST, "Past"),
+            (APPOINTMENT_PERIOD_TODAY, _("Today")),
+            (APPOINTMENT_PERIOD_TOMORROW, _("Tomorrow")),
+            (APPOINTMENT_PERIOD_NEXT_7_DAYS, _("Next 7 days")),
+            (APPOINTMENT_PERIOD_NEXT_30_DAYS, _("Next 30 days")),
+            (APPOINTMENT_PERIOD_UPCOMING, _("All upcoming")),
+            (APPOINTMENT_PERIOD_PAST, _("Past")),
         )
 
     def queryset(self, request, queryset):
@@ -181,14 +183,14 @@ class AppointmentOperationalPeriodFilter(admin.SimpleListFilter):
 class AppointmentPenaltyStateFilter(admin.SimpleListFilter):
     """Filter appointments by incident or applied penalty state."""
 
-    title = "penalties"
+    title = _("penalties")
     parameter_name = "penalty_state"
 
     def lookups(self, request, model_admin):
         return (
-            (APPOINTMENT_PENALTY_ANY, "Has a penalty"),
-            (APPOINTMENT_PENALTY_OUTSTANDING, "Has an outstanding penalty"),
-            (APPOINTMENT_PENALTY_NONE, "No penalties"),
+            (APPOINTMENT_PENALTY_ANY, _("Has a penalty")),
+            (APPOINTMENT_PENALTY_OUTSTANDING, _("Has an outstanding penalty")),
+            (APPOINTMENT_PENALTY_NONE, _("No penalties")),
         )
 
     def queryset(self, request, queryset):
@@ -267,20 +269,20 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related("service_items")
 
-    @admin.display(description="Services")
+    @admin.display(description=_("Services"))
     def services_summary(self, obj):
         names = [item.service_name_snapshot for item in obj.service_items.all()]
         return ", ".join(names) if names else "-"
 
-    @admin.display(description="Start (partner time)", ordering="start_at")
+    @admin.display(description=_("Start (partner time)"), ordering="start_at")
     def start_at_partner_time(self, obj):
         return _partner_datetime(obj.start_at, obj.partner.timezone)
 
-    @admin.display(description="End (partner time)", ordering="end_at")
+    @admin.display(description=_("End (partner time)"), ordering="end_at")
     def end_at_partner_time(self, obj):
         return _partner_datetime(obj.end_at, obj.partner.timezone)
 
-    @admin.display(description="Total", ordering="total_amount")
+    @admin.display(description=_("Total"), ordering="total_amount")
     def total_display(self, obj):
         amount = Money(amount=obj.total_amount, currency=obj.currency)
         return f"{amount.to_major_decimal()} {amount.currency}"
@@ -327,19 +329,19 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
-    @admin.action(description="Mark completed")
+    @admin.action(description=_("Mark completed"))
     def mark_completed(self, request, queryset):
         self._run_status_action(request, queryset, Appointment.Status.COMPLETED)
 
-    @admin.action(description="Mark no-show")
+    @admin.action(description=_("Mark no-show"))
     def mark_no_show(self, request, queryset):
         self._run_status_action(request, queryset, Appointment.Status.NO_SHOW)
 
-    @admin.action(description="Cancel by master")
+    @admin.action(description=_("Cancel by master"))
     def cancel_by_master(self, request, queryset):
         self._run_status_action(request, queryset, Appointment.Status.CANCELLED_BY_MASTER)
 
-    @admin.action(description="Confirm requested appointments")
+    @admin.action(description=_("Confirm requested appointments"))
     def confirm_requested(self, request, queryset):
         self._run_status_action(request, queryset, Appointment.Status.CONFIRMED)
 
@@ -387,12 +389,12 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             except ValidationError as exc:
                 add_domain_errors_to_manual_appointment_form(form, exc)
             else:
-                self.log_addition(request, appointment, "Created manual appointment.")
+                self.log_addition(request, appointment, gettext("Created manual appointment."))
                 return self.response_add(request, appointment)
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Create manual appointment",
+            "title": _("Create manual appointment"),
             "subtitle": None,
             "opts": self.model._meta,
             "app_label": self.model._meta.app_label,
@@ -474,16 +476,14 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         appointment = self.get_object(request, object_id)
         if appointment is None:
-            raise Http404("Appointment not found.")
+            raise Http404(_("Appointment not found."))
         if not self.has_change_permission(request, appointment):
             raise PermissionDenied
 
         initial = None
         if request.method == "GET":
             requested_target = request.GET.get("target", "").strip()
-            if requested_target in available_appointment_status_targets(
-                appointment=appointment
-            ):
+            if requested_target in available_appointment_status_targets(appointment=appointment):
                 initial = {"new_status": requested_target}
         form = AppointmentStatusAdminForm(
             request.POST or None,
@@ -512,11 +512,13 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 self.log_change(
                     request,
                     stored,
-                    f"Changed status to {stored.get_status_display()}.",
+                    gettext("Changed status to %(status)s.")
+                    % {"status": stored.get_status_display()},
                 )
                 self.message_user(
                     request,
-                    f"Appointment status changed to {stored.get_status_display()}.",
+                    gettext("Appointment status changed to %(status)s.")
+                    % {"status": stored.get_status_display()},
                 )
                 if self._can_create_source_penalty(
                     appointment=stored,
@@ -524,7 +526,10 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 ):
                     self.message_user(
                         request,
-                        "Review the optional no-show penalty before returning to the appointment.",
+                        _(
+                            "Review the optional no-show penalty before returning to the "
+                            "appointment."
+                        ),
                     )
                     return HttpResponseRedirect(
                         reverse(
@@ -541,7 +546,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Change appointment status",
+            "title": _("Change appointment status"),
             "subtitle": str(appointment),
             "opts": self.model._meta,
             "appointment": appointment,
@@ -563,7 +568,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         appointment = self.get_object(request, object_id)
         if appointment is None:
-            raise Http404("Appointment not found.")
+            raise Http404(_("Appointment not found."))
         if not self.has_change_permission(request, appointment):
             raise PermissionDenied
         if appointment.status not in {
@@ -572,7 +577,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         }:
             self.message_user(
                 request,
-                "Only requested or confirmed appointments can receive a time proposal.",
+                _("Only requested or confirmed appointments can receive a time proposal."),
                 level=messages.ERROR,
             )
             return HttpResponseRedirect(
@@ -581,7 +586,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         if not appointment.client_profile.telegram_identity_id:
             self.message_user(
                 request,
-                "This client has no Telegram connection and cannot respond to a proposal.",
+                _("This client has no Telegram connection and cannot respond to a proposal."),
                 level=messages.ERROR,
             )
             return HttpResponseRedirect(
@@ -615,9 +620,12 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 self.log_change(
                     request,
                     appointment,
-                    f"Created {proposal.get_type_display()} proposal.",
+                    gettext("Created %(type)s proposal.") % {"type": proposal.get_type_display()},
                 )
-                self.message_user(request, "Time proposal created and queued for delivery.")
+                self.message_user(
+                    request,
+                    _("Time proposal created and queued for delivery."),
+                )
                 return HttpResponseRedirect(
                     reverse(
                         "admin:appointments_appointmentproposal_change",
@@ -627,7 +635,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Propose another time",
+            "title": _("Propose another time"),
             "subtitle": _appointment_partner_summary(appointment),
             "opts": self.model._meta,
             "appointment": appointment,
@@ -650,7 +658,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         appointment = self.get_object(request, object_id)
         if appointment is None:
-            raise Http404("Appointment not found.")
+            raise Http404(_("Appointment not found."))
         if not self.has_change_permission(request, appointment):
             raise PermissionDenied
 
@@ -671,11 +679,21 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 self.log_change(
                     request,
                     appointment,
-                    f"Applied {len(applications)} client penalty record(s).",
+                    ngettext(
+                        "Applied %(count)s client penalty record.",
+                        "Applied %(count)s client penalty records.",
+                        len(applications),
+                    )
+                    % {"count": len(applications)},
                 )
                 self.message_user(
                     request,
-                    f"Applied {len(applications)} penalty record(s) to the appointment.",
+                    ngettext(
+                        "Applied %(count)s penalty record to the appointment.",
+                        "Applied %(count)s penalty records to the appointment.",
+                        len(applications),
+                    )
+                    % {"count": len(applications)},
                 )
                 return HttpResponseRedirect(
                     reverse(
@@ -686,7 +704,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Manage appointment penalties",
+            "title": _("Manage appointment penalties"),
             "subtitle": _appointment_partner_summary(appointment),
             "opts": self.model._meta,
             "appointment": appointment,
@@ -726,7 +744,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     def _source_penalty_view(self, request, object_id, *, reason: str):
         appointment = self.get_object(request, object_id)
         if appointment is None:
-            raise Http404("Appointment not found.")
+            raise Http404(_("Appointment not found."))
         if not self.has_change_permission(request, appointment):
             raise PermissionDenied
 
@@ -738,14 +756,14 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         if settings is None or not settings.penalties_enabled:
             self.message_user(
                 request,
-                "Penalties are disabled for this partner.",
+                _("Penalties are disabled for this partner."),
                 level=messages.ERROR,
             )
             return HttpResponseRedirect(change_url)
         if not self._has_penalty_eligible_status(appointment=appointment, reason=reason):
             self.message_user(
                 request,
-                "The appointment status does not allow this penalty.",
+                _("The appointment status does not allow this penalty."),
                 level=messages.ERROR,
             )
             return HttpResponseRedirect(change_url)
@@ -755,14 +773,14 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         ):
             self.message_user(
                 request,
-                "This appointment already has a penalty for that incident.",
+                _("This appointment already has a penalty for that incident."),
                 level=messages.WARNING,
             )
             return HttpResponseRedirect(change_url)
 
         if reason == Penalty.Reason.NO_SHOW:
             form = NoShowPenaltyAdminForm(request.POST or None)
-            title = "Create no-show penalty"
+            title = _("Create no-show penalty")
             penalty_amount = settings.no_show_penalty_amount
             threshold_minutes = None
         else:
@@ -770,7 +788,7 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 request.POST or None,
                 threshold_minutes=settings.late_arrival_threshold_minutes,
             )
-            title = "Record late arrival"
+            title = _("Record late arrival")
             penalty_amount = settings.late_arrival_penalty_amount
             threshold_minutes = settings.late_arrival_threshold_minutes
 
@@ -795,11 +813,13 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 self.log_change(
                     request,
                     appointment,
-                    f"Created {penalty.get_reason_display()} penalty.",
+                    gettext("Created %(reason)s penalty.")
+                    % {"reason": penalty.get_reason_display()},
                 )
                 self.message_user(
                     request,
-                    f"{penalty.get_reason_display()} penalty created for the client.",
+                    gettext("%(reason)s penalty created for the client.")
+                    % {"reason": penalty.get_reason_display()},
                 )
                 return HttpResponseRedirect(change_url)
 
@@ -869,11 +889,20 @@ class AppointmentAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         if failed_count:
             self.message_user(
                 request,
-                f"Updated {changed_count} appointment(s), {failed_count} failed validation.",
+                gettext("Updated %(changed)s appointments; %(failed)s failed validation.")
+                % {"changed": changed_count, "failed": failed_count},
                 level=messages.WARNING,
             )
             return
-        self.message_user(request, f"Updated {changed_count} appointment(s).")
+        self.message_user(
+            request,
+            ngettext(
+                "Updated %(count)s appointment.",
+                "Updated %(count)s appointments.",
+                changed_count,
+            )
+            % {"count": changed_count},
+        )
 
 
 @admin.register(AppointmentProposal)
@@ -906,7 +935,7 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     inlines = [AppointmentProposalOptionInline]
     actions = ["accept_client_reschedule", "decline_client_reschedule"]
 
-    @admin.action(description="Accept selected client reschedule requests")
+    @admin.action(description=_("Accept selected client reschedule requests"))
     def accept_client_reschedule(self, request, queryset):
         accepted = 0
         failed = 0
@@ -928,10 +957,10 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             request,
             success_count=accepted,
             failed_count=failed,
-            verb="accepted",
+            verb=_("accepted"),
         )
 
-    @admin.action(description="Decline selected client reschedule requests")
+    @admin.action(description=_("Decline selected client reschedule requests"))
     def decline_client_reschedule(self, request, queryset):
         declined = 0
         failed = 0
@@ -949,7 +978,7 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             request,
             success_count=declined,
             failed_count=failed,
-            verb="declined",
+            verb=_("declined"),
         )
 
     def _proposal_action_message(
@@ -963,23 +992,28 @@ class AppointmentProposalAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         level = messages.WARNING if failed_count else messages.SUCCESS
         self.message_user(
             request,
-            f"Client requests {verb}: {success_count}; failed validation: {failed_count}.",
+            gettext("Client requests %(verb)s: %(success)s; failed validation: %(failed)s.")
+            % {
+                "verb": verb,
+                "success": success_count,
+                "failed": failed_count,
+            },
             level=level,
         )
 
-    @admin.display(description="Expires at (partner time)", ordering="expires_at")
+    @admin.display(description=_("Expires at (partner time)"), ordering="expires_at")
     def expires_at_partner_time(self, obj):
         return _partner_datetime(obj.expires_at, obj.partner.timezone)
 
-    @admin.display(description="Responded at (partner time)", ordering="responded_at")
+    @admin.display(description=_("Responded at (partner time)"), ordering="responded_at")
     def responded_at_partner_time(self, obj):
         return _partner_datetime(obj.responded_at, obj.partner.timezone)
 
-    @admin.display(description="Created at (partner time)", ordering="created_at")
+    @admin.display(description=_("Created at (partner time)"), ordering="created_at")
     def created_at_partner_time(self, obj):
         return _partner_datetime(obj.created_at, obj.partner.timezone)
 
-    @admin.display(description="Updated at (partner time)", ordering="updated_at")
+    @admin.display(description=_("Updated at (partner time)"), ordering="updated_at")
     def updated_at_partner_time(self, obj):
         return _partner_datetime(obj.updated_at, obj.partner.timezone)
 
@@ -1021,15 +1055,15 @@ class AppointmentProposalOptionAdmin(admin.ModelAdmin):
     readonly_fields = fields
     inlines = [AppointmentProposalOptionItemInline]
 
-    @admin.display(description="Start at (partner time)", ordering="start_at")
+    @admin.display(description=_("Start at (partner time)"), ordering="start_at")
     def start_at_partner_time(self, obj):
         return _partner_datetime(obj.start_at, obj.proposal.partner.timezone)
 
-    @admin.display(description="End at (partner time)", ordering="end_at")
+    @admin.display(description=_("End at (partner time)"), ordering="end_at")
     def end_at_partner_time(self, obj):
         return _partner_datetime(obj.end_at, obj.proposal.partner.timezone)
 
-    @admin.display(description="Selected at (partner time)", ordering="selected_at")
+    @admin.display(description=_("Selected at (partner time)"), ordering="selected_at")
     def selected_at_partner_time(self, obj):
         return _partner_datetime(obj.selected_at, obj.proposal.partner.timezone)
 

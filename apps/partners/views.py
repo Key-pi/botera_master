@@ -7,6 +7,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import Http404
 from django.template.response import TemplateResponse
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from apps.partners.selectors import (
     SETUP_BOT_LAUNCHED,
@@ -40,7 +41,7 @@ def dashboard(request):
     context = {
         **admin.site.each_context(request),
         "is_nav_sidebar_enabled": False,
-        "title": "Dashboard",
+        "title": _("Dashboard"),
         "partners": partners,
         "snapshot": (
             partner_dashboard_snapshot(partner=selected_partner) if selected_partner else None
@@ -60,13 +61,11 @@ def setup(request):
 
     partners = tuple(visible_partners_for_user(request.user).order_by("name", "id"))
     selected_partner = _selected_partner(request=request, partners=partners)
-    onboarding = (
-        partner_onboarding_snapshot(partner=selected_partner) if selected_partner else None
-    )
+    onboarding = partner_onboarding_snapshot(partner=selected_partner) if selected_partner else None
     context = {
         **admin.site.each_context(request),
         "is_nav_sidebar_enabled": False,
-        "title": "Partner setup",
+        "title": _("Partner setup"),
         "partners": partners,
         "onboarding": onboarding,
         "required_steps": (
@@ -97,12 +96,12 @@ def _selected_partner(*, request, partners):
     try:
         selected_uuid = UUID(selected_partner_id)
     except (TypeError, ValueError) as exc:
-        raise Http404("Partner not found.") from exc
+        raise Http404(_("Partner not found.")) from exc
 
     for partner in partners:
         if partner.id == selected_uuid:
             return partner
-    raise Http404("Partner not found.")
+    raise Http404(_("Partner not found."))
 
 
 def _setup_guide_steps(
@@ -124,15 +123,15 @@ def _setup_guide_steps(
 
 def _setup_action_label(step_key: str) -> str:
     return {
-        SetupStep.BOT_TOKEN: "Configure bot",
-        SetupStep.LANGUAGE: "Open partner settings",
-        SetupStep.TIMEZONE: "Open partner settings",
-        SetupStep.CATALOG_SERVICE: "Open catalog",
-        SetupStep.AVAILABILITY_WINDOW: "Open calendar",
-        SetupStep.BOOKING_CONFIRMATION_MODE: "Open booking settings",
-        SETUP_CONNECTION_CHECKED: "Check connection",
-        SETUP_MASTER_CONTACT: "Connect master Telegram",
-        SETUP_BOT_LAUNCHED: "Open launch controls",
+        SetupStep.BOT_TOKEN: _("Configure bot"),
+        SetupStep.LANGUAGE: _("Open partner settings"),
+        SetupStep.TIMEZONE: _("Open partner settings"),
+        SetupStep.CATALOG_SERVICE: _("Open catalog"),
+        SetupStep.AVAILABILITY_WINDOW: _("Open calendar"),
+        SetupStep.BOOKING_CONFIRMATION_MODE: _("Open booking settings"),
+        SETUP_CONNECTION_CHECKED: _("Check connection"),
+        SETUP_MASTER_CONTACT: _("Connect master Telegram"),
+        SETUP_BOT_LAUNCHED: _("Open launch controls"),
     }[step_key]
 
 

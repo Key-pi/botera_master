@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from core.database.models import PartnerBoundModel
 
@@ -11,12 +12,14 @@ DEFAULT_CURRENCY = "UAH"
 class ServiceCategory(PartnerBoundModel):
     """Partner-defined grouping for services shown in the booking flow."""
 
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    sort_order = models.PositiveIntegerField(default=0)
-    is_active = models.BooleanField(default=True)
+    name = models.CharField(_("name"), max_length=255)
+    description = models.TextField(_("description"), blank=True)
+    sort_order = models.PositiveIntegerField(_("sort order"), default=0)
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
+        verbose_name = _("service category")
+        verbose_name_plural = _("service categories")
         ordering = ["partner__name", "sort_order", "name"]
         indexes = [
             models.Index(fields=["partner", "is_active", "sort_order"]),
@@ -34,16 +37,19 @@ class Service(PartnerBoundModel):
         "catalog.ServiceCategory",
         on_delete=models.PROTECT,
         related_name="services",
+        verbose_name=_("category"),
     )
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    price_amount = models.PositiveIntegerField(default=0)
-    currency = models.CharField(max_length=3, default=DEFAULT_CURRENCY)
-    duration_minutes = models.PositiveIntegerField()
-    sort_order = models.PositiveIntegerField(default=0)
-    is_active = models.BooleanField(default=True)
+    name = models.CharField(_("name"), max_length=255)
+    description = models.TextField(_("description"), blank=True)
+    price_amount = models.PositiveIntegerField(_("price amount"), default=0)
+    currency = models.CharField(_("currency"), max_length=3, default=DEFAULT_CURRENCY)
+    duration_minutes = models.PositiveIntegerField(_("duration in minutes"))
+    sort_order = models.PositiveIntegerField(_("sort order"), default=0)
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
+        verbose_name = _("service")
+        verbose_name_plural = _("services")
         ordering = ["partner__name", "category__sort_order", "sort_order", "name"]
         constraints = [
             models.CheckConstraint(

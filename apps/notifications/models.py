@@ -5,6 +5,7 @@ from datetime import time
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from core.database.models import PartnerBoundModel, RetainUntilModel, TimeStampedModel
 
@@ -33,17 +34,27 @@ class PartnerNotificationSettings(TimeStampedModel):
         "partners.Partner",
         on_delete=models.CASCADE,
         related_name="notification_settings",
+        verbose_name=_("partner"),
     )
-    quiet_hours_enabled = models.BooleanField(default=True)
-    quiet_hours_start_local = models.TimeField(default=DEFAULT_QUIET_HOURS_START_LOCAL)
-    quiet_hours_end_local = models.TimeField(default=DEFAULT_QUIET_HOURS_END_LOCAL)
-    morning_digest_enabled = models.BooleanField(default=True)
-    morning_digest_time_local = models.TimeField(default=DEFAULT_MORNING_DIGEST_TIME_LOCAL)
+    quiet_hours_enabled = models.BooleanField(_("quiet hours enabled"), default=True)
+    quiet_hours_start_local = models.TimeField(
+        _("quiet hours start"), default=DEFAULT_QUIET_HOURS_START_LOCAL
+    )
+    quiet_hours_end_local = models.TimeField(
+        _("quiet hours end"), default=DEFAULT_QUIET_HOURS_END_LOCAL
+    )
+    morning_digest_enabled = models.BooleanField(_("morning digest enabled"), default=True)
+    morning_digest_time_local = models.TimeField(
+        _("morning digest time"), default=DEFAULT_MORNING_DIGEST_TIME_LOCAL
+    )
     stale_requested_base_interval_minutes = models.PositiveIntegerField(
+        _("stale request reminder interval in minutes"),
         default=DEFAULT_STALE_REQUESTED_INTERVAL_MINUTES,
     )
 
     class Meta:
+        verbose_name = _("partner notification settings")
+        verbose_name_plural = _("partner notification settings")
         ordering = ["partner__name"]
         constraints = [
             models.CheckConstraint(
@@ -65,14 +76,16 @@ class ReminderRule(PartnerBoundModel):
     """Partner-configured appointment reminder rule."""
 
     class Target(models.TextChoices):
-        CLIENT = "client", "Client"
-        MASTER = "master", "Master"
+        CLIENT = "client", _("Client")
+        MASTER = "master", _("Master")
 
-    target = models.CharField(max_length=16, choices=Target.choices)
-    offset_minutes = models.PositiveIntegerField()
-    is_active = models.BooleanField(default=True)
+    target = models.CharField(_("target"), max_length=16, choices=Target.choices)
+    offset_minutes = models.PositiveIntegerField(_("offset in minutes"))
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
+        verbose_name = _("reminder rule")
+        verbose_name_plural = _("reminder rules")
         ordering = ["partner__name", "target", "-offset_minutes"]
         constraints = [
             models.CheckConstraint(
@@ -98,96 +111,96 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
     class Type(models.TextChoices):
         CLIENT_APPOINTMENT_CREATED = (
             "client_appointment_created",
-            "Client appointment created",
+            _("Client appointment created"),
         )
         CLIENT_BOOKING_REQUEST_CONFIRMED = (
             "client_booking_request_confirmed",
-            "Client booking request confirmed",
+            _("Client booking request confirmed"),
         )
         CLIENT_BOOKING_REQUEST_DECLINED = (
             "client_booking_request_declined",
-            "Client booking request declined",
+            _("Client booking request declined"),
         )
         CLIENT_APPOINTMENT_CANCELLED_BY_MASTER = (
             "client_appointment_cancelled_by_master",
-            "Client appointment cancelled by master",
+            _("Client appointment cancelled by master"),
         )
         CLIENT_APPOINTMENT_COMPLETED = (
             "client_appointment_completed",
-            "Client appointment completed",
+            _("Client appointment completed"),
         )
         CLIENT_APPOINTMENT_NO_SHOW = (
             "client_appointment_no_show",
-            "Client appointment no-show",
+            _("Client appointment no-show"),
         )
-        CLIENT_PENALTY_CREATED = "client_penalty_created", "Client penalty created"
-        CLIENT_PENALTY_PAID = "client_penalty_paid", "Client penalty paid"
-        CLIENT_PENALTY_WAIVED = "client_penalty_waived", "Client penalty waived"
+        CLIENT_PENALTY_CREATED = "client_penalty_created", _("Client penalty created")
+        CLIENT_PENALTY_PAID = "client_penalty_paid", _("Client penalty paid")
+        CLIENT_PENALTY_WAIVED = "client_penalty_waived", _("Client penalty waived")
         CLIENT_APPOINTMENT_REMINDER = (
             "client_appointment_reminder",
-            "Client appointment reminder",
+            _("Client appointment reminder"),
         )
         CLIENT_SCHEDULE_CONFLICT_RESCHEDULE_REQUEST = (
             "client_schedule_conflict_reschedule_request",
-            "Client schedule-conflict reschedule request",
+            _("Client schedule-conflict reschedule request"),
         )
-        MASTER_BOOKING_REQUEST = "master_booking_request", "Master booking request"
+        MASTER_BOOKING_REQUEST = "master_booking_request", _("Master booking request")
         MASTER_CLIENT_BOOKED_APPOINTMENT = (
             "master_client_booked_appointment",
-            "Master client-booked appointment",
+            _("Master client-booked appointment"),
         )
         MASTER_APPOINTMENT_REMINDER = (
             "master_appointment_reminder",
-            "Master appointment reminder",
+            _("Master appointment reminder"),
         )
         MASTER_CLIENT_CANCELLED_APPOINTMENT = (
             "master_client_cancelled_appointment",
-            "Master client-cancelled appointment",
+            _("Master client-cancelled appointment"),
         )
         MASTER_CLIENT_REQUESTED_RESCHEDULE = (
             "master_client_requested_reschedule",
-            "Master client-requested reschedule",
+            _("Master client-requested reschedule"),
         )
         CLIENT_APPOINTMENT_PROPOSAL = (
             "client_appointment_proposal",
-            "Client appointment proposal",
+            _("Client appointment proposal"),
         )
         CLIENT_APPOINTMENT_PROPOSAL_ACCEPTED = (
             "client_appointment_proposal_accepted",
-            "Client appointment proposal accepted",
+            _("Client appointment proposal accepted"),
         )
         CLIENT_APPOINTMENT_PROPOSAL_DECLINED = (
             "client_appointment_proposal_declined",
-            "Client appointment proposal declined",
+            _("Client appointment proposal declined"),
         )
         CLIENT_APPOINTMENT_PROPOSAL_EXPIRED = (
             "client_appointment_proposal_expired",
-            "Client appointment proposal expired",
+            _("Client appointment proposal expired"),
         )
         MASTER_CLIENT_ACCEPTED_PROPOSAL = (
             "master_client_accepted_proposal",
-            "Master client-accepted proposal",
+            _("Master client-accepted proposal"),
         )
         MASTER_CLIENT_DECLINED_PROPOSAL = (
             "master_client_declined_proposal",
-            "Master client-declined proposal",
+            _("Master client-declined proposal"),
         )
         MASTER_APPOINTMENT_PROPOSAL_EXPIRED = (
             "master_appointment_proposal_expired",
-            "Master appointment proposal expired",
+            _("Master appointment proposal expired"),
         )
-        MASTER_MORNING_DIGEST = "master_morning_digest", "Master morning digest"
-        STALE_REQUESTED = "stale_requested", "Stale requested appointment"
-        FAILED_DELIVERY_TO_MASTER = "failed_delivery_to_master", "Failed delivery to master"
+        MASTER_MORNING_DIGEST = "master_morning_digest", _("Master morning digest")
+        STALE_REQUESTED = "stale_requested", _("Stale requested appointment")
+        FAILED_DELIVERY_TO_MASTER = "failed_delivery_to_master", _("Failed delivery to master")
 
     class Status(models.TextChoices):
-        QUEUED = "queued", "Queued"
-        SENDING = "sending", "Sending"
-        SENT = "sent", "Sent"
-        FAILED = "failed", "Failed"
-        SKIPPED = "skipped", "Skipped"
-        CANCELLED = "cancelled", "Cancelled"
-        STALE = "stale", "Stale"
+        QUEUED = "queued", _("Queued")
+        SENDING = "sending", _("Sending")
+        SENT = "sent", _("Sent")
+        FAILED = "failed", _("Failed")
+        SKIPPED = "skipped", _("Skipped")
+        CANCELLED = "cancelled", _("Cancelled")
+        STALE = "stale", _("Stale")
 
     appointment = models.ForeignKey(
         "appointments.Appointment",
@@ -195,6 +208,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         related_name="scheduled_notifications",
         null=True,
         blank=True,
+        verbose_name=_("appointment"),
     )
     appointment_proposal = models.ForeignKey(
         "appointments.AppointmentProposal",
@@ -202,6 +216,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         related_name="scheduled_notifications",
         null=True,
         blank=True,
+        verbose_name=_("appointment proposal"),
     )
     client_profile = models.ForeignKey(
         "clients.ClientProfile",
@@ -209,6 +224,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         related_name="scheduled_notifications",
         null=True,
         blank=True,
+        verbose_name=_("client profile"),
     )
     penalty = models.ForeignKey(
         "finance.Penalty",
@@ -216,6 +232,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         related_name="scheduled_notifications",
         null=True,
         blank=True,
+        verbose_name=_("penalty"),
     )
     reminder_rule = models.ForeignKey(
         "notifications.ReminderRule",
@@ -223,6 +240,7 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         related_name="scheduled_notifications",
         null=True,
         blank=True,
+        verbose_name=_("reminder rule"),
     )
     source_notification = models.ForeignKey(
         "self",
@@ -230,20 +248,27 @@ class ScheduledNotification(PartnerBoundModel, RetainUntilModel):
         related_name="failure_markers",
         null=True,
         blank=True,
+        verbose_name=_("source notification"),
     )
-    type = models.CharField(max_length=64, choices=Type.choices)
-    due_at = models.DateTimeField(db_index=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
-    idempotency_key = models.CharField(max_length=255, unique=True)
-    attempt_count = models.PositiveSmallIntegerField(default=0)
-    max_attempts = models.PositiveSmallIntegerField(default=DEFAULT_NOTIFICATION_MAX_ATTEMPTS)
-    stale_sequence = models.PositiveSmallIntegerField(default=0)
-    last_failure_code = models.CharField(max_length=128, blank=True)
-    last_failure_message_masked = models.TextField(blank=True)
-    failed_visible_to_partner = models.BooleanField(default=False)
-    sent_at = models.DateTimeField(null=True, blank=True)
+    type = models.CharField(_("type"), max_length=64, choices=Type.choices)
+    due_at = models.DateTimeField(_("due at"), db_index=True)
+    status = models.CharField(
+        _("status"), max_length=16, choices=Status.choices, default=Status.QUEUED
+    )
+    idempotency_key = models.CharField(_("idempotency key"), max_length=255, unique=True)
+    attempt_count = models.PositiveSmallIntegerField(_("attempt count"), default=0)
+    max_attempts = models.PositiveSmallIntegerField(
+        _("maximum attempts"), default=DEFAULT_NOTIFICATION_MAX_ATTEMPTS
+    )
+    stale_sequence = models.PositiveSmallIntegerField(_("stale sequence"), default=0)
+    last_failure_code = models.CharField(_("last failure code"), max_length=128, blank=True)
+    last_failure_message_masked = models.TextField(_("masked last failure message"), blank=True)
+    failed_visible_to_partner = models.BooleanField(_("failure visible to partner"), default=False)
+    sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
 
     class Meta:
+        verbose_name = _("scheduled notification")
+        verbose_name_plural = _("scheduled notifications")
         ordering = ["due_at", "created_at"]
         indexes = [
             models.Index(fields=["status", "due_at"]),
@@ -320,9 +345,9 @@ class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):
         TELEGRAM = "telegram", "Telegram"
 
     class Status(models.TextChoices):
-        SENT = "sent", "Sent"
-        FAILED = "failed", "Failed"
-        SKIPPED = "skipped", "Skipped"
+        SENT = "sent", _("Sent")
+        FAILED = "failed", _("Failed")
+        SKIPPED = "skipped", _("Skipped")
 
     notification = models.ForeignKey(
         "notifications.ScheduledNotification",
@@ -330,6 +355,7 @@ class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):
         related_name="delivery_attempts",
         null=True,
         blank=True,
+        verbose_name=_("notification"),
     )
     broadcast_recipient = models.ForeignKey(
         "broadcasts.BroadcastRecipient",
@@ -337,6 +363,7 @@ class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):
         related_name="delivery_attempts",
         null=True,
         blank=True,
+        verbose_name=_("broadcast recipient"),
     )
     conversation_message = models.ForeignKey(
         "messaging.ConversationMessage",
@@ -344,19 +371,23 @@ class DeliveryAttempt(PartnerBoundModel, RetainUntilModel):
         related_name="delivery_attempts",
         null=True,
         blank=True,
+        verbose_name=_("conversation message"),
     )
     channel = models.CharField(
+        _("channel"),
         max_length=32,
         choices=Channel.choices,
         default=Channel.TELEGRAM,
     )
-    status = models.CharField(max_length=16, choices=Status.choices)
-    failure_code = models.CharField(max_length=128, blank=True)
-    failure_message_masked = models.TextField(blank=True)
-    message_preview_masked = models.TextField(blank=True)
-    attempted_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(_("status"), max_length=16, choices=Status.choices)
+    failure_code = models.CharField(_("failure code"), max_length=128, blank=True)
+    failure_message_masked = models.TextField(_("masked failure message"), blank=True)
+    message_preview_masked = models.TextField(_("masked message preview"), blank=True)
+    attempted_at = models.DateTimeField(_("attempted at"), default=timezone.now)
 
     class Meta:
+        verbose_name = _("delivery attempt")
+        verbose_name_plural = _("delivery attempts")
         ordering = ["-attempted_at", "-created_at"]
         constraints = [
             models.CheckConstraint(

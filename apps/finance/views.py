@@ -10,6 +10,7 @@ from django.http import Http404
 from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from apps.catalog.models import DEFAULT_CURRENCY
 from apps.finance.selectors import (
@@ -96,7 +97,7 @@ def report(request):
     context = {
         **admin.site.each_context(request),
         "is_nav_sidebar_enabled": False,
-        "title": "Finance",
+        "title": _("Finance"),
         "partners": partners,
         "selected_partner": selected_partner,
         "selected_period": selected_period,
@@ -120,17 +121,17 @@ def _selected_partner(*, request, partners):
     try:
         selected_uuid = UUID(selected_partner_id)
     except (TypeError, ValueError) as exc:
-        raise Http404("Partner not found.") from exc
+        raise Http404(_("Partner not found.")) from exc
     for partner in partners:
         if partner.id == selected_uuid:
             return partner
-    raise Http404("Partner not found.")
+    raise Http404(_("Partner not found."))
 
 
 def _selected_period(*, request) -> str:
     period = request.GET.get("period", FINANCE_PERIOD_MONTH).strip()
     if period not in FINANCE_PERIODS:
-        raise Http404("Finance period not found.")
+        raise Http404(_("Finance period not found."))
     return period
 
 
@@ -140,7 +141,7 @@ def _selected_date(*, request, partner, now) -> date:
         try:
             return date.fromisoformat(raw_date)
         except ValueError as exc:
-            raise Http404("Finance report date not found.") from exc
+            raise Http404(_("Finance report date not found.")) from exc
     if partner is None:
         return now.date()
     return now.astimezone(get_zone(partner.timezone)).date()

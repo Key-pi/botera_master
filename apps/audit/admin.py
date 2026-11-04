@@ -6,6 +6,7 @@ from django.contrib import admin
 from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
 from django.utils.html import format_html, format_html_join
+from django.utils.translation import gettext_lazy as _
 
 from apps.audit.models import AuditEvent, PlatformDiagnostic, WorkerHeartbeat
 from apps.audit.presentation import (
@@ -30,7 +31,7 @@ from core.timezones import to_partner_time
 class ActivityCategoryFilter(admin.SimpleListFilter):
     """Group technical event keys into partner-facing business areas."""
 
-    title = "activity area"
+    title = _("activity area")
     parameter_name = "activity_area"
 
     def lookups(self, request, model_admin):
@@ -56,11 +57,11 @@ class ActivityCategoryFilter(admin.SimpleListFilter):
 class DiagnosticResolutionFilter(admin.SimpleListFilter):
     """Keep unresolved operational problems one click away from health."""
 
-    title = "resolution"
+    title = _("resolution")
     parameter_name = "resolution"
 
     def lookups(self, request, model_admin):
-        return (("active", "Unresolved"), ("resolved", "Resolved"))
+        return (("active", _("Unresolved")), ("resolved", _("Resolved")))
 
     def queryset(self, request, queryset):
         if self.value() == "active":
@@ -129,7 +130,7 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     def get_fieldsets(self, request, obj=None):
         fieldsets = [
             (
-                "Activity",
+                _("Activity"),
                 {
                     "fields": (
                         "activity_title_display",
@@ -140,7 +141,7 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 },
             ),
             (
-                "Context",
+                _("Context"),
                 {
                     "fields": (
                         "partner",
@@ -152,7 +153,7 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
                 },
             ),
             (
-                "Retention",
+                _("Retention"),
                 {
                     "classes": ("collapse",),
                     "fields": ("retain_until_partner_time",),
@@ -162,10 +163,10 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         if request.user.is_superuser:
             fieldsets.append(
                 (
-                    "Masked technical context",
+                    _("Masked technical context"),
                     {
                         "classes": ("collapse",),
-                        "description": (
+                        "description": _(
                             "Support-only identifiers and already-redacted payload. "
                             "Partner users do not see this section."
                         ),
@@ -179,12 +180,12 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
         return tuple(fieldsets)
 
     def changelist_view(self, request, extra_context=None):
-        context = {"title": "Activity Log"}
+        context = {"title": _("Activity Log")}
         context.update(extra_context or {})
         return super().changelist_view(request, extra_context=context)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
-        context = {"title": "Activity details"}
+        context = {"title": _("Activity details")}
         context.update(extra_context or {})
         return super().change_view(
             request,
@@ -193,41 +194,41 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             extra_context=context,
         )
 
-    @admin.display(description="Activity", ordering="event_type")
+    @admin.display(description=_("Activity"), ordering="event_type")
     def activity_title_display(self, obj: AuditEvent) -> str:
         return activity_title(obj.event_type)
 
-    @admin.display(description="Area", ordering="event_type")
+    @admin.display(description=_("Area"), ordering="event_type")
     def category_display(self, obj: AuditEvent) -> str:
         return activity_category_label(obj.event_type)
 
-    @admin.display(description="Summary", ordering="message")
+    @admin.display(description=_("Summary"), ordering="message")
     def summary_preview(self, obj: AuditEvent) -> str:
         message = obj.message.strip()
         if not message:
             return activity_title(obj.event_type)
         return message[:120] + ("…" if len(message) > 120 else "")
 
-    @admin.display(description="Summary")
+    @admin.display(description=_("Summary"))
     def message_display(self, obj: AuditEvent) -> str:
         return obj.message.strip() or activity_title(obj.event_type)
 
-    @admin.display(description="Reason")
+    @admin.display(description=_("Reason"))
     def reason_display(self, obj: AuditEvent) -> str:
-        return obj.reason.strip() or "Not provided"
+        return obj.reason.strip() or _("Not provided")
 
-    @admin.display(description="Business details")
+    @admin.display(description=_("Business details"))
     def business_details_display(self, obj: AuditEvent):
         rows = activity_detail_rows(obj)
         if not rows:
-            return "No additional details"
+            return _("No additional details")
         return format_html_join(
             "",
             '<div style="margin-bottom: 0.35rem"><strong>{}</strong>: {}</div>',
             rows,
         )
 
-    @admin.display(description="Subject")
+    @admin.display(description=_("Subject"))
     def subject_display(self, obj: AuditEvent):
         presentation = activity_target_presentation(obj)
         if presentation is None:
@@ -238,25 +239,25 @@ class AuditEventAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             url = reverse(presentation.admin_url_name, args=[obj.target_id])
         except NoReverseMatch:
             return presentation.label
-        return format_html('<a href="{}">Open {}</a>', url, presentation.label.lower())
+        return format_html(_('<a href="{}">Open {}</a>'), url, presentation.label.lower())
 
-    @admin.display(description="Performed by", ordering="actor")
+    @admin.display(description=_("Performed by"), ordering="actor")
     def actor_display(self, obj: AuditEvent) -> str:
         return activity_actor_label(obj)
 
-    @admin.display(description="Occurred at (partner time)", ordering="created_at")
+    @admin.display(description=_("Occurred at (partner time)"), ordering="created_at")
     def created_at_partner_time(self, obj: AuditEvent) -> str:
         return _partner_datetime(obj.created_at, obj.partner.timezone)
 
-    @admin.display(description="Stored until (partner time)", ordering="retain_until")
+    @admin.display(description=_("Stored until (partner time)"), ordering="retain_until")
     def retain_until_partner_time(self, obj: AuditEvent) -> str:
         return _partner_datetime(obj.retain_until, obj.partner.timezone)
 
-    @admin.display(description="Technical identity")
+    @admin.display(description=_("Technical identity"))
     def technical_identity_display(self, obj: AuditEvent) -> str:
         return f"{obj.event_type} · {obj.target_type or '-'} · {obj.target_id or '-'}"
 
-    @admin.display(description="Masked payload")
+    @admin.display(description=_("Masked payload"))
     def masked_payload_display(self, obj: AuditEvent):
         rendered = json.dumps(obj.payload_masked, ensure_ascii=False, indent=2, sort_keys=True)
         return format_html("<pre>{}</pre>", rendered)
@@ -336,13 +337,13 @@ class WorkerHeartbeatAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         context = {
-            "title": "Platform health",
+            "title": _("Platform health"),
             "health_snapshot": platform_health_snapshot(),
         }
         context.update(extra_context or {})
         return super().changelist_view(request, extra_context=context)
 
-    @admin.display(description="Current status", ordering="status")
+    @admin.display(description=_("Current status"), ordering="status")
     def current_status(self, obj: WorkerHeartbeat) -> str:
         return WorkerHeartbeat.Status(evaluate_worker_heartbeat(obj)).label
 

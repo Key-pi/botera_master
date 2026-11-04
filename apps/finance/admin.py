@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.models import Appointment
@@ -38,15 +39,15 @@ class PartnerPenaltySettingsAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             columns.insert(0, "partner")
         return columns
 
-    @admin.display(description="Late cancellation", ordering="late_cancel_penalty_amount")
+    @admin.display(description=_("Late cancellation"), ordering="late_cancel_penalty_amount")
     def late_cancel_penalty_display(self, obj):
         return _money_label(obj.late_cancel_penalty_amount, obj.currency)
 
-    @admin.display(description="No-show", ordering="no_show_penalty_amount")
+    @admin.display(description=_("No-show"), ordering="no_show_penalty_amount")
     def no_show_penalty_display(self, obj):
         return _money_label(obj.no_show_penalty_amount, obj.currency)
 
-    @admin.display(description="Late arrival", ordering="late_arrival_penalty_amount")
+    @admin.display(description=_("Late arrival"), ordering="late_arrival_penalty_amount")
     def late_arrival_penalty_display(self, obj):
         return _money_label(obj.late_arrival_penalty_amount, obj.currency)
 
@@ -119,7 +120,7 @@ class PenaltyAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             columns.insert(1, "partner")
         return columns
 
-    @admin.display(description="Amount", ordering="amount")
+    @admin.display(description=_("Amount"), ordering="amount")
     def amount_display(self, obj):
         return _money_label(obj.amount, obj.currency)
 
@@ -182,7 +183,7 @@ class PenaltyApplicationAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             columns.insert(2, "partner")
         return columns
 
-    @admin.display(description="Amount", ordering="amount_snapshot")
+    @admin.display(description=_("Amount"), ordering="amount_snapshot")
     def amount_display(self, obj):
         return _money_label(obj.amount_snapshot, obj.currency)
 
@@ -233,7 +234,7 @@ class ExpenseAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             readonly_fields.append("partner")
         return readonly_fields
 
-    @admin.display(description="Amount", ordering="amount")
+    @admin.display(description=_("Amount"), ordering="amount")
     def amount_display(self, obj):
         return _money_label(obj.amount, obj.currency)
 

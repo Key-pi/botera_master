@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
+from django.utils.translation import gettext_lazy as _
 
 from apps.clients.selectors import client_profiles_visible_to_user
 from apps.messaging.forms import MasterReplyAdminForm
@@ -92,7 +93,7 @@ class ConversationMessageAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             raise PermissionDenied
         client_profile = client_profiles_visible_to_user(request.user).filter(id=client_id).first()
         if client_profile is None or not client_profile.telegram_identity_id:
-            raise Http404("Telegram-connected client not found.")
+            raise Http404(_("Telegram-connected client not found."))
 
         form = MasterReplyAdminForm(request.POST or None)
         if request.method == "POST" and form.is_valid():
@@ -105,10 +106,10 @@ class ConversationMessageAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             except ValidationError as exc:
                 _add_validation_error(form, exc)
             else:
-                self.log_addition(request, message, "Queued Telegram reply to client.")
+                self.log_addition(request, message, _("Queued Telegram reply to client."))
                 self.message_user(
                     request,
-                    "Message queued for Telegram delivery.",
+                    _("Message queued for Telegram delivery."),
                     level=messages.SUCCESS,
                 )
                 return HttpResponseRedirect(
@@ -120,7 +121,7 @@ class ConversationMessageAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Message client",
+            "title": _("Message client"),
             "subtitle": str(client_profile),
             "opts": self.model._meta,
             "client_profile": client_profile,

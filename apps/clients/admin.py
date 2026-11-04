@@ -6,6 +6,7 @@ from django.core.paginator import Paginator
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
+from django.utils.translation import gettext_lazy as _
 
 from apps.appointments.selectors import (
     appointment_history_for_client,
@@ -51,14 +52,14 @@ class TelegramIdentityAdmin(admin.ModelAdmin):
 class ClientTelegramStateFilter(admin.SimpleListFilter):
     """Group partner-scoped clients by usable Telegram connection state."""
 
-    title = "Telegram connection"
+    title = _("Telegram connection")
     parameter_name = "telegram_state"
 
     def lookups(self, request, model_admin):
         return (
-            (CLIENT_TELEGRAM_LINKED, "Connected"),
-            (CLIENT_TELEGRAM_UNREACHABLE, "Unavailable"),
-            (CLIENT_TELEGRAM_UNLINKED, "No Telegram connection"),
+            (CLIENT_TELEGRAM_LINKED, _("Connected")),
+            (CLIENT_TELEGRAM_UNREACHABLE, _("Unavailable")),
+            (CLIENT_TELEGRAM_UNLINKED, _("No Telegram connection")),
         )
 
     def queryset(self, request, queryset):
@@ -80,13 +81,13 @@ class ClientTelegramStateFilter(admin.SimpleListFilter):
 class ClientUpcomingAppointmentFilter(admin.SimpleListFilter):
     """Filter the annotated client list by active future appointments."""
 
-    title = "upcoming appointments"
+    title = _("upcoming appointments")
     parameter_name = "upcoming_state"
 
     def lookups(self, request, model_admin):
         return (
-            (CLIENT_OPERATIONAL_HAS, "Has an upcoming appointment"),
-            (CLIENT_OPERATIONAL_NONE, "No upcoming appointments"),
+            (CLIENT_OPERATIONAL_HAS, _("Has an upcoming appointment")),
+            (CLIENT_OPERATIONAL_NONE, _("No upcoming appointments")),
         )
 
     def queryset(self, request, queryset):
@@ -100,13 +101,13 @@ class ClientUpcomingAppointmentFilter(admin.SimpleListFilter):
 class ClientOutstandingPenaltyFilter(admin.SimpleListFilter):
     """Filter the annotated client list by current unpaid debt."""
 
-    title = "outstanding penalties"
+    title = _("outstanding penalties")
     parameter_name = "penalty_state"
 
     def lookups(self, request, model_admin):
         return (
-            (CLIENT_OPERATIONAL_HAS, "Has an outstanding penalty"),
-            (CLIENT_OPERATIONAL_NONE, "No outstanding penalties"),
+            (CLIENT_OPERATIONAL_HAS, _("Has an outstanding penalty")),
+            (CLIENT_OPERATIONAL_NONE, _("No outstanding penalties")),
         )
 
     def queryset(self, request, queryset):
@@ -148,15 +149,15 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     list_select_related = ["partner", "telegram_identity"]
     fieldsets = (
         (
-            "Client data",
+            _("Client data"),
             {"fields": ("partner", "telegram_identity", "name", "phone", "language")},
         ),
         (
-            "Partner notes",
+            _("Partner notes"),
             {"fields": ("private_master_note", "extra_client_text")},
         ),
         (
-            "Communication state",
+            _("Communication state"),
             {
                 "classes": ("collapse",),
                 "fields": (
@@ -168,7 +169,7 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             },
         ),
         (
-            "System",
+            _("System"),
             {
                 "classes": ("collapse",),
                 "fields": ("created_at", "updated_at"),
@@ -205,33 +206,33 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
     def get_queryset(self, request):
         return with_client_operational_annotations(super().get_queryset(request))
 
-    @admin.display(description="Phone")
+    @admin.display(description=_("Phone"))
     def masked_phone(self, obj: ClientProfile) -> str:
         return mask_phone(obj.phone) if obj.phone else ""
 
-    @admin.display(description="Telegram", ordering="telegram_identity")
+    @admin.display(description=_("Telegram"), ordering="telegram_identity")
     def telegram_connection(self, obj: ClientProfile) -> str:
         if obj.telegram_identity_id is None:
-            return "No connection"
+            return _("No connection")
         if obj.bot_unreachable:
-            return "Unavailable"
+            return _("Unavailable")
         if obj.telegram_identity.username:
             return f"@{obj.telegram_identity.username}"
-        return "Connected"
+        return _("Connected")
 
-    @admin.display(description="Next appointment", ordering="ops_next_appointment_at")
+    @admin.display(description=_("Next appointment"), ordering="ops_next_appointment_at")
     def next_appointment(self, obj: ClientProfile) -> str:
         if obj.ops_next_appointment_at is None:
             return "-"
         local_start = to_partner_time(obj.ops_next_appointment_at, obj.partner.timezone)
         return local_start.strftime("%Y-%m-%d %H:%M %Z")
 
-    @admin.display(description="Visits", ordering="ops_completed_visit_count")
+    @admin.display(description=_("Visits"), ordering="ops_completed_visit_count")
     def completed_visits(self, obj: ClientProfile) -> int:
         return obj.ops_completed_visit_count
 
     @admin.display(
-        description="Unpaid penalties",
+        description=_("Unpaid penalties"),
         ordering="ops_outstanding_penalty_count",
     )
     def outstanding_penalties(self, obj: ClientProfile) -> int:
@@ -304,13 +305,13 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         client_profile = self.get_object(request, object_id)
         if client_profile is None:
-            raise Http404("Client not found.")
+            raise Http404(_("Client not found."))
         if not self.has_change_permission(request, client_profile):
             raise PermissionDenied
 
         penalty = outstanding_penalties_for_client(client_profile).filter(id=penalty_id).first()
         if penalty is None:
-            raise Http404("Outstanding penalty not found.")
+            raise Http404(_("Outstanding penalty not found."))
 
         form = ClientPenaltyActionAdminForm(request.POST or None)
         if request.method == "POST" and form.is_valid():
@@ -318,23 +319,26 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
             try:
                 if action == ClientPenaltyActionAdminForm.Action.MARK_PAID:
                     stored = mark_penalty_paid(actor=request.user, penalty=penalty)
-                    action_label = "marked as paid"
+                    action_label = _("marked as paid")
                 else:
                     stored = waive_penalty(
                         actor=request.user,
                         penalty=penalty,
                         note=form.cleaned_data["note"],
                     )
-                    action_label = "waived"
+                    action_label = _("waived")
             except ValidationError as exc:
                 add_domain_errors_to_form(form, exc)
             else:
                 self.log_change(
                     request,
                     client_profile,
-                    f"Penalty {stored.id} {action_label}.",
+                    _("Penalty %(id)s %(action)s.") % {"id": stored.id, "action": action_label},
                 )
-                self.message_user(request, f"Penalty {action_label}.")
+                self.message_user(
+                    request,
+                    _("Penalty %(action)s.") % {"action": action_label},
+                )
                 return HttpResponseRedirect(
                     f"{reverse('admin:clients_clientprofile_change', args=[client_profile.id])}"
                     "#outstanding-penalties"
@@ -342,7 +346,7 @@ class ClientProfileAdmin(PartnerScopedAdminMixin, admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Manage penalty",
+            "title": _("Manage penalty"),
             "subtitle": str(client_profile),
             "opts": self.model._meta,
             "client_profile": client_profile,

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from django.db.models import QuerySet
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import PartnerMembership
 from apps.appointments.models import Appointment
@@ -215,19 +216,19 @@ def partner_onboarding_snapshot(*, partner: Partner) -> PartnerOnboardingSnapsho
     operational_steps = (
         PartnerOnboardingStep(
             key=SETUP_CONNECTION_CHECKED,
-            label="Telegram connection checked",
+            label=_("Telegram connection checked"),
             is_complete=connection_checked,
             is_required=False,
         ),
         PartnerOnboardingStep(
             key=SETUP_MASTER_CONTACT,
-            label="Master Telegram contact",
+            label=_("Master Telegram contact"),
             is_complete=primary_contact is not None,
             is_required=False,
         ),
         PartnerOnboardingStep(
             key=SETUP_BOT_LAUNCHED,
-            label="Bot launched",
+            label=_("Bot launched"),
             is_complete=bot_launched,
             is_required=False,
         ),

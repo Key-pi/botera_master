@@ -5,6 +5,7 @@ from uuid import UUID
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.broadcasts.models import BroadcastCampaign, BroadcastTemplate
 from apps.broadcasts.services import (
@@ -30,7 +31,7 @@ class BroadcastContentAdminForm(forms.ModelForm):
 
     include_book_button = forms.BooleanField(
         required=False,
-        label="Add Book button",
+        label=_("Add Book button"),
     )
     book_button_label = forms.CharField(
         required=False,
@@ -39,7 +40,7 @@ class BroadcastContentAdminForm(forms.ModelForm):
     )
     include_my_appointments_button = forms.BooleanField(
         required=False,
-        label="Add My appointments button",
+        label=_("Add My appointments button"),
     )
     my_appointments_button_label = forms.CharField(
         required=False,
@@ -75,30 +76,30 @@ class BroadcastCampaignAdminForm(BroadcastContentAdminForm):
 
     audience = forms.ChoiceField(
         choices=(
-            (AUDIENCE_ALL, "All reachable subscribed clients"),
-            (AUDIENCE_LONG_ABSENT, "Clients absent for a number of days"),
-            (AUDIENCE_SERVICE, "Clients who completed a specific service"),
-            (AUDIENCE_HAS_FUTURE, "Clients with a future appointment"),
-            (AUDIENCE_WITHOUT_FUTURE, "Clients without a future appointment"),
+            (AUDIENCE_ALL, _("All reachable subscribed clients")),
+            (AUDIENCE_LONG_ABSENT, _("Clients absent for a number of days")),
+            (AUDIENCE_SERVICE, _("Clients who completed a specific service")),
+            (AUDIENCE_HAS_FUTURE, _("Clients with a future appointment")),
+            (AUDIENCE_WITHOUT_FUTURE, _("Clients without a future appointment")),
         ),
         initial=AUDIENCE_ALL,
     )
     service = forms.ModelChoiceField(
         queryset=Service.objects.none(),
         required=False,
-        help_text="Required only for the specific-service audience.",
+        help_text=_("Required only for the specific-service audience."),
     )
     long_absent_days = forms.IntegerField(
         required=False,
         min_value=1,
         max_value=MAX_LONG_ABSENT_DAYS,
-        help_text="Required only for the long-absent audience.",
+        help_text=_("Required only for the long-absent audience."),
     )
     delivery_mode = forms.ChoiceField(
         choices=(
-            (DELIVERY_DRAFT, "Save draft"),
-            (DELIVERY_NOW, "Start sending now"),
-            (DELIVERY_SCHEDULED, "Schedule for later"),
+            (DELIVERY_DRAFT, _("Save draft")),
+            (DELIVERY_NOW, _("Start sending now")),
+            (DELIVERY_SCHEDULED, _("Schedule for later")),
         ),
         initial=DELIVERY_DRAFT,
     )
@@ -126,8 +127,8 @@ class BroadcastCampaignAdminForm(BroadcastContentAdminForm):
             "scheduled_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
         help_texts = {
-            "photo": "Optional Telegram file ID or HTTPS image URL.",
-            "scheduled_at": "Used only when delivery mode is Schedule for later.",
+            "photo": _("Optional Telegram file ID or HTTPS image URL."),
+            "scheduled_at": _("Used only when delivery mode is Schedule for later."),
         }
 
     def __init__(self, *args, allowed_partner_ids=(), **kwargs) -> None:
@@ -176,9 +177,9 @@ class BroadcastCampaignAdminForm(BroadcastContentAdminForm):
         scheduled_at = cleaned_data.get("scheduled_at")
         if delivery_mode == DELIVERY_SCHEDULED:
             if scheduled_at is None:
-                self.add_error("scheduled_at", "Choose when this broadcast should start.")
+                self.add_error("scheduled_at", _("Choose when this broadcast should start."))
             elif scheduled_at <= timezone.now():
-                self.add_error("scheduled_at", "Scheduled time must be in the future.")
+                self.add_error("scheduled_at", _("Scheduled time must be in the future."))
         else:
             cleaned_data["scheduled_at"] = None
         cleaned_data["start_immediately"] = delivery_mode == DELIVERY_NOW
@@ -203,7 +204,7 @@ class BroadcastTemplateAdminForm(BroadcastContentAdminForm):
             "external_link_url",
         )
         widgets = {"text": forms.Textarea(attrs={"rows": 6})}
-        help_texts = {"photo": "Optional Telegram file ID or HTTPS image URL."}
+        help_texts = {"photo": _("Optional Telegram file ID or HTTPS image URL.")}
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -247,7 +248,7 @@ def _buttons_from_cleaned_data(*, form, cleaned_data: dict) -> list[dict] | None
     if cleaned_data.get("include_book_button"):
         label = cleaned_data.get("book_button_label", "").strip()
         if not label:
-            form.add_error("book_button_label", "Enter a label for the Book button.")
+            form.add_error("book_button_label", _("Enter a label for the Book button."))
         else:
             buttons.append({"type": "book", "label": label})
     if cleaned_data.get("include_my_appointments_button"):
@@ -255,7 +256,7 @@ def _buttons_from_cleaned_data(*, form, cleaned_data: dict) -> list[dict] | None
         if not label:
             form.add_error(
                 "my_appointments_button_label",
-                "Enter a label for the My appointments button.",
+                _("Enter a label for the My appointments button."),
             )
         else:
             buttons.append({"type": "my_appointments", "label": label})
@@ -264,9 +265,9 @@ def _buttons_from_cleaned_data(*, form, cleaned_data: dict) -> list[dict] | None
     external_url = cleaned_data.get("external_link_url", "").strip()
     if external_label or external_url:
         if not external_label:
-            form.add_error("external_link_label", "Enter an external-link label.")
+            form.add_error("external_link_label", _("Enter an external-link label."))
         if not external_url:
-            form.add_error("external_link_url", "Enter an external-link URL.")
+            form.add_error("external_link_url", _("Enter an external-link URL."))
         if external_label and external_url:
             buttons.append(
                 {
@@ -287,13 +288,13 @@ def _filters_from_cleaned_data(*, form, cleaned_data: dict) -> dict | None:
     if audience == AUDIENCE_LONG_ABSENT:
         days = cleaned_data.get("long_absent_days")
         if days is None:
-            form.add_error("long_absent_days", "Enter the absence period in days.")
+            form.add_error("long_absent_days", _("Enter the absence period in days."))
             return None
         return {"long_absent_days": days}
     if audience == AUDIENCE_SERVICE:
         service = cleaned_data.get("service")
         if service is None:
-            form.add_error("service", "Choose a service.")
+            form.add_error("service", _("Choose a service."))
             return None
         return {"service_id": str(service.id)}
     if audience == AUDIENCE_HAS_FUTURE:

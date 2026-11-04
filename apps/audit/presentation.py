@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.utils.dateparse import parse_date, parse_datetime
+from django.utils.translation import gettext_lazy as _
 
 from core.money import Money
 from core.timezones import to_partner_time
@@ -29,16 +30,16 @@ class ActivityTargetPresentation:
 
 
 ACTIVITY_CATEGORY_CHOICES = (
-    ("appointments", "Appointments"),
-    ("calendar", "Calendar"),
-    ("penalties", "Penalties"),
-    ("expenses", "Expenses"),
-    ("broadcasts", "Broadcasts"),
-    ("messages", "Messages"),
-    ("notifications", "Notifications"),
-    ("settings", "Bot and settings"),
-    ("clients_catalog", "Clients and catalog"),
-    ("other", "Other"),
+    ("appointments", _("Appointments")),
+    ("calendar", _("Calendar")),
+    ("penalties", _("Penalties")),
+    ("expenses", _("Expenses")),
+    ("broadcasts", _("Broadcasts")),
+    ("messages", _("Messages")),
+    ("notifications", _("Notifications")),
+    ("settings", _("Bot and settings")),
+    ("clients_catalog", _("Clients and catalog")),
+    ("other", _("Other")),
 )
 ACTIVITY_CATEGORY_LABELS = dict(ACTIVITY_CATEGORY_CHOICES)
 ACTIVITY_CATEGORY_PREFIXES = {
@@ -54,186 +55,186 @@ ACTIVITY_CATEGORY_PREFIXES = {
 }
 
 EVENT_PRESENTATIONS = {
-    "appointment.created": ActivityPresentation("Appointment created", "appointments"),
+    "appointment.created": ActivityPresentation(_("Appointment created"), "appointments"),
     "appointment.status_changed": ActivityPresentation(
-        "Appointment status changed",
+        _("Appointment status changed"),
         "appointments",
     ),
     "appointment.status_corrected": ActivityPresentation(
-        "Final appointment status corrected",
+        _("Final appointment status corrected"),
         "appointments",
     ),
     "appointment.proposal_created": ActivityPresentation(
-        "Appointment change proposed",
+        _("Appointment change proposed"),
         "appointments",
     ),
     "appointment.proposal_accepted": ActivityPresentation(
-        "Appointment change accepted",
+        _("Appointment change accepted"),
         "appointments",
     ),
     "appointment.proposal_declined": ActivityPresentation(
-        "Appointment change declined",
+        _("Appointment change declined"),
         "appointments",
     ),
     "appointment.proposal_cancelled": ActivityPresentation(
-        "Appointment change proposal cancelled",
+        _("Appointment change proposal cancelled"),
         "appointments",
     ),
     "appointment.proposal_expired": ActivityPresentation(
-        "Appointment change proposal expired",
+        _("Appointment change proposal expired"),
         "appointments",
     ),
     "appointment.client_reschedule_declined": ActivityPresentation(
-        "Client reschedule request declined",
+        _("Client reschedule request declined"),
         "appointments",
     ),
     "appointment.client_selected_alternative_time": ActivityPresentation(
-        "Client selected another time",
+        _("Client selected another time"),
         "appointments",
     ),
     "appointment.client_rescheduled": ActivityPresentation(
-        "Client rescheduled appointment",
+        _("Client rescheduled appointment"),
         "appointments",
     ),
     "schedule.conflicts_kept_as_is": ActivityPresentation(
-        "Schedule conflicts kept as is",
+        _("Schedule conflicts kept as is"),
         "calendar",
     ),
     "schedule.conflicts_reopened": ActivityPresentation(
-        "Schedule conflicts reopened",
+        _("Schedule conflicts reopened"),
         "calendar",
     ),
     "schedule.conflict_reschedules_requested": ActivityPresentation(
-        "Conflict reschedules requested",
+        _("Conflict reschedules requested"),
         "calendar",
     ),
     "schedule.settings_updated": ActivityPresentation(
-        "Booking settings updated",
+        _("Booking settings updated"),
         "calendar",
     ),
     "penalty.settings_updated": ActivityPresentation(
-        "Penalty settings updated",
+        _("Penalty settings updated"),
         "penalties",
     ),
-    "penalty.created": ActivityPresentation("Penalty created", "penalties"),
-    "penalty.applied": ActivityPresentation("Penalty applied to appointment", "penalties"),
-    "penalty.paid": ActivityPresentation("Penalty marked paid", "penalties"),
-    "penalty.released": ActivityPresentation("Penalty released from appointment", "penalties"),
-    "penalty.waived": ActivityPresentation("Penalty waived", "penalties"),
-    "expense.created": ActivityPresentation("Expense recorded", "expenses"),
-    "expense.updated": ActivityPresentation("Expense updated", "expenses"),
-    "expense.deleted": ActivityPresentation("Expense deleted", "expenses"),
-    "broadcast.created": ActivityPresentation("Broadcast created", "broadcasts"),
-    "broadcast.updated": ActivityPresentation("Broadcast updated", "broadcasts"),
-    "broadcast.scheduled": ActivityPresentation("Broadcast scheduled", "broadcasts"),
-    "broadcast.started": ActivityPresentation("Broadcast started", "broadcasts"),
-    "broadcast.cancelled": ActivityPresentation("Broadcast cancelled", "broadcasts"),
-    "broadcast.completed": ActivityPresentation("Broadcast completed", "broadcasts"),
+    "penalty.created": ActivityPresentation(_("Penalty created"), "penalties"),
+    "penalty.applied": ActivityPresentation(_("Penalty applied to appointment"), "penalties"),
+    "penalty.paid": ActivityPresentation(_("Penalty marked paid"), "penalties"),
+    "penalty.released": ActivityPresentation(_("Penalty released from appointment"), "penalties"),
+    "penalty.waived": ActivityPresentation(_("Penalty waived"), "penalties"),
+    "expense.created": ActivityPresentation(_("Expense recorded"), "expenses"),
+    "expense.updated": ActivityPresentation(_("Expense updated"), "expenses"),
+    "expense.deleted": ActivityPresentation(_("Expense deleted"), "expenses"),
+    "broadcast.created": ActivityPresentation(_("Broadcast created"), "broadcasts"),
+    "broadcast.updated": ActivityPresentation(_("Broadcast updated"), "broadcasts"),
+    "broadcast.scheduled": ActivityPresentation(_("Broadcast scheduled"), "broadcasts"),
+    "broadcast.started": ActivityPresentation(_("Broadcast started"), "broadcasts"),
+    "broadcast.cancelled": ActivityPresentation(_("Broadcast cancelled"), "broadcasts"),
+    "broadcast.completed": ActivityPresentation(_("Broadcast completed"), "broadcasts"),
     "broadcast.failed": ActivityPresentation(
-        "Broadcast completed with failures",
+        _("Broadcast completed with failures"),
         "broadcasts",
     ),
     "broadcast.template_created": ActivityPresentation(
-        "Broadcast template created",
+        _("Broadcast template created"),
         "broadcasts",
     ),
     "broadcast.template_updated": ActivityPresentation(
-        "Broadcast template updated",
+        _("Broadcast template updated"),
         "broadcasts",
     ),
     "broadcast.template_deleted": ActivityPresentation(
-        "Broadcast template deleted",
+        _("Broadcast template deleted"),
         "broadcasts",
     ),
     "messaging.message_created": ActivityPresentation(
-        "Client-master message created",
+        _("Client-master message created"),
         "messages",
     ),
-    "notification.sent": ActivityPresentation("Notification sent", "notifications"),
-    "notification.failed": ActivityPresentation("Notification delivery failed", "notifications"),
+    "notification.sent": ActivityPresentation(_("Notification sent"), "notifications"),
+    "notification.failed": ActivityPresentation(_("Notification delivery failed"), "notifications"),
     "notification.settings_updated": ActivityPresentation(
-        "Notification settings updated",
+        _("Notification settings updated"),
         "notifications",
     ),
     "notification.reminder_rules_updated": ActivityPresentation(
-        "Appointment reminder rules updated",
+        _("Appointment reminder rules updated"),
         "notifications",
     ),
-    "reminder.sent": ActivityPresentation("Reminder sent", "notifications"),
-    "reminder.failed": ActivityPresentation("Reminder delivery failed", "notifications"),
-    "bot.token_updated": ActivityPresentation("Bot token updated", "settings"),
-    "bot.status_changed": ActivityPresentation("Bot status changed", "settings"),
-    "bot.connection_checked": ActivityPresentation("Bot connection checked", "settings"),
+    "reminder.sent": ActivityPresentation(_("Reminder sent"), "notifications"),
+    "reminder.failed": ActivityPresentation(_("Reminder delivery failed"), "notifications"),
+    "bot.token_updated": ActivityPresentation(_("Bot token updated"), "settings"),
+    "bot.status_changed": ActivityPresentation(_("Bot status changed"), "settings"),
+    "bot.connection_checked": ActivityPresentation(_("Bot connection checked"), "settings"),
     "bot.master_contact_link_created": ActivityPresentation(
-        "Master Telegram connection link created",
+        _("Master Telegram connection link created"),
         "settings",
     ),
     "bot.content_override_saved": ActivityPresentation(
-        "Bot content customized",
+        _("Bot content customized"),
         "settings",
     ),
     "bot.content_override_reset": ActivityPresentation(
-        "Bot content reset to default",
+        _("Bot content reset to default"),
         "settings",
     ),
-    "bot.settings_updated": ActivityPresentation("Bot settings updated", "settings"),
-    "partner.settings_updated": ActivityPresentation("Partner settings updated", "settings"),
-    "client.created": ActivityPresentation("Client created", "clients_catalog"),
-    "client.updated": ActivityPresentation("Client updated", "clients_catalog"),
-    "catalog.service_created": ActivityPresentation("Service created", "clients_catalog"),
-    "catalog.service_updated": ActivityPresentation("Service updated", "clients_catalog"),
+    "bot.settings_updated": ActivityPresentation(_("Bot settings updated"), "settings"),
+    "partner.settings_updated": ActivityPresentation(_("Partner settings updated"), "settings"),
+    "client.created": ActivityPresentation(_("Client created"), "clients_catalog"),
+    "client.updated": ActivityPresentation(_("Client updated"), "clients_catalog"),
+    "catalog.service_created": ActivityPresentation(_("Service created"), "clients_catalog"),
+    "catalog.service_updated": ActivityPresentation(_("Service updated"), "clients_catalog"),
 }
 
 TARGET_PRESENTATIONS = {
     "Appointment": ActivityTargetPresentation(
         "admin:appointments_appointment_change",
-        "Appointment",
+        _("Appointment"),
     ),
     "AppointmentProposal": ActivityTargetPresentation(
         "admin:appointments_appointmentproposal_change",
-        "Appointment proposal",
+        _("Appointment proposal"),
     ),
-    "Penalty": ActivityTargetPresentation("admin:finance_penalty_change", "Penalty"),
+    "Penalty": ActivityTargetPresentation("admin:finance_penalty_change", _("Penalty")),
     "PartnerPenaltySettings": ActivityTargetPresentation(
         "admin:finance_partnerpenaltysettings_change",
-        "Penalty settings",
+        _("Penalty settings"),
     ),
-    "Expense": ActivityTargetPresentation("admin:finance_expense_change", "Expense"),
+    "Expense": ActivityTargetPresentation("admin:finance_expense_change", _("Expense")),
     "BroadcastCampaign": ActivityTargetPresentation(
         "admin:broadcasts_broadcastcampaign_change",
-        "Broadcast",
+        _("Broadcast"),
     ),
     "BroadcastTemplate": ActivityTargetPresentation(
         "admin:broadcasts_broadcasttemplate_change",
-        "Broadcast template",
+        _("Broadcast template"),
     ),
     "ConversationMessage": ActivityTargetPresentation(
         "admin:messaging_conversationmessage_change",
-        "Message",
+        _("Message"),
     ),
     "ClientProfile": ActivityTargetPresentation(
         "admin:clients_clientprofile_change",
-        "Client",
+        _("Client"),
     ),
-    "BotInstance": ActivityTargetPresentation("admin:bot_botinstance_change", "Bot"),
+    "BotInstance": ActivityTargetPresentation("admin:bot_botinstance_change", _("Bot")),
     "PartnerTemplateOverride": ActivityTargetPresentation(
         "admin:bot_partnertemplateoverride_change",
-        "Bot content",
+        _("Bot content"),
     ),
     "PartnerNotificationSettings": ActivityTargetPresentation(
         "admin:notifications_partnernotificationsettings_change",
-        "Notification settings",
+        _("Notification settings"),
     ),
     "PartnerScheduleSettings": ActivityTargetPresentation(
         "admin:schedule_partnerschedulesettings_change",
-        "Schedule settings",
+        _("Schedule settings"),
     ),
-    "Service": ActivityTargetPresentation("admin:catalog_service_change", "Service"),
+    "Service": ActivityTargetPresentation("admin:catalog_service_change", _("Service")),
     "ServiceCategory": ActivityTargetPresentation(
         "admin:catalog_servicecategory_change",
-        "Service category",
+        _("Service category"),
     ),
-    "Partner": ActivityTargetPresentation("admin:partners_partner_change", "Partner"),
+    "Partner": ActivityTargetPresentation("admin:partners_partner_change", _("Partner")),
 }
 
 CLIENT_ACTOR_EVENT_TYPES = {
@@ -245,51 +246,88 @@ CLIENT_ACTOR_EVENT_TYPES = {
 }
 
 DETAIL_FIELDS = (
-    ("old_status", "Previous status", "choice"),
-    ("new_status", "New status", "choice"),
-    ("result_status", "Resulting status", "choice"),
-    ("status", "Status", "choice"),
-    ("source", "Source", "choice"),
-    ("proposal_type", "Proposal type", "choice"),
-    ("direction", "Direction", "choice"),
-    ("start_at", "Appointment time", "datetime"),
-    ("previous_start_at", "Previous time", "datetime"),
-    ("new_start_at", "New time", "datetime"),
-    ("expires_at", "Expires", "datetime"),
-    ("scheduled_at", "Scheduled for", "datetime"),
-    ("date", "Date", "date"),
-    ("service_count", "Services", "number"),
-    ("option_count", "Options", "number"),
-    ("count", "Affected records", "number"),
-    ("requested_count", "Reschedule requests", "number"),
-    ("skipped_without_telegram_count", "Skipped without Telegram", "number"),
-    ("queued_count", "Pending recipients", "number"),
-    ("sent_count", "Sent", "number"),
-    ("failed_count", "Failed", "number"),
-    ("skipped_count", "Skipped", "number"),
-    ("is_near_fit", "Near-fit slot", "boolean"),
-    ("success", "Successful", "boolean"),
-    ("token_changed", "Token changed", "boolean"),
-    ("template_key", "Content key", "text"),
-    ("language", "Language", "choice"),
-    ("appointment_cancelled", "Appointment cancelled", "boolean"),
-    ("penalties_enabled", "Penalties enabled", "boolean"),
-    ("late_arrival_threshold_minutes", "Late-arrival threshold", "minutes"),
-    ("amount", "Amount", "money"),
-    ("total_amount", "Total", "money"),
-    ("late_cancel_penalty_amount", "Late-cancellation penalty", "money"),
-    ("no_show_penalty_amount", "No-show penalty", "money"),
-    ("late_arrival_penalty_amount", "Late-arrival penalty", "money"),
-    ("reason", "Penalty reason", "choice"),
+    ("old_status", _("Previous status"), "choice"),
+    ("new_status", _("New status"), "choice"),
+    ("result_status", _("Resulting status"), "choice"),
+    ("status", _("Status"), "choice"),
+    ("source", _("Source"), "choice"),
+    ("proposal_type", _("Proposal type"), "choice"),
+    ("direction", _("Direction"), "choice"),
+    ("start_at", _("Appointment time"), "datetime"),
+    ("previous_start_at", _("Previous time"), "datetime"),
+    ("new_start_at", _("New time"), "datetime"),
+    ("expires_at", _("Expires"), "datetime"),
+    ("scheduled_at", _("Scheduled for"), "datetime"),
+    ("date", _("Date"), "date"),
+    ("service_count", _("Services"), "number"),
+    ("option_count", _("Options"), "number"),
+    ("count", _("Affected records"), "number"),
+    ("requested_count", _("Reschedule requests"), "number"),
+    ("skipped_without_telegram_count", _("Skipped without Telegram"), "number"),
+    ("queued_count", _("Pending recipients"), "number"),
+    ("sent_count", _("Sent"), "number"),
+    ("failed_count", _("Failed"), "number"),
+    ("skipped_count", _("Skipped"), "number"),
+    ("is_near_fit", _("Near-fit slot"), "boolean"),
+    ("success", _("Successful"), "boolean"),
+    ("token_changed", _("Token changed"), "boolean"),
+    ("template_key", _("Content key"), "text"),
+    ("language", _("Language"), "choice"),
+    ("appointment_cancelled", _("Appointment cancelled"), "boolean"),
+    ("penalties_enabled", _("Penalties enabled"), "boolean"),
+    ("late_arrival_threshold_minutes", _("Late-arrival threshold"), "minutes"),
+    ("amount", _("Amount"), "money"),
+    ("total_amount", _("Total"), "money"),
+    ("late_cancel_penalty_amount", _("Late-cancellation penalty"), "money"),
+    ("no_show_penalty_amount", _("No-show penalty"), "money"),
+    ("late_arrival_penalty_amount", _("Late-arrival penalty"), "money"),
+    ("reason", _("Penalty reason"), "choice"),
 )
 BROADCAST_COUNTER_KEYS = {"queued_count", "sent_count", "failed_count", "skipped_count"}
+CHOICE_LABELS = {
+    "active": _("Active"),
+    "appointment_change": _("Appointment change"),
+    "applied_to_appointment": _("Applied to appointment"),
+    "auto": _("Auto-confirm"),
+    "cancelled": _("Cancelled"),
+    "cancelled_by_client": _("Cancelled by client"),
+    "cancelled_by_master": _("Cancelled by master"),
+    "client_bot": _("Client bot"),
+    "client_to_master": _("Client to master"),
+    "completed": _("Completed"),
+    "confirmed": _("Confirmed"),
+    "en": _("English"),
+    "error": _("Error"),
+    "failed": _("Failed"),
+    "late_arrival": _("Late arrival"),
+    "late_cancel": _("Late cancellation"),
+    "manual": _("Manual confirmation"),
+    "manual_admin": _("Manual admin"),
+    "master_to_client": _("Master to client"),
+    "no_show": _("No-show"),
+    "paid": _("Paid"),
+    "paused": _("Paused"),
+    "queued": _("Queued"),
+    "requested": _("Requested"),
+    "requested_alternatives": _("Requested alternatives"),
+    "reschedule_confirmed": _("Confirmed appointment reschedule"),
+    "ru": _("Russian"),
+    "sending": _("Sending"),
+    "sent": _("Sent"),
+    "setup_required": _("Setup required"),
+    "skipped": _("Skipped"),
+    "suspended": _("Suspended"),
+    "uk": _("Ukrainian"),
+    "unpaid": _("Unpaid"),
+    "waived": _("Waived"),
+}
 
 
 def activity_title(event_type: str) -> str:
     presentation = EVENT_PRESENTATIONS.get(event_type)
     if presentation is not None:
         return presentation.title
-    return _humanize_identifier(event_type.rsplit(".", 1)[-1]) or "Activity recorded"
+    return _humanize_identifier(event_type.rsplit(".", 1)[-1]) or _("Activity recorded")
 
 
 def activity_category(event_type: str) -> str:
@@ -313,20 +351,20 @@ def activity_actor_label(event: AuditEvent) -> str:
 
     payload = event.payload_masked if isinstance(event.payload_masked, dict) else {}
     if event.event_type in CLIENT_ACTOR_EVENT_TYPES:
-        return "Client"
+        return _("Client")
     if (
         event.event_type == "messaging.message_created"
         and payload.get("direction") == "client_to_master"
     ):
-        return "Client"
+        return _("Client")
     if (
         event.event_type == "appointment.status_changed"
         and payload.get("new_status") == "cancelled_by_client"
     ):
-        return "Client"
+        return _("Client")
     if event.event_type == "appointment.created" and payload.get("source") == "client_bot":
-        return "Client"
-    return "System"
+        return _("Client")
+    return _("System")
 
 
 def activity_detail_rows(event: AuditEvent) -> tuple[tuple[str, str], ...]:
@@ -370,7 +408,7 @@ def _format_detail_value(
     timezone_name: str,
 ) -> str:
     if value_type == "boolean":
-        return "Yes" if value is True else "No"
+        return _("Yes") if value is True else _("No")
     if value_type == "choice":
         return _humanize_identifier(str(value))
     if value_type == "datetime":
@@ -388,11 +426,14 @@ def _format_detail_value(
             return str(value)
         return f"{money.to_major_decimal()} {money.currency}"
     if value_type == "minutes":
-        return f"{value} min"
+        return _("%(count)s min") % {"count": value}
     return str(value)
 
 
 def _humanize_identifier(value: str) -> str:
+    known_label = CHOICE_LABELS.get(value)
+    if known_label is not None:
+        return known_label
     cleaned = value.replace("_", " ").strip()
     return cleaned[:1].upper() + cleaned[1:] if cleaned else ""
 

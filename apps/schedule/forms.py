@@ -6,6 +6,7 @@ from uuid import UUID
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.partners.models import Partner
 from apps.schedule.models import (
@@ -35,34 +36,34 @@ class CalendarQuickCreateForm(forms.Form):
     APPOINTMENT = "appointment"
 
     item_type = forms.ChoiceField(
-        label="Type",
+        label=_("Type"),
         choices=(
-            (AVAILABILITY, "Availability"),
-            (BLOCKED, "Blocked time"),
-            (APPOINTMENT, "Appointment"),
+            (AVAILABILITY, _("Availability")),
+            (BLOCKED, _("Blocked time")),
+            (APPOINTMENT, _("Appointment")),
         ),
         widget=forms.RadioSelect,
     )
     day = forms.DateField(
-        label="Date",
+        label=_("Date"),
         widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
     start_time = forms.TimeField(
-        label="Start time",
+        label=_("Start time"),
         widget=forms.TimeInput(attrs={"type": "time"}),
     )
     end_time = forms.TimeField(
-        label="End time",
+        label=_("End time"),
         required=False,
         widget=forms.TimeInput(attrs={"type": "time"}),
-        help_text="Required for availability and blocked time.",
+        help_text=_("Required for availability and blocked time."),
     )
     reason = forms.CharField(
-        label="Reason",
+        label=_("Reason"),
         required=False,
         max_length=500,
         widget=forms.Textarea(attrs={"rows": 2}),
-        help_text="Optional; used only for blocked time.",
+        help_text=_("Optional; used only for blocked time."),
     )
 
     def __init__(self, *args, partner: Partner, **kwargs) -> None:
@@ -80,7 +81,7 @@ class CalendarQuickCreateForm(forms.Form):
         partner_zone = get_zone(self.partner.timezone)
         start_at = datetime.combine(day, start_time, tzinfo=partner_zone)
         if start_at < timezone.now():
-            self.add_error("start_time", "New calendar items cannot start in the past.")
+            self.add_error("start_time", _("New calendar items cannot start in the past."))
             return cleaned_data
         cleaned_data["start_at"] = start_at
 
@@ -89,11 +90,11 @@ class CalendarQuickCreateForm(forms.Form):
 
         end_time = cleaned_data.get("end_time")
         if end_time is None:
-            self.add_error("end_time", "End time is required for this type.")
+            self.add_error("end_time", _("End time is required for this type."))
             return cleaned_data
         end_at = datetime.combine(day, end_time, tzinfo=partner_zone)
         if end_at <= start_at:
-            self.add_error("end_time", "End time must be after start time.")
+            self.add_error("end_time", _("End time must be after start time."))
             return cleaned_data
         cleaned_data["end_at"] = end_at
         return cleaned_data
@@ -107,7 +108,7 @@ class CalendarCopyScheduleForm(forms.Form):
     SCOPES = (DAY, WEEK)
 
     target_date = forms.DateField(
-        label="Target date",
+        label=_("Target date"),
         widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
 
@@ -118,7 +119,7 @@ class CalendarCopyScheduleForm(forms.Form):
         self.scope = scope
         self.source_date = self._normalize(source_date)
         self.fields["target_date"].label = (
-            "Target day" if scope == self.DAY else "Date in target week"
+            _("Target day") if scope == self.DAY else _("Date in target week")
         )
         self.initial.setdefault(
             "target_date",
@@ -128,7 +129,7 @@ class CalendarCopyScheduleForm(forms.Form):
     def clean_target_date(self) -> date:
         target_date = self._normalize(self.cleaned_data["target_date"])
         if target_date == self.source_date:
-            raise forms.ValidationError("Choose a different target period.")
+            raise forms.ValidationError(_("Choose a different target period."))
         return target_date
 
     def _normalize(self, value: date) -> date:
@@ -146,15 +147,15 @@ class ScheduleConflictActionForm(forms.Form):
 
     action = forms.ChoiceField(
         choices=(
-            (KEEP_AS_IS, "Keep as is"),
-            (REQUEST_RESCHEDULE, "Request reschedule"),
-            (REOPEN, "Reopen"),
+            (KEEP_AS_IS, _("Keep as is")),
+            (REQUEST_RESCHEDULE, _("Request reschedule")),
+            (REOPEN, _("Reopen")),
         ),
         widget=forms.HiddenInput,
     )
     appointments = forms.MultipleChoiceField(
         choices=(),
-        error_messages={"required": "Select at least one schedule conflict."},
+        error_messages={"required": _("Select at least one schedule conflict.")},
     )
 
     def __init__(self, *args, conflicts, **kwargs) -> None:
@@ -315,7 +316,7 @@ class AvailabilityTemplateWindowAdminForm(forms.ModelForm):
                 .get()
             )
             if template.partner_id != original_partner_id:
-                self.add_error("template", "Template must belong to the same partner.")
+                self.add_error("template", _("Template must belong to the same partner."))
         required_values = (
             cleaned_data.get("weekday"),
             cleaned_data.get("start_time"),
