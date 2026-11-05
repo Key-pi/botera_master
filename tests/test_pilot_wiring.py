@@ -1,7 +1,7 @@
 import asyncio
 from datetime import time, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -25,7 +25,7 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTelegramContactLink
-from apps.bot.routers import build_partner_router
+from apps.bot.routers import ClientProfileEditState, build_partner_router
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     bind_master_contact_from_start_payload,
@@ -264,12 +264,111 @@ def test_start_router_sends_client_navigation_with_welcome(monkeypatch):
     assert callbacks == {
         "bk:cat:1",
         "pf:contact",
+        "pf:edit",
         "pf:future:1",
         "pf:history:1",
         "pf:lang",
         "pf:marketing",
         "pf:penalties:1",
     }
+
+
+def test_profile_edit_callback_enters_field_input_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    profile = SimpleNamespace(language="en")
+    reply_markup = SimpleNamespace(inline_keyboard=[])
+    callback = SimpleNamespace(
+        data="pf:edit:name",
+        from_user=SimpleNamespace(id=555010),
+        message=SimpleNamespace(edit_text=AsyncMock()),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(set_state=AsyncMock(), clear=AsyncMock())
+
+    monkeypatch.setattr(
+        "apps.bot.routers._client_profile_for_callback",
+        AsyncMock(return_value=profile),
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers._profile_reply_from_callback_data",
+        lambda **_kwargs: SimpleNamespace(
+            text="Send a new name",
+            reply_markup=reply_markup,
+        ),
+    )
+    router = build_partner_router()
+    profile_handler = next(
+        handler.callback
+        for handler in router.callback_query.handlers
+        if handler.callback.__name__ == "profile_callback_handler"
+    )
+
+    asyncio.run(
+        profile_handler(
+            callback=callback,
+            partner=partner,
+            state=state,
+        )
+    )
+
+    state.set_state.assert_awaited_once_with(ClientProfileEditState.waiting_for_name)
+    state.clear.assert_not_awaited()
+    callback.message.edit_text.assert_awaited_once_with(
+        "Send a new name",
+        reply_markup=reply_markup,
+    )
+    callback.answer.assert_awaited_once()
+
+
+def test_profile_edit_message_updates_field_and_clears_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    profile = SimpleNamespace(language="en")
+    reply_markup = SimpleNamespace(inline_keyboard=[])
+    message = SimpleNamespace(
+        text="New client name",
+        contact=None,
+        from_user=SimpleNamespace(id=555011),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+    update_reply = Mock(
+        return_value=SimpleNamespace(
+            text="Profile updated",
+            reply_markup=reply_markup,
+        )
+    )
+
+    monkeypatch.setattr(
+        "apps.bot.routers._client_profile_for_message",
+        AsyncMock(return_value=profile),
+    )
+    monkeypatch.setattr("apps.bot.routers.update_profile_field_reply", update_reply)
+    router = build_partner_router()
+    name_handler = next(
+        handler.callback
+        for handler in router.message.handlers
+        if handler.callback.__name__ == "client_profile_name_handler"
+    )
+
+    asyncio.run(
+        name_handler(
+            message=message,
+            partner=partner,
+            state=state,
+        )
+    )
+
+    update_reply.assert_called_once_with(
+        partner=partner,
+        client_profile=profile,
+        field="name",
+        value="New client name",
+    )
+    state.clear.assert_awaited_once()
+    message.answer.assert_awaited_once_with(
+        "Profile updated",
+        reply_markup=reply_markup,
+    )
 
 
 def test_unmatched_client_message_returns_main_menu(monkeypatch):

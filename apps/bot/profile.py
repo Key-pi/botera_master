@@ -32,8 +32,12 @@ from apps.appointments.services import (
 from apps.clients.models import ClientProfile
 from apps.clients.services import (
     SUPPORTED_CLIENT_LANGUAGES,
+    clear_client_profile_phone_from_telegram,
     set_marketing_opt_out,
+    update_client_profile_extra_text_from_telegram,
     update_client_profile_language,
+    update_client_profile_name_from_telegram,
+    update_client_profile_phone_from_telegram,
 )
 from apps.finance.models import Penalty
 from apps.finance.selectors import outstanding_penalties_for_client
@@ -49,6 +53,14 @@ from .services import render_content_template
 PROFILE_CALLBACK_PREFIX = "pf"
 RESCHEDULE_SEARCH_DAYS = 30
 CLIENT_PENALTIES_PAGE_SIZE = 5
+PROFILE_EDIT_FIELD_NAME = "name"
+PROFILE_EDIT_FIELD_PHONE = "phone"
+PROFILE_EDIT_FIELD_EXTRA = "extra"
+PROFILE_EDIT_FIELDS = (
+    PROFILE_EDIT_FIELD_NAME,
+    PROFILE_EDIT_FIELD_PHONE,
+    PROFILE_EDIT_FIELD_EXTRA,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +128,12 @@ def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text=_label("edit_profile", language),
+                callback_data=_callback("edit"),
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=_label("contact_master", language),
                 callback_data=_callback("contact"),
             )
@@ -140,6 +158,135 @@ def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
         ],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_profile_edit_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+) -> BotProfileReply:
+    """Render client-editable profile fields without exposing master notes."""
+
+    language = client_profile.language
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key="profile.edit_data",
+            language=language,
+            context={
+                "name": client_profile.name or _label("not_set", language),
+                "phone": client_profile.phone or _label("not_set", language),
+                "extra_text": client_profile.extra_client_text
+                or _label("not_set", language),
+            },
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_label("profile_name", language),
+                        callback_data=_callback("edit", PROFILE_EDIT_FIELD_NAME),
+                    ),
+                    InlineKeyboardButton(
+                        text=_label("phone", language),
+                        callback_data=_callback("edit", PROFILE_EDIT_FIELD_PHONE),
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=_label("extra_text", language),
+                        callback_data=_callback("edit", PROFILE_EDIT_FIELD_EXTRA),
+                    )
+                ],
+                [_back_button(_callback("main"), language)],
+            ],
+        ),
+    )
+
+
+def build_profile_edit_prompt_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    field: str,
+    invalid_value: bool = False,
+) -> BotProfileReply:
+    """Prompt for one whitelisted client-editable profile field."""
+
+    _validate_profile_edit_field(field)
+    language = client_profile.language
+    field_name = _profile_edit_field_label(field, language)
+    current_value = _profile_edit_current_value(client_profile, field)
+    text = _render(
+        partner=partner,
+        key="profile.edit_prompt",
+        language=language,
+        context={
+            "field_name": field_name,
+            "current_value": current_value or _label("not_set", language),
+        },
+    )
+    if invalid_value:
+        invalid = _render(
+            partner=partner,
+            key="profile.edit_invalid",
+            language=language,
+            context={"field_name": field_name},
+        )
+        text = f"{invalid}\n\n{text}"
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if current_value:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("clear_field", language),
+                    callback_data=_callback("editclear", field),
+                )
+            ]
+        )
+    rows.append([_back_button(_callback("edit"), language)])
+    return BotProfileReply(
+        text=text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def update_profile_field_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    field: str,
+    value: str,
+) -> BotProfileReply:
+    """Persist one client-owned profile field and return the refreshed edit screen."""
+
+    _validate_profile_edit_field(field)
+    if not (value or "").strip():
+        raise ValidationError({field: "Use the clear action to remove this value."})
+    updated_profile = _update_profile_field(
+        client_profile=client_profile,
+        field=field,
+        value=value,
+    )
+    return _profile_updated_reply(partner=partner, client_profile=updated_profile)
+
+
+def clear_profile_field_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    field: str,
+) -> BotProfileReply:
+    """Clear one optional client-owned profile field through an explicit action."""
+
+    _validate_profile_edit_field(field)
+    updated_profile = _update_profile_field(
+        client_profile=client_profile,
+        field=field,
+        value="",
+    )
+    return _profile_updated_reply(partner=partner, client_profile=updated_profile)
 
 
 def build_contact_master_prompt_reply(
@@ -2117,6 +2264,71 @@ def _penalty_status_label(status: str, language: str) -> str:
     return translations.get(language, translations["uk"])
 
 
+def _validate_profile_edit_field(field: str) -> None:
+    if field not in PROFILE_EDIT_FIELDS:
+        raise ValidationError({"field": "Unsupported profile field."})
+
+
+def _profile_edit_field_label(field: str, language: str) -> str:
+    return _label(
+        {
+            PROFILE_EDIT_FIELD_NAME: "profile_name",
+            PROFILE_EDIT_FIELD_PHONE: "phone",
+            PROFILE_EDIT_FIELD_EXTRA: "extra_text",
+        }[field],
+        language,
+    )
+
+
+def _profile_edit_current_value(client_profile: ClientProfile, field: str) -> str:
+    return {
+        PROFILE_EDIT_FIELD_NAME: client_profile.name,
+        PROFILE_EDIT_FIELD_PHONE: client_profile.phone,
+        PROFILE_EDIT_FIELD_EXTRA: client_profile.extra_client_text,
+    }[field]
+
+
+def _update_profile_field(
+    *,
+    client_profile: ClientProfile,
+    field: str,
+    value: str,
+) -> ClientProfile:
+    if field == PROFILE_EDIT_FIELD_NAME:
+        return update_client_profile_name_from_telegram(
+            client_profile=client_profile,
+            name=value,
+        )
+    if field == PROFILE_EDIT_FIELD_PHONE:
+        if value:
+            return update_client_profile_phone_from_telegram(
+                client_profile=client_profile,
+                phone=value,
+            )
+        return clear_client_profile_phone_from_telegram(client_profile=client_profile)
+    return update_client_profile_extra_text_from_telegram(
+        client_profile=client_profile,
+        extra_client_text=value,
+    )
+
+
+def _profile_updated_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+) -> BotProfileReply:
+    confirmation = _render(
+        partner=partner,
+        key="profile.updated_success",
+        language=client_profile.language,
+    )
+    edit = build_profile_edit_reply(partner=partner, client_profile=client_profile)
+    return BotProfileReply(
+        text=f"{confirmation}\n\n{edit.text}",
+        reply_markup=edit.reply_markup,
+    )
+
+
 def _label(key: str, language: str) -> str:
     labels = {
         "back": {"uk": "Назад", "ru": "Назад", "en": "Back"},
@@ -2148,6 +2360,16 @@ def _label(key: str, language: str) -> str:
             "en": "Choose another time",
         },
         "details": {"uk": "Деталі", "ru": "Детали", "en": "Details"},
+        "edit_profile": {
+            "uk": "Редагувати профіль",
+            "ru": "Редактировать профиль",
+            "en": "Edit profile",
+        },
+        "extra_text": {
+            "uk": "Додаткова інформація",
+            "ru": "Дополнительная информация",
+            "en": "Additional information",
+        },
         "future": {"uk": "Мої записи", "ru": "Мои записи", "en": "My bookings"},
         "history": {"uk": "Історія", "ru": "История", "en": "History"},
         "language": {"uk": "Мова", "ru": "Язык", "en": "Language"},
@@ -2180,6 +2402,13 @@ def _label(key: str, language: str) -> str:
             "en": "needs confirmation",
         },
         "penalties": {"uk": "Штрафи", "ru": "Штрафы", "en": "Penalties"},
+        "phone": {"uk": "Телефон", "ru": "Телефон", "en": "Phone"},
+        "profile_name": {"uk": "Ім'я", "ru": "Имя", "en": "Name"},
+        "clear_field": {
+            "uk": "Очистити поле",
+            "ru": "Очистить поле",
+            "en": "Clear field",
+        },
         "reason": {"uk": "Причина", "ru": "Причина", "en": "Reason"},
         "reschedule_appointment": {
             "uk": "Перенести запис",

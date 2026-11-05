@@ -27,6 +27,8 @@ from apps.bot.profile import (
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_marketing_preferences_reply,
+    build_profile_edit_prompt_reply,
+    build_profile_edit_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     build_profile_penalties_reply,
@@ -36,6 +38,7 @@ from apps.bot.profile import (
     build_reschedule_dates_reply,
     build_reschedule_final_confirm_reply,
     build_reschedule_slots_reply,
+    clear_profile_field_reply,
     confirm_cancel_appointment_reply,
     confirm_requested_alternative_reply,
     confirm_reschedule_reply,
@@ -43,6 +46,7 @@ from apps.bot.profile import (
     send_client_message_to_master_reply,
     set_marketing_preference_reply,
     set_profile_language_reply,
+    update_profile_field_reply,
 )
 from apps.bot.routers import _profile_reply_from_callback_data
 from apps.catalog.services import create_service, create_service_category
@@ -166,6 +170,7 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     assert "pf:contact" in callbacks
     assert "pf:marketing" in callbacks
     assert "pf:penalties:1" in callbacks
+    assert "pf:edit" in callbacks
     assert "bk:cat:1" in callbacks
 
 
@@ -185,6 +190,98 @@ def test_client_start_reply_keeps_welcome_text_and_adds_navigation():
     assert "pf:contact" in callbacks
     assert "pf:marketing" in callbacks
     assert "pf:penalties:1" in callbacks
+    assert "pf:edit" in callbacks
+
+
+@pytest.mark.django_db
+def test_profile_edit_flow_updates_only_client_owned_fields(bot_profile_context):
+    context = bot_profile_context
+    client = context["client"]
+    client.private_master_note = "Master only"
+    client.save(update_fields=["private_master_note", "updated_at"])
+
+    edit = build_profile_edit_reply(
+        partner=context["partner"],
+        client_profile=client,
+    )
+    name_prompt = build_profile_edit_prompt_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="name",
+    )
+    update_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="name",
+        value="  Iryna Client  ",
+    )
+    update_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="phone",
+        value="+38 (050) 123-45-67",
+    )
+    updated = update_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="extra",
+        value="  Prefers evening appointments.  ",
+    )
+    cleared = clear_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="phone",
+    )
+
+    client.refresh_from_db()
+    assert "Profile data" in edit.text
+    assert {"pf:edit:name", "pf:edit:phone", "pf:edit:extra"}.issubset(
+        _button_callbacks(edit)
+    )
+    assert "Current value: Ira" in name_prompt.text
+    assert "pf:editclear:name" in _button_callbacks(name_prompt)
+    assert client.name == "Iryna Client"
+    assert client.phone == ""
+    assert client.extra_client_text == "Prefers evening appointments."
+    assert client.private_master_note == "Master only"
+    assert "Profile updated" in updated.text
+    assert "Phone: not set" in cleared.text
+    with pytest.raises(ValidationError, match="Unsupported profile field"):
+        update_profile_field_reply(
+            partner=context["partner"],
+            client_profile=client,
+            field="private_master_note",
+            value="Must stay unreachable",
+        )
+
+
+@pytest.mark.django_db
+def test_profile_edit_flow_rejects_invalid_values_and_keeps_prompt(bot_profile_context):
+    context = bot_profile_context
+
+    with pytest.raises(ValidationError, match="Client name is too long"):
+        update_profile_field_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            field="name",
+            value="x" * 256,
+        )
+    with pytest.raises(ValidationError, match="Phone is too long"):
+        update_profile_field_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            field="phone",
+            value="+" + "1" * 33,
+        )
+
+    invalid = build_profile_edit_prompt_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        field="phone",
+        invalid_value=True,
+    )
+    assert "Could not save" in invalid.text
+    assert "pf:edit" in _button_callbacks(invalid)
 
 
 @pytest.mark.django_db

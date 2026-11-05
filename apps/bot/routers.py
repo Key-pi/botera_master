@@ -105,6 +105,9 @@ from apps.bot.notification_failures import (
 )
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
+    PROFILE_EDIT_FIELD_EXTRA,
+    PROFILE_EDIT_FIELD_NAME,
+    PROFILE_EDIT_FIELD_PHONE,
     BotProfileReply,
     accept_appointment_proposal_reply,
     build_appointment_details_reply,
@@ -115,6 +118,8 @@ from apps.bot.profile import (
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
     build_marketing_preferences_reply,
+    build_profile_edit_prompt_reply,
+    build_profile_edit_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     build_profile_penalties_reply,
@@ -124,6 +129,7 @@ from apps.bot.profile import (
     build_reschedule_dates_reply,
     build_reschedule_final_confirm_reply,
     build_reschedule_slots_reply,
+    clear_profile_field_reply,
     confirm_cancel_appointment_reply,
     confirm_requested_alternative_reply,
     confirm_reschedule_reply,
@@ -132,6 +138,7 @@ from apps.bot.profile import (
     send_client_message_to_master_reply,
     set_marketing_preference_reply,
     set_profile_language_reply,
+    update_profile_field_reply,
 )
 from apps.bot.profile import (
     parse_integer_token as parse_profile_integer_token,
@@ -160,6 +167,14 @@ class ClientMessageState(StatesGroup):
     """Ephemeral input state before a durable conversation message exists."""
 
     waiting_for_text = State()
+
+
+class ClientProfileEditState(StatesGroup):
+    """Ephemeral input state for one client-owned profile field."""
+
+    waiting_for_name = State()
+    waiting_for_phone = State()
+    waiting_for_extra = State()
 
 
 class BookingFlowState(StatesGroup):
@@ -578,6 +593,45 @@ def build_partner_router() -> Router:
                 result=result,
             )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(ClientProfileEditState.waiting_for_name)
+    async def client_profile_name_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await _handle_client_profile_edit_message(
+            message=message,
+            partner=partner,
+            state=state,
+            field=PROFILE_EDIT_FIELD_NAME,
+        )
+
+    @router.message(ClientProfileEditState.waiting_for_phone)
+    async def client_profile_phone_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await _handle_client_profile_edit_message(
+            message=message,
+            partner=partner,
+            state=state,
+            field=PROFILE_EDIT_FIELD_PHONE,
+        )
+
+    @router.message(ClientProfileEditState.waiting_for_extra)
+    async def client_profile_extra_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await _handle_client_profile_edit_message(
+            message=message,
+            partner=partner,
+            state=state,
+            field=PROFILE_EDIT_FIELD_EXTRA,
+        )
 
     @router.message(ClientMessageState.waiting_for_text)
     async def contact_master_message_handler(
@@ -1006,6 +1060,8 @@ def build_partner_router() -> Router:
         else:
             if callback.data == f"{PROFILE_CALLBACK_PREFIX}:contact":
                 await state.set_state(ClientMessageState.waiting_for_text)
+            elif edit_state := _profile_edit_state_for_callback(callback.data):
+                await state.set_state(edit_state)
             else:
                 await state.clear()
 
@@ -1645,6 +1701,23 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             partner=partner,
             client_profile=client_profile,
         )
+    if action == "edit" and len(parts) == 2:
+        return build_profile_edit_reply(
+            partner=partner,
+            client_profile=client_profile,
+        )
+    if action == "edit" and len(parts) == 3:
+        return build_profile_edit_prompt_reply(
+            partner=partner,
+            client_profile=client_profile,
+            field=parts[2],
+        )
+    if action == "editclear" and len(parts) == 3:
+        return clear_profile_field_reply(
+            partner=partner,
+            client_profile=client_profile,
+            field=parts[2],
+        )
     if action == "marketing" and len(parts) == 2:
         return build_marketing_preferences_reply(
             partner=partner,
@@ -2145,6 +2218,20 @@ def _invalid_profile_action_reply(*, partner: Partner, language: str):
     return BotProfileReply(text=rendered.body)
 
 
+def _profile_edit_state_for_callback(data: str) -> State | None:
+    return {
+        f"{PROFILE_CALLBACK_PREFIX}:edit:{PROFILE_EDIT_FIELD_NAME}": (
+            ClientProfileEditState.waiting_for_name
+        ),
+        f"{PROFILE_CALLBACK_PREFIX}:edit:{PROFILE_EDIT_FIELD_PHONE}": (
+            ClientProfileEditState.waiting_for_phone
+        ),
+        f"{PROFILE_CALLBACK_PREFIX}:edit:{PROFILE_EDIT_FIELD_EXTRA}": (
+            ClientProfileEditState.waiting_for_extra
+        ),
+    }.get(data)
+
+
 def _validate_profile_return_action(return_action: str) -> None:
     if return_action not in {"future", "history"}:
         raise ValidationError({"callback": "Unsupported return target."})
@@ -2367,6 +2454,40 @@ def _phone_from_message(message: Message) -> str | None:
             return None
         return contact.phone_number
     return message.text
+
+
+async def _handle_client_profile_edit_message(
+    *,
+    message: Message,
+    partner: Partner,
+    state: FSMContext,
+    field: str,
+) -> None:
+    profile = await _client_profile_for_message(message=message, partner=partner)
+    if profile is None:
+        await state.clear()
+        return
+
+    value = _phone_from_message(message) if field == PROFILE_EDIT_FIELD_PHONE else message.text
+    try:
+        if value is None:
+            raise ValidationError({field: "Profile field must be sent as text."})
+        reply = await sync_to_async(update_profile_field_reply)(
+            partner=partner,
+            client_profile=profile,
+            field=field,
+            value=value,
+        )
+    except ValidationError:
+        reply = await sync_to_async(build_profile_edit_prompt_reply)(
+            partner=partner,
+            client_profile=profile,
+            field=field,
+            invalid_value=True,
+        )
+    else:
+        await state.clear()
+    await message.answer(reply.text, reply_markup=reply.reply_markup)
 
 
 async def _client_profile_for_message(*, message: Message, partner: Partner):

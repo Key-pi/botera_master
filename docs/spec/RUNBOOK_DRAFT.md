@@ -332,7 +332,9 @@ flow.
    and `/tomorrow` are equivalent direct entry commands for the linked master.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
-   receives the queued reply through the partner bot. Open **Broadcasts**, unsubscribe,
+   receives the queued reply through the partner bot. Open **Edit profile** and update
+   the client name, phone, and additional information; verify that clearing an optional
+   value works and no private master note is exposed. Open **Broadcasts**, unsubscribe,
    and verify the client is excluded from a new marketing campaign while service
    appointment notifications remain enabled. Subscribe again and verify the client is
    eligible for subsequent campaigns. If the client has unpaid or applied penalties,

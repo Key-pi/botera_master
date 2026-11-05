@@ -10,11 +10,16 @@ from apps.catalog.selectors import (
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.selectors import client_profiles_for_partner, manual_client_link_candidates
 from apps.clients.services import (
+    MAX_CLIENT_EXTRA_TEXT_LENGTH,
+    clear_client_profile_phone_from_telegram,
     create_manual_client_profile,
     link_client_profile_to_telegram_identity,
     mark_client_unreachable,
     resolve_client_profile_for_telegram_identity,
     set_marketing_opt_out,
+    update_client_profile_extra_text_from_telegram,
+    update_client_profile_name_from_telegram,
+    update_client_profile_phone_from_telegram,
     upsert_telegram_identity,
 )
 from apps.partners.services import create_partner_with_owner
@@ -103,6 +108,54 @@ def test_marketing_and_reachability_flags_are_partner_scoped(two_partners):
 
     assert first_profile.bot_unreachable is False
     assert first_profile.last_delivery_failure_code == ""
+
+
+@pytest.mark.django_db
+def test_client_runtime_profile_updates_are_narrow_and_partner_scoped(two_partners):
+    first, second = two_partners
+    identity = upsert_telegram_identity(telegram_user_id=12346, username="client-edit")
+    first_profile = resolve_client_profile_for_telegram_identity(
+        partner=first.partner,
+        telegram_identity=identity,
+    )
+    second_profile = resolve_client_profile_for_telegram_identity(
+        partner=second.partner,
+        telegram_identity=identity,
+    )
+    first_profile.private_master_note = "Never client-editable"
+    first_profile.save(update_fields=["private_master_note", "updated_at"])
+
+    update_client_profile_name_from_telegram(
+        client_profile=first_profile,
+        name="  Partner One Name  ",
+    )
+    update_client_profile_phone_from_telegram(
+        client_profile=first_profile,
+        phone="+38 (050) 111-22-33",
+    )
+    update_client_profile_extra_text_from_telegram(
+        client_profile=first_profile,
+        extra_client_text="  Likes evenings.  ",
+    )
+
+    first_profile.refresh_from_db()
+    second_profile.refresh_from_db()
+    assert first_profile.name == "Partner One Name"
+    assert first_profile.phone == "+380501112233"
+    assert first_profile.extra_client_text == "Likes evenings."
+    assert first_profile.private_master_note == "Never client-editable"
+    assert second_profile.name != first_profile.name
+    assert second_profile.phone == ""
+    assert second_profile.extra_client_text == ""
+
+    clear_client_profile_phone_from_telegram(client_profile=first_profile)
+    first_profile.refresh_from_db()
+    assert first_profile.phone == ""
+    with pytest.raises(ValidationError, match="Additional client text is too long"):
+        update_client_profile_extra_text_from_telegram(
+            client_profile=first_profile,
+            extra_client_text="x" * (MAX_CLIENT_EXTRA_TEXT_LENGTH + 1),
+        )
 
 
 @pytest.mark.django_db

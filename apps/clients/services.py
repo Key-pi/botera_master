@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 
 
 SUPPORTED_CLIENT_LANGUAGES = {"uk", "ru", "en"}
+MAX_CLIENT_NAME_LENGTH = 255
+MAX_CLIENT_PHONE_LENGTH = 32
+MAX_CLIENT_EXTRA_TEXT_LENGTH = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,12 +292,63 @@ def update_client_profile_phone_from_telegram(
     normalized_phone = normalize_phone(raw_phone)
     if not raw_phone or not normalized_phone:
         raise ValidationError({"phone": "Phone must contain at least one digit."})
+    if len(normalized_phone) > MAX_CLIENT_PHONE_LENGTH:
+        raise ValidationError({"phone": "Phone is too long."})
 
     with transaction.atomic():
         profile = ClientProfile.objects.select_for_update().get(id=client_profile.id)
         profile.phone = normalized_phone
         profile.save(update_fields=["phone", "updated_at"])
         return profile
+
+
+def update_client_profile_name_from_telegram(
+    *,
+    client_profile: ClientProfile,
+    name: str,
+) -> ClientProfile:
+    """Update only the client-visible name from trusted partner bot context."""
+
+    cleaned_name = (name or "").strip()
+    if len(cleaned_name) > MAX_CLIENT_NAME_LENGTH:
+        raise ValidationError({"name": "Client name is too long."})
+    return _update_client_profile_field_from_telegram(
+        client_profile=client_profile,
+        field_name="name",
+        value=cleaned_name,
+    )
+
+
+def update_client_profile_extra_text_from_telegram(
+    *,
+    client_profile: ClientProfile,
+    extra_client_text: str,
+) -> ClientProfile:
+    """Update the client's own additional profile text without touching master notes."""
+
+    cleaned_text = (extra_client_text or "").strip()
+    if len(cleaned_text) > MAX_CLIENT_EXTRA_TEXT_LENGTH:
+        raise ValidationError(
+            {"extra_client_text": "Additional client text is too long."}
+        )
+    return _update_client_profile_field_from_telegram(
+        client_profile=client_profile,
+        field_name="extra_client_text",
+        value=cleaned_text,
+    )
+
+
+def clear_client_profile_phone_from_telegram(
+    *,
+    client_profile: ClientProfile,
+) -> ClientProfile:
+    """Clear an optional client phone without exposing broader profile writes."""
+
+    return _update_client_profile_field_from_telegram(
+        client_profile=client_profile,
+        field_name="phone",
+        value="",
+    )
 
 
 def mark_client_unreachable(
@@ -316,6 +370,19 @@ def mark_client_unreachable(
         ]
     )
     return client_profile
+
+
+def _update_client_profile_field_from_telegram(
+    *,
+    client_profile: ClientProfile,
+    field_name: str,
+    value: str,
+) -> ClientProfile:
+    with transaction.atomic():
+        profile = ClientProfile.objects.select_for_update().get(id=client_profile.id)
+        setattr(profile, field_name, value)
+        profile.save(update_fields=[field_name, "updated_at"])
+        return profile
 
 
 def mark_client_reachable(*, client_profile: ClientProfile) -> ClientProfile:

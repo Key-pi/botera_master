@@ -124,6 +124,10 @@ def test_content_template_override_validation_and_language_fallback(content_cont
         key="profile.marketing_preferences",
         language="en",
     )
+    profile_edit_template = SystemTemplate.objects.get(
+        key="profile.edit_data",
+        language="en",
+    )
     assert required_field_template.editable is False
     assert required_field_template.placeholder_allowlist == ["missing_fields"]
     assert "comment" in final_confirm_template.placeholder_allowlist
@@ -136,6 +140,8 @@ def test_content_template_override_validation_and_language_fallback(content_cont
     assert no_show_template.editable is True
     assert marketing_preferences_template.editable is False
     assert marketing_preferences_template.placeholder_allowlist == ["marketing_status"]
+    assert profile_edit_template.editable is False
+    assert profile_edit_template.placeholder_allowlist == ["name", "phone", "extra_text"]
 
     override = set_partner_template_override(
         actor=created.owner,
