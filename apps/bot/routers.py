@@ -71,6 +71,7 @@ from apps.bot.master_reschedule import (
 )
 from apps.bot.master_workspace import (
     MASTER_WORKSPACE_CALLBACK_PREFIX,
+    MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
     MASTER_WORKSPACE_PERIODS,
     PERIOD_REQUESTS,
     PERIOD_TODAY,
@@ -78,7 +79,9 @@ from apps.bot.master_workspace import (
     build_master_appointment_list_reply,
     build_master_appointment_message_prompt_reply,
     build_master_language_reply,
+    build_master_late_arrival_prompt_reply,
     build_master_workspace_reply,
+    create_master_late_arrival_penalty_reply,
     master_workspace_reply_from_callback_data,
     queue_master_appointment_message_reply,
 )
@@ -178,6 +181,12 @@ class MasterMessageFlowState(StatesGroup):
 
 class MasterWorkspaceMessageFlowState(StatesGroup):
     """Ephemeral input state for a direct client message from appointment details."""
+
+    waiting_for_text = State()
+
+
+class MasterWorkspaceLateArrivalFlowState(StatesGroup):
+    """Ephemeral input state for late-arrival minutes and an optional note."""
 
     waiting_for_text = State()
 
@@ -702,6 +711,64 @@ def build_partner_router() -> Router:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(MasterWorkspaceLateArrivalFlowState.waiting_for_text)
+    async def master_workspace_late_arrival_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        message_context = _master_workspace_message_state_values(await state.get_data())
+        if contact is None or contact.user is None or message_context is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        appointment_id, return_period, return_page = message_context
+        try:
+            if message.text is None:
+                reply = await sync_to_async(build_master_late_arrival_prompt_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    appointment_id=appointment_id,
+                    return_period=return_period,
+                    return_page=return_page,
+                    invalid_input=True,
+                )
+            else:
+                try:
+                    reply = await sync_to_async(create_master_late_arrival_penalty_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        text=message.text,
+                    )
+                except ValidationError:
+                    reply = await sync_to_async(build_master_late_arrival_prompt_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        invalid_input=True,
+                    )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+        else:
+            if not reply.wait_for_text:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.message(FailedNotificationMessageFlowState.waiting_for_text)
     async def failed_notification_message_handler(
         message: Message,
@@ -893,7 +960,10 @@ def build_partner_router() -> Router:
 
         await state.clear()
         if reply.wait_for_text and reply.appointment_id is not None:
-            await state.set_state(MasterWorkspaceMessageFlowState.waiting_for_text)
+            if getattr(reply, "input_mode", "") == MASTER_WORKSPACE_INPUT_LATE_ARRIVAL:
+                await state.set_state(MasterWorkspaceLateArrivalFlowState.waiting_for_text)
+            else:
+                await state.set_state(MasterWorkspaceMessageFlowState.waiting_for_text)
             await state.set_data(
                 {
                     MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY: reply.appointment_id.hex,

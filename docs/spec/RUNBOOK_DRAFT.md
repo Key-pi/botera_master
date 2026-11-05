@@ -320,7 +320,10 @@ flow.
    workspace language switch. For a confirmed appointment, verify cancellation
    requires a second click and **Completed**/**No-show** appear only after its
    start. With penalties enabled, **No-show** should offer (but not silently
-   create) the configured no-show penalty. A linked reachable client should
+   create) the configured no-show penalty. A started confirmed/completed visit
+   should also expose **Record late arrival**: enter minutes and an optional
+   note, then verify the configured threshold is enforced and exactly one
+   late-arrival penalty/client notification is created. A linked reachable client should
    expose **Message client** and queue the entered text for the notifications
    worker. A future confirmed appointment for that client should also expose
    **Propose reschedule**: select multiple options, review them, send, and verify

@@ -503,6 +503,62 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         editable=False,
     ),
     _definition(
+        "master.workspace_late_arrival_prompt",
+        uk=(
+            "Надішліть кількість хвилин запізнення для {client_name} і, за бажанням, "
+            "причину через пробіл. Наприклад: 20 затор. Надсилання створить штраф "
+            "{penalty_amount} {currency}; мінімум — {threshold_minutes} хв."
+        ),
+        ru=(
+            "Отправьте количество минут опоздания для {client_name} и, при желании, "
+            "причину через пробел. Например: 20 пробка. Отправка создаст штраф "
+            "{penalty_amount} {currency}; минимум — {threshold_minutes} мин."
+        ),
+        en=(
+            "Send the number of minutes {client_name} was late and, optionally, a note "
+            "after a space. Example: 20 traffic. Sending creates a {penalty_amount} "
+            "{currency} penalty; minimum {threshold_minutes} min."
+        ),
+        placeholders=(
+            "client_name",
+            "threshold_minutes",
+            "penalty_amount",
+            "currency",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_late_arrival_invalid",
+        uk=(
+            "Вкажіть число не менше {threshold_minutes}. Після нього можна додати причину."
+        ),
+        ru=(
+            "Укажите число не меньше {threshold_minutes}. После него можно добавить причину."
+        ),
+        en=(
+            "Enter a number of at least {threshold_minutes}. You may add a note after it."
+        ),
+        placeholders=("threshold_minutes",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_late_arrival_created",
+        uk=(
+            "Запізнення {late_minutes} хв зафіксовано. Штраф створено: "
+            "{penalty_amount} {currency}."
+        ),
+        ru=(
+            "Опоздание {late_minutes} мин зафиксировано. Штраф создан: "
+            "{penalty_amount} {currency}."
+        ),
+        en=(
+            "Late arrival of {late_minutes} min recorded. Penalty created: "
+            "{penalty_amount} {currency}."
+        ),
+        placeholders=("late_minutes", "penalty_amount", "currency"),
+        editable=False,
+    ),
+    _definition(
         "master.reschedule_dates",
         uk=(
             "Оберіть дати для нового часу запису {client_name}. "

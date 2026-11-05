@@ -17,18 +17,24 @@ from apps.appointments.services import (
     create_requested_appointment,
 )
 from apps.bot.master_workspace import (
+    MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
     PERIOD_REQUESTS,
     PERIOD_TODAY,
     PERIOD_TOMORROW,
     build_master_appointment_detail_reply,
     build_master_appointment_list_reply,
     build_master_workspace_reply,
+    create_master_late_arrival_penalty_reply,
     master_workspace_reply_from_callback_data,
     queue_master_appointment_message_reply,
     set_master_language_reply,
 )
 from apps.bot.models import PartnerTelegramContact
-from apps.bot.routers import MasterWorkspaceMessageFlowState, build_partner_router
+from apps.bot.routers import (
+    MasterWorkspaceLateArrivalFlowState,
+    MasterWorkspaceMessageFlowState,
+    build_partner_router,
+)
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
@@ -387,6 +393,103 @@ def test_master_workspace_suggests_and_creates_enabled_no_show_penalty(
 
 
 @pytest.mark.django_db
+def test_master_workspace_records_enabled_late_arrival_penalty(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+        late_arrival_threshold_minutes=15,
+        late_arrival_penalty_amount=2_000,
+    )
+    now = timezone.now()
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 43),
+        start_at=now - timedelta(hours=1),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    details = build_master_appointment_detail_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period=PERIOD_TODAY,
+        now=now,
+    )
+    late_callback = f"mw:late:{appointment.id.hex}:d0:1"
+    assert late_callback in _callbacks(details)
+
+    prompt = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=late_callback,
+        now=now,
+    )
+    assert prompt.wait_for_text is True
+    assert prompt.input_mode == MASTER_WORKSPACE_INPUT_LATE_ARRIVAL
+    assert "20.00 UAH" in prompt.text
+    assert "15" in prompt.text
+
+    created = create_master_late_arrival_penalty_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period=PERIOD_TODAY,
+        text="25 затор на дорозі",
+    )
+
+    penalty = Penalty.objects.get(
+        source_appointment=appointment,
+        reason=Penalty.Reason.LATE_ARRIVAL,
+    )
+    assert penalty.amount == 2_000
+    assert penalty.late_by_minutes == 25
+    assert penalty.note == "затор на дорозі"
+    assert "Запізнення 25 хв зафіксовано" in created.text
+    assert late_callback not in _callbacks(created)
+
+
+@pytest.mark.django_db
+def test_master_workspace_rejects_lateness_below_partner_threshold(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+        late_arrival_threshold_minutes=20,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 44),
+        start_at=timezone.now() - timedelta(hours=1),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    with pytest.raises(ValidationError):
+        create_master_late_arrival_penalty_reply(
+            partner=context["partner"],
+            actor=context["owner"],
+            appointment_id=appointment.id,
+            return_period=PERIOD_TODAY,
+            text="15",
+        )
+
+    assert not Penalty.objects.filter(
+        source_appointment=appointment,
+        reason=Penalty.Reason.LATE_ARRIVAL,
+    ).exists()
+
+
+@pytest.mark.django_db
 def test_master_workspace_queues_direct_message_for_appointment_client(
     master_workspace_context,
 ):
@@ -484,6 +587,62 @@ def test_master_workspace_message_callback_enters_text_input_state(monkeypatch):
     callback.message.edit_text.assert_awaited_once_with(
         reply.text,
         reply_markup=reply.reply_markup,
+    )
+
+
+def test_master_workspace_late_arrival_callback_enters_own_input_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    actor = SimpleNamespace()
+    contact = SimpleNamespace(user=actor)
+    appointment_id = "5fd8e2f7632849358d40b8fb6af777cd"
+    reply = SimpleNamespace(
+        text="Вкажіть хвилини",
+        reply_markup=SimpleNamespace(inline_keyboard=[]),
+        wait_for_text=True,
+        appointment_id=UUID(appointment_id),
+        return_period="d0",
+        return_page=1,
+        input_mode=MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
+    )
+    callback = SimpleNamespace(
+        data=f"mw:late:{appointment_id}:d0:1",
+        from_user=SimpleNamespace(id=771001),
+        message=SimpleNamespace(edit_text=AsyncMock()),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(
+        clear=AsyncMock(),
+        set_state=AsyncMock(),
+        set_data=AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        "apps.bot.routers.master_telegram_contact_for_user",
+        lambda **_kwargs: contact,
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers.master_workspace_reply_from_callback_data",
+        lambda **_kwargs: reply,
+    )
+    router = build_partner_router()
+    handler = next(
+        handler.callback
+        for handler in router.callback_query.handlers
+        if handler.callback.__name__ == "master_workspace_callback_handler"
+    )
+
+    asyncio.run(handler(callback=callback, partner=partner, state=state))
+
+    state.clear.assert_awaited_once()
+    state.set_state.assert_awaited_once_with(
+        MasterWorkspaceLateArrivalFlowState.waiting_for_text
+    )
+    state.set_data.assert_awaited_once_with(
+        {
+            "master_workspace_message_appointment_id": appointment_id,
+            "master_workspace_message_period": "d0",
+            "master_workspace_message_page": 1,
+        }
     )
 
 

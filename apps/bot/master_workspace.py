@@ -26,7 +26,10 @@ from apps.appointments.services import (
 from apps.bot.master import master_booking_request_markup
 from apps.bot.master_reschedule import master_reschedule_start_callback
 from apps.finance.models import PartnerPenaltySettings, Penalty
-from apps.finance.services import create_no_show_penalty_for_appointment
+from apps.finance.services import (
+    create_late_arrival_penalty_for_appointment,
+    create_no_show_penalty_for_appointment,
+)
 from apps.messaging.services import create_master_reply_to_client
 from apps.partners.models import SUPPORTED_PARTNER_LANGUAGES, Partner
 from apps.partners.selectors import partner_dashboard_snapshot
@@ -38,6 +41,8 @@ from .services import render_content_template
 
 MASTER_WORKSPACE_CALLBACK_PREFIX = "mw"
 MASTER_WORKSPACE_PAGE_SIZE = 5
+MASTER_WORKSPACE_INPUT_MESSAGE = "message"
+MASTER_WORKSPACE_INPUT_LATE_ARRIVAL = "late_arrival"
 
 PERIOD_REQUESTS = "r"
 PERIOD_TODAY = "d0"
@@ -63,6 +68,7 @@ class BotMasterWorkspaceReply:
     appointment_id: UUID | None = None
     return_period: str = ""
     return_page: int = 1
+    input_mode: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +228,7 @@ def build_master_appointment_detail_reply(
     )
 
     language = partner.default_language
+    current_time = now or timezone.now()
     local_start = to_partner_time(appointment.start_at, partner.timezone)
     local_end = to_partner_time(appointment.end_at, partner.timezone)
     comment = appointment.client_comment.strip()
@@ -263,12 +270,12 @@ def build_master_appointment_detail_reply(
                 return_period=return_period,
                 return_page=return_page,
                 language=language,
-                now=now,
+                now=current_time,
             )
         )
         if (
             appointment.status == Appointment.Status.CONFIRMED
-            and appointment.start_at > (now or timezone.now())
+            and appointment.start_at > current_time
             and _client_messaging_available(appointment)
         ):
             rows.append(
@@ -294,6 +301,31 @@ def build_master_appointment_detail_reply(
                     ),
                     callback_data=_appointment_callback(
                         "penalty",
+                        appointment=appointment,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            ]
+        )
+    late_arrival_settings = _available_late_arrival_penalty_settings(
+        appointment,
+        now=current_time,
+    )
+    if late_arrival_settings is not None:
+        amount = Money(
+            amount=late_arrival_settings.late_arrival_penalty_amount,
+            currency=late_arrival_settings.currency,
+        ).to_major_decimal()
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{_label('late_arrival_penalty', language)} · "
+                        f"{amount} {late_arrival_settings.currency}"
+                    ),
+                    callback_data=_appointment_callback(
+                        "late",
                         appointment=appointment,
                         period=return_period,
                         page=return_page,
@@ -596,6 +628,7 @@ def build_master_appointment_message_prompt_reply(
         appointment_id=appointment.id,
         return_period=return_period,
         return_page=return_page,
+        input_mode=MASTER_WORKSPACE_INPUT_MESSAGE,
     )
 
 
@@ -635,6 +668,128 @@ def queue_master_appointment_message_reply(
         key="master.workspace_message_queued",
         language=partner.default_language,
         context={"client_name": appointment.client_profile.display_name},
+    )
+    return BotMasterWorkspaceReply(
+        text=f"{confirmation}\n\n{details.text}",
+        reply_markup=details.reply_markup,
+    )
+
+
+def build_master_late_arrival_prompt_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+    invalid_input: bool = False,
+    now: datetime | None = None,
+) -> BotMasterWorkspaceReply:
+    """Prompt for lateness minutes and an optional business note."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    settings = _available_late_arrival_penalty_settings(
+        appointment,
+        now=now or timezone.now(),
+    )
+    if settings is None:
+        raise ValidationError({"penalty": "Late-arrival penalty action is unavailable."})
+
+    amount = Money(
+        amount=settings.late_arrival_penalty_amount,
+        currency=settings.currency,
+    ).to_major_decimal()
+    language = partner.default_language
+    context = {
+        "client_name": appointment.client_profile.display_name,
+        "threshold_minutes": str(settings.late_arrival_threshold_minutes),
+        "penalty_amount": str(amount),
+        "currency": settings.currency,
+    }
+    prompt = _render(
+        partner=partner,
+        key="master.workspace_late_arrival_prompt",
+        language=language,
+        context=context,
+    )
+    if invalid_input:
+        invalid = _render(
+            partner=partner,
+            key="master.workspace_late_arrival_invalid",
+            language=language,
+            context=context,
+        )
+        prompt = f"{invalid}\n\n{prompt}"
+    return BotMasterWorkspaceReply(
+        text=prompt,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_label("cancel", language),
+                        callback_data=_view_callback(
+                            appointment_id=appointment.id,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ]
+            ]
+        ),
+        wait_for_text=True,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+        input_mode=MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
+    )
+
+
+def create_master_late_arrival_penalty_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+    text: str,
+) -> BotMasterWorkspaceReply:
+    """Parse master input and create one late-arrival penalty via finance."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    late_by_minutes, note = _parse_late_arrival_input(text)
+    penalty = create_late_arrival_penalty_for_appointment(
+        actor=actor,
+        appointment=appointment,
+        late_by_minutes=late_by_minutes,
+        note=note,
+    )
+    details = build_master_appointment_detail_reply(
+        partner=partner,
+        actor=actor,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+    amount = Money(amount=penalty.amount, currency=penalty.currency).to_major_decimal()
+    confirmation = _render(
+        partner=partner,
+        key="master.workspace_late_arrival_created",
+        language=partner.default_language,
+        context={
+            "late_minutes": str(penalty.late_by_minutes),
+            "penalty_amount": str(amount),
+            "currency": penalty.currency,
+        },
     )
     return BotMasterWorkspaceReply(
         text=f"{confirmation}\n\n{details.text}",
@@ -775,6 +930,15 @@ def master_workspace_reply_from_callback_data(
             appointment_id=_parse_uuid(parts[2]),
             return_period=parts[3],
             return_page=_parse_page(parts[4]),
+        )
+    if len(parts) == 5 and parts[1] == "late":
+        return build_master_late_arrival_prompt_reply(
+            partner=partner,
+            actor=actor,
+            appointment_id=_parse_uuid(parts[2]),
+            return_period=parts[3],
+            return_page=_parse_page(parts[4]),
+            now=now,
         )
     raise ValidationError({"callback": "Unsupported callback."})
 
@@ -956,6 +1120,43 @@ def _available_no_show_penalty_settings(
     if appointment.source_penalties.filter(reason=Penalty.Reason.NO_SHOW).exists():
         return None
     return settings
+
+
+def _available_late_arrival_penalty_settings(
+    appointment: Appointment,
+    *,
+    now: datetime,
+) -> PartnerPenaltySettings | None:
+    if appointment.status not in {
+        Appointment.Status.CONFIRMED,
+        Appointment.Status.COMPLETED,
+    }:
+        return None
+    if appointment.start_at > now:
+        return None
+    settings = PartnerPenaltySettings.objects.filter(
+        partner=appointment.partner,
+        penalties_enabled=True,
+    ).first()
+    if settings is None:
+        return None
+    if appointment.source_penalties.filter(reason=Penalty.Reason.LATE_ARRIVAL).exists():
+        return None
+    return settings
+
+
+def _parse_late_arrival_input(value: str) -> tuple[int, str]:
+    cleaned = value.strip()
+    parts = cleaned.split(maxsplit=1)
+    minutes_text = parts[0] if parts else ""
+    note = parts[1] if len(parts) == 2 else ""
+    try:
+        late_by_minutes = int(minutes_text)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({"late_by_minutes": "Late minutes must be a number."}) from exc
+    if late_by_minutes <= 0:
+        raise ValidationError({"late_by_minutes": "Late minutes must be positive."})
+    return late_by_minutes, note.strip()
 
 
 def _client_messaging_available(appointment: Appointment) -> bool:
@@ -1180,6 +1381,11 @@ def _label(key: str, language: str) -> str:
             "uk": "Штраф за неявку",
             "ru": "Штраф за неявку",
             "en": "No-show penalty",
+        },
+        "late_arrival_penalty": {
+            "uk": "Зафіксувати запізнення",
+            "ru": "Зафиксировать опоздание",
+            "en": "Record late arrival",
         },
         "create_penalty": {
             "uk": "Створити штраф",

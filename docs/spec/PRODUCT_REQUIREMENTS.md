@@ -516,6 +516,10 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   correction remains in the audited admin correction flow rather than a Telegram quick action.
 - When penalties are enabled, a newly marked no-show offers the configured no-show penalty as a
   separate confirmed action. The penalty is never created implicitly by the status transition.
+- After a confirmed or completed appointment has started, the workspace offers late-arrival
+  recording when penalties are enabled and no late-arrival penalty exists yet. The master enters
+  lateness minutes plus an optional note; the existing partner threshold, configured amount,
+  duplicate protection, audit, and client-notification flow remain authoritative.
 - A linked master can queue a direct message from appointment details when the client has a
   reachable Telegram connection for that partner bot. Message delivery remains asynchronous and
   durable through the existing messaging/notification worker path.
