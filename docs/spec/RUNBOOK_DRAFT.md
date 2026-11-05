@@ -317,8 +317,13 @@ flow.
    From the already linked master account, send `/start` and verify that the
    master workspace opens instead of the client menu. Check **Requests**,
    **Today**, **Tomorrow**, **Upcoming**, one appointment detail, and the
-   workspace language switch. `/master`, `/requests`, `/today`, and `/tomorrow`
-   are equivalent direct entry commands for the linked master.
+   workspace language switch. For a confirmed appointment, verify cancellation
+   requires a second click and **Completed**/**No-show** appear only after its
+   start. With penalties enabled, **No-show** should offer (but not silently
+   create) the configured no-show penalty. A linked reachable client should
+   expose **Message client** and queue the entered text for the notifications
+   worker. `/master`, `/requests`, `/today`, and `/tomorrow` are equivalent
+   direct entry commands for the linked master.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
    receives the queued reply through the partner bot.

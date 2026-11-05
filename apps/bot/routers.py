@@ -61,13 +61,16 @@ from apps.bot.master import (
 )
 from apps.bot.master_workspace import (
     MASTER_WORKSPACE_CALLBACK_PREFIX,
+    MASTER_WORKSPACE_PERIODS,
     PERIOD_REQUESTS,
     PERIOD_TODAY,
     PERIOD_TOMORROW,
     build_master_appointment_list_reply,
+    build_master_appointment_message_prompt_reply,
     build_master_language_reply,
     build_master_workspace_reply,
     master_workspace_reply_from_callback_data,
+    queue_master_appointment_message_reply,
 )
 from apps.bot.messaging import (
     MASTER_MESSAGE_CALLBACK_PREFIX,
@@ -163,6 +166,12 @@ class MasterMessageFlowState(StatesGroup):
     waiting_for_text = State()
 
 
+class MasterWorkspaceMessageFlowState(StatesGroup):
+    """Ephemeral input state for a direct client message from appointment details."""
+
+    waiting_for_text = State()
+
+
 class FailedNotificationMessageFlowState(StatesGroup):
     """Ephemeral master input for a client whose reminder failed."""
 
@@ -241,6 +250,9 @@ BOOKING_INPUT_PHONE = "phone"
 MASTER_PROPOSAL_APPOINTMENT_STATE_KEY = "master_proposal_appointment_id"
 MASTER_PROPOSAL_STARTS_STATE_KEY = "master_proposal_start_ats"
 MASTER_MESSAGE_SOURCE_STATE_KEY = "master_message_source_id"
+MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY = "master_workspace_message_appointment_id"
+MASTER_WORKSPACE_MESSAGE_PERIOD_STATE_KEY = "master_workspace_message_period"
+MASTER_WORKSPACE_MESSAGE_PAGE_STATE_KEY = "master_workspace_message_page"
 FAILED_NOTIFICATION_SOURCE_STATE_KEY = "failed_notification_source_id"
 
 
@@ -612,6 +624,64 @@ def build_partner_router() -> Router:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(MasterWorkspaceMessageFlowState.waiting_for_text)
+    async def master_workspace_message_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        message_context = _master_workspace_message_state_values(await state.get_data())
+        if contact is None or contact.user is None or message_context is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        appointment_id, return_period, return_page = message_context
+        try:
+            if message.text is None:
+                reply = await sync_to_async(build_master_appointment_message_prompt_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    appointment_id=appointment_id,
+                    return_period=return_period,
+                    return_page=return_page,
+                    invalid_message=True,
+                )
+            else:
+                try:
+                    reply = await sync_to_async(queue_master_appointment_message_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        text=message.text,
+                    )
+                except ValidationError:
+                    reply = await sync_to_async(build_master_appointment_message_prompt_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        invalid_message=True,
+                    )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+        else:
+            if not reply.wait_for_text:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.message(FailedNotificationMessageFlowState.waiting_for_text)
     async def failed_notification_message_handler(
         message: Message,
@@ -802,6 +872,15 @@ def build_partner_router() -> Router:
             return
 
         await state.clear()
+        if reply.wait_for_text and reply.appointment_id is not None:
+            await state.set_state(MasterWorkspaceMessageFlowState.waiting_for_text)
+            await state.set_data(
+                {
+                    MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY: reply.appointment_id.hex,
+                    MASTER_WORKSPACE_MESSAGE_PERIOD_STATE_KEY: reply.return_period,
+                    MASTER_WORKSPACE_MESSAGE_PAGE_STATE_KEY: reply.return_page,
+                }
+            )
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
 
@@ -1956,6 +2035,24 @@ def _master_message_state_id(data: dict) -> UUID | None:
         return parse_master_message_id(str(raw_message_id))
     except ValidationError:
         return None
+
+
+def _master_workspace_message_state_values(
+    data: dict,
+) -> tuple[UUID, str, int] | None:
+    raw_appointment_id = data.get(MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY)
+    period = data.get(MASTER_WORKSPACE_MESSAGE_PERIOD_STATE_KEY)
+    raw_page = data.get(MASTER_WORKSPACE_MESSAGE_PAGE_STATE_KEY)
+    if not raw_appointment_id or period not in MASTER_WORKSPACE_PERIODS:
+        return None
+    try:
+        appointment_id = UUID(str(raw_appointment_id))
+        page = int(raw_page)
+    except (TypeError, ValueError):
+        return None
+    if page < 1:
+        return None
+    return appointment_id, str(period), page
 
 
 def _failed_notification_state_id(data: dict) -> UUID | None:

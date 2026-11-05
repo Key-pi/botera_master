@@ -509,6 +509,16 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   master/bot language choice.
 - Pending requests opened from the workspace reuse the same confirm, decline, and propose-time
   actions as actionable master notifications; callbacks never supply or override partner scope.
+- Confirmed appointment details expose only currently valid operational actions. Cancellation,
+  completion, and no-show require an explicit confirmation click and use the same appointment
+  services, audit, reminder invalidation, and client-notification flow as the admin workspace.
+- Completion and no-show become available only after the appointment starts. Final-status
+  correction remains in the audited admin correction flow rather than a Telegram quick action.
+- When penalties are enabled, a newly marked no-show offers the configured no-show penalty as a
+  separate confirmed action. The penalty is never created implicitly by the status transition.
+- A linked master can queue a direct message from appointment details when the client has a
+  reachable Telegram connection for that partner bot. Message delivery remains asynchronous and
+  durable through the existing messaging/notification worker path.
 - Business configuration remains admin-only in MVP. The Telegram workspace is an operational
   surface, not a second settings panel.
 

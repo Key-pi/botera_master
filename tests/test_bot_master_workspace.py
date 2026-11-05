@@ -3,12 +3,14 @@ from datetime import datetime, time, timedelta
 from datetime import timezone as datetime_timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+from uuid import UUID
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.appointments.models import Appointment
 from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
@@ -22,15 +24,19 @@ from apps.bot.master_workspace import (
     build_master_appointment_list_reply,
     build_master_workspace_reply,
     master_workspace_reply_from_callback_data,
+    queue_master_appointment_message_reply,
     set_master_language_reply,
 )
 from apps.bot.models import PartnerTelegramContact
-from apps.bot.routers import build_partner_router
+from apps.bot.routers import MasterWorkspaceMessageFlowState, build_partner_router
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
+from apps.finance.models import Penalty
+from apps.finance.services import update_penalty_settings
+from apps.messaging.models import ConversationMessage
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
 from core.timezones import get_zone
@@ -196,24 +202,12 @@ def test_master_request_list_is_paginated_and_details_keep_actions(
 
     assert "Заявки: 6" in first_page.text
     assert (
-        len(
-            [
-                callback
-                for callback in _callbacks(first_page)
-                if callback.startswith("mw:view")
-            ]
-        )
+        len([callback for callback in _callbacks(first_page) if callback.startswith("mw:view")])
         == 5
     )
     assert "mw:list:r:2" in _callbacks(first_page)
     assert (
-        len(
-            [
-                callback
-                for callback in _callbacks(second_page)
-                if callback.startswith("mw:view")
-            ]
-        )
+        len([callback for callback in _callbacks(second_page) if callback.startswith("mw:view")])
         == 1
     )
     assert f"mr:confirm:{appointments[0].id.hex}" in _callbacks(details)
@@ -294,6 +288,203 @@ def test_master_workspace_cannot_open_foreign_appointment(master_workspace_conte
             actor=other.owner,
             data=f"mw:view:{appointment.id.hex}:r:1",
         )
+
+
+@pytest.mark.django_db
+def test_master_workspace_status_actions_require_confirmation_and_use_owner_service(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    now = timezone.now()
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 40),
+        start_at=now - timedelta(hours=2),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    details = build_master_appointment_detail_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period=PERIOD_TODAY,
+        now=now,
+    )
+
+    assert f"mw:status:{appointment.id.hex}:c:d0:1" in _callbacks(details)
+    assert f"mw:status:{appointment.id.hex}:n:d0:1" in _callbacks(details)
+    assert f"mw:status:{appointment.id.hex}:x:d0:1" in _callbacks(details)
+    assert f"mw:message:{appointment.id.hex}:d0:1" in _callbacks(details)
+    assert all(len(callback.encode("utf-8")) <= 64 for callback in _callbacks(details))
+
+    confirmation = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:status:{appointment.id.hex}:c:d0:1",
+        now=now,
+    )
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.CONFIRMED
+    assert f"mw:statusgo:{appointment.id.hex}:c:d0:1" in _callbacks(confirmation)
+
+    completed = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:statusgo:{appointment.id.hex}:c:d0:1",
+    )
+    appointment.refresh_from_db()
+    assert appointment.status == Appointment.Status.COMPLETED
+    assert "Статус запису змінено: завершено" in completed.text
+    assert not any(callback.startswith("mw:status:") for callback in _callbacks(completed))
+
+
+@pytest.mark.django_db
+def test_master_workspace_suggests_and_creates_enabled_no_show_penalty(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    update_penalty_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        penalties_enabled=True,
+    )
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 41),
+        start_at=timezone.now() - timedelta(hours=2),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    no_show = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:statusgo:{appointment.id.hex}:n:d0:1",
+    )
+
+    assert f"mw:penalty:{appointment.id.hex}:d0:1" in _callbacks(no_show)
+    confirmation = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:penalty:{appointment.id.hex}:d0:1",
+    )
+    assert "50.00 UAH" in confirmation.text
+    assert not Penalty.objects.filter(source_appointment=appointment).exists()
+
+    created = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:penaltygo:{appointment.id.hex}:d0:1",
+    )
+
+    penalty = Penalty.objects.get(source_appointment=appointment)
+    assert penalty.reason == Penalty.Reason.NO_SHOW
+    assert penalty.amount == 5000
+    assert "Штраф за неявку створено: 50.00 UAH" in created.text
+    assert not any(callback.startswith("mw:penalty:") for callback in _callbacks(created))
+
+
+@pytest.mark.django_db
+def test_master_workspace_queues_direct_message_for_appointment_client(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 42),
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+
+    prompt = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:message:{appointment.id.hex}:u:2",
+    )
+
+    assert prompt.wait_for_text is True
+    assert prompt.appointment_id == appointment.id
+    assert prompt.return_period == "u"
+    assert prompt.return_page == 2
+    queued = queue_master_appointment_message_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period="u",
+        return_page=2,
+        text="See you soon.",
+    )
+
+    message = ConversationMessage.objects.get(
+        partner=context["partner"],
+        client_profile=appointment.client_profile,
+        direction=ConversationMessage.Direction.MASTER_TO_CLIENT,
+    )
+    assert message.text == "See you soon."
+    assert message.delivery_status == ConversationMessage.DeliveryStatus.QUEUED
+    assert "поставлено в чергу доставки" in queued.text
+    assert "mw:list:u:2" in _callbacks(queued)
+
+
+def test_master_workspace_message_callback_enters_text_input_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    actor = SimpleNamespace()
+    contact = SimpleNamespace(user=actor)
+    appointment_id = "5fd8e2f7632849358d40b8fb6af777cd"
+    reply = SimpleNamespace(
+        text="Напишіть повідомлення",
+        reply_markup=SimpleNamespace(inline_keyboard=[]),
+        wait_for_text=True,
+        appointment_id=UUID(appointment_id),
+        return_period="u",
+        return_page=2,
+    )
+    callback = SimpleNamespace(
+        data=f"mw:message:{appointment_id}:u:2",
+        from_user=SimpleNamespace(id=771001),
+        message=SimpleNamespace(edit_text=AsyncMock()),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(
+        clear=AsyncMock(),
+        set_state=AsyncMock(),
+        set_data=AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        "apps.bot.routers.master_telegram_contact_for_user",
+        lambda **_kwargs: contact,
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers.master_workspace_reply_from_callback_data",
+        lambda **_kwargs: reply,
+    )
+    router = build_partner_router()
+    handler = next(
+        handler.callback
+        for handler in router.callback_query.handlers
+        if handler.callback.__name__ == "master_workspace_callback_handler"
+    )
+
+    asyncio.run(handler(callback=callback, partner=partner, state=state))
+
+    state.clear.assert_awaited_once()
+    state.set_state.assert_awaited_once_with(MasterWorkspaceMessageFlowState.waiting_for_text)
+    state.set_data.assert_awaited_once_with(
+        {
+            "master_workspace_message_appointment_id": appointment_id,
+            "master_workspace_message_period": "u",
+            "master_workspace_message_page": 2,
+        }
+    )
+    callback.message.edit_text.assert_awaited_once_with(
+        reply.text,
+        reply_markup=reply.reply_markup,
+    )
 
 
 @pytest.mark.parametrize("start_payload", [None, "non_admin_deep_link"])

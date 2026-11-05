@@ -19,7 +19,14 @@ from apps.appointments.selectors import (
     appointments_for_partner_period,
     requested_appointments_for_partner,
 )
+from apps.appointments.services import (
+    available_appointment_status_targets,
+    transition_appointment_status,
+)
 from apps.bot.master import master_booking_request_markup
+from apps.finance.models import PartnerPenaltySettings, Penalty
+from apps.finance.services import create_no_show_penalty_for_appointment
+from apps.messaging.services import create_master_reply_to_client
 from apps.partners.models import SUPPORTED_PARTNER_LANGUAGES, Partner
 from apps.partners.selectors import partner_dashboard_snapshot
 from apps.partners.services import update_partner_settings
@@ -51,6 +58,10 @@ class BotMasterWorkspaceReply:
 
     text: str
     reply_markup: InlineKeyboardMarkup | None = None
+    wait_for_text: bool = False
+    appointment_id: UUID | None = None
+    return_period: str = ""
+    return_page: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,25 +209,22 @@ def build_master_appointment_detail_reply(
     appointment_id: UUID,
     return_period: str,
     return_page: int = 1,
+    now: datetime | None = None,
 ) -> BotMasterWorkspaceReply:
     """Render a tenant-scoped appointment and its currently safe actions."""
 
     ensure_partner_access(actor, partner)
     _validate_period(return_period)
-    appointment = appointment_for_partner_by_id(
+    appointment = _workspace_appointment(
         partner=partner,
         appointment_id=appointment_id,
     )
-    if appointment is None:
-        raise ValidationError({"appointment": "Appointment was not found."})
 
     language = partner.default_language
     local_start = to_partner_time(appointment.start_at, partner.timezone)
     local_end = to_partner_time(appointment.end_at, partner.timezone)
     comment = appointment.client_comment.strip()
-    comment_block = (
-        f"\n{_label('comment', language)}: {comment}" if comment else ""
-    )
+    comment_block = f"\n{_label('comment', language)}: {comment}" if comment else ""
     text = _render(
         partner=partner,
         key="master.workspace_appointment_details",
@@ -247,6 +255,52 @@ def build_master_appointment_detail_reply(
                 language=language,
             ).inline_keyboard
         )
+    else:
+        rows.extend(
+            _status_action_rows(
+                appointment=appointment,
+                return_period=return_period,
+                return_page=return_page,
+                language=language,
+                now=now,
+            )
+        )
+    penalty_settings = _available_no_show_penalty_settings(appointment)
+    if penalty_settings is not None:
+        amount = Money(
+            amount=penalty_settings.no_show_penalty_amount,
+            currency=penalty_settings.currency,
+        ).to_major_decimal()
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{_label('no_show_penalty', language)} · "
+                        f"{amount} {penalty_settings.currency}"
+                    ),
+                    callback_data=_appointment_callback(
+                        "penalty",
+                        appointment=appointment,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            ]
+        )
+    if _client_messaging_available(appointment):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("message_client", language),
+                    callback_data=_appointment_callback(
+                        "message",
+                        appointment=appointment,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(
@@ -259,6 +313,318 @@ def build_master_appointment_detail_reply(
     return BotMasterWorkspaceReply(
         text=text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def build_master_status_confirmation_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    target_status: str,
+    return_period: str,
+    return_page: int = 1,
+    now: datetime | None = None,
+) -> BotMasterWorkspaceReply:
+    """Require a second click before a master changes appointment status."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    if target_status not in available_appointment_status_targets(
+        appointment=appointment,
+        now=now,
+    ):
+        raise ValidationError({"status": "Appointment status action is unavailable."})
+
+    language = partner.default_language
+    return BotMasterWorkspaceReply(
+        text=_render(
+            partner=partner,
+            key="master.workspace_status_confirm",
+            language=language,
+            context={
+                "action": _status_action_label(target_status, language),
+                "client_name": appointment.client_profile.display_name,
+            },
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_label("confirm_action", language),
+                        callback_data=_status_callback(
+                            "statusgo",
+                            appointment=appointment,
+                            target_status=target_status,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=_label("back", language),
+                        callback_data=_view_callback(
+                            appointment_id=appointment.id,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ],
+                [_main_button(language)],
+            ]
+        ),
+    )
+
+
+def transition_master_appointment_status_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    target_status: str,
+    return_period: str,
+    return_page: int = 1,
+) -> BotMasterWorkspaceReply:
+    """Run a status transition through the appointment owner service."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    stored = transition_appointment_status(
+        actor=actor,
+        appointment=appointment,
+        new_status=target_status,
+    )
+    details = build_master_appointment_detail_reply(
+        partner=partner,
+        actor=actor,
+        appointment_id=stored.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+    confirmation = _render(
+        partner=partner,
+        key="master.workspace_status_updated",
+        language=partner.default_language,
+        context={"status": _status_label(stored.status, partner.default_language)},
+    )
+    return BotMasterWorkspaceReply(
+        text=f"{confirmation}\n\n{details.text}",
+        reply_markup=details.reply_markup,
+    )
+
+
+def build_master_no_show_penalty_confirmation_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+) -> BotMasterWorkspaceReply:
+    """Confirm the optional configured no-show penalty before creating it."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    settings = _available_no_show_penalty_settings(appointment)
+    if settings is None:
+        raise ValidationError({"penalty": "No-show penalty action is unavailable."})
+    amount = Money(
+        amount=settings.no_show_penalty_amount,
+        currency=settings.currency,
+    ).to_major_decimal()
+    language = partner.default_language
+    return BotMasterWorkspaceReply(
+        text=_render(
+            partner=partner,
+            key="master.workspace_no_show_penalty_confirm",
+            language=language,
+            context={
+                "client_name": appointment.client_profile.display_name,
+                "penalty_amount": str(amount),
+                "currency": settings.currency,
+            },
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_label("create_penalty", language),
+                        callback_data=_appointment_callback(
+                            "penaltygo",
+                            appointment=appointment,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=_label("back", language),
+                        callback_data=_view_callback(
+                            appointment_id=appointment.id,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ],
+                [_main_button(language)],
+            ]
+        ),
+    )
+
+
+def create_master_no_show_penalty_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+) -> BotMasterWorkspaceReply:
+    """Create the configured no-show penalty through the finance owner service."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    penalty = create_no_show_penalty_for_appointment(
+        actor=actor,
+        appointment=appointment,
+    )
+    details = build_master_appointment_detail_reply(
+        partner=partner,
+        actor=actor,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+    amount = Money(amount=penalty.amount, currency=penalty.currency).to_major_decimal()
+    confirmation = _render(
+        partner=partner,
+        key="master.workspace_no_show_penalty_created",
+        language=partner.default_language,
+        context={
+            "penalty_amount": str(amount),
+            "currency": penalty.currency,
+        },
+    )
+    return BotMasterWorkspaceReply(
+        text=f"{confirmation}\n\n{details.text}",
+        reply_markup=details.reply_markup,
+    )
+
+
+def build_master_appointment_message_prompt_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+    invalid_message: bool = False,
+) -> BotMasterWorkspaceReply:
+    """Prompt for one direct message to the appointment's tenant-owned client."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    if not _client_messaging_available(appointment):
+        raise ValidationError({"client": "Client is unavailable through Telegram."})
+    language = partner.default_language
+    prompt = _render(
+        partner=partner,
+        key="master.workspace_message_prompt",
+        language=language,
+        context={"client_name": appointment.client_profile.display_name},
+    )
+    if invalid_message:
+        invalid = _render(
+            partner=partner,
+            key="master.workspace_message_invalid",
+            language=language,
+        )
+        prompt = f"{invalid}\n\n{prompt}"
+    return BotMasterWorkspaceReply(
+        text=prompt,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_label("cancel", language),
+                        callback_data=_view_callback(
+                            appointment_id=appointment.id,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ]
+            ]
+        ),
+        wait_for_text=True,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+
+
+def queue_master_appointment_message_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+    text: str,
+) -> BotMasterWorkspaceReply:
+    """Queue a direct message and return to the same appointment context."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    if not _client_messaging_available(appointment):
+        raise ValidationError({"client": "Client is unavailable through Telegram."})
+    create_master_reply_to_client(
+        actor=actor,
+        client_profile=appointment.client_profile,
+        text=text,
+    )
+    details = build_master_appointment_detail_reply(
+        partner=partner,
+        actor=actor,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+    confirmation = _render(
+        partner=partner,
+        key="master.workspace_message_queued",
+        language=partner.default_language,
+        context={"client_name": appointment.client_profile.display_name},
+    )
+    return BotMasterWorkspaceReply(
+        text=f"{confirmation}\n\n{details.text}",
+        reply_markup=details.reply_markup,
     )
 
 
@@ -365,6 +731,37 @@ def master_workspace_reply_from_callback_data(
             return_period=parts[3],
             return_page=_parse_page(parts[4]),
         )
+    if len(parts) == 6 and parts[1] in {"status", "statusgo"}:
+        kwargs = {
+            "partner": partner,
+            "actor": actor,
+            "appointment_id": _parse_uuid(parts[2]),
+            "target_status": _status_from_token(parts[3]),
+            "return_period": parts[4],
+            "return_page": _parse_page(parts[5]),
+        }
+        if parts[1] == "status":
+            return build_master_status_confirmation_reply(now=now, **kwargs)
+        return transition_master_appointment_status_reply(**kwargs)
+    if len(parts) == 5 and parts[1] in {"penalty", "penaltygo"}:
+        kwargs = {
+            "partner": partner,
+            "actor": actor,
+            "appointment_id": _parse_uuid(parts[2]),
+            "return_period": parts[3],
+            "return_page": _parse_page(parts[4]),
+        }
+        if parts[1] == "penalty":
+            return build_master_no_show_penalty_confirmation_reply(**kwargs)
+        return create_master_no_show_penalty_reply(**kwargs)
+    if len(parts) == 5 and parts[1] == "message":
+        return build_master_appointment_message_prompt_reply(
+            partner=partner,
+            actor=actor,
+            appointment_id=_parse_uuid(parts[2]),
+            return_period=parts[3],
+            return_page=_parse_page(parts[4]),
+        )
     raise ValidationError({"callback": "Unsupported callback."})
 
 
@@ -410,9 +807,7 @@ def _appointments_for_period(*, partner: Partner, period: str, now: datetime):
     zone = get_zone(partner.timezone)
     local_today = now.astimezone(zone).date()
     local_date = local_today if period == PERIOD_TODAY else local_today + timedelta(days=1)
-    start_at = datetime.combine(local_date, time.min, tzinfo=zone).astimezone(
-        datetime_timezone.utc
-    )
+    start_at = datetime.combine(local_date, time.min, tzinfo=zone).astimezone(datetime_timezone.utc)
     end_at = datetime.combine(local_date + timedelta(days=1), time.min, tzinfo=zone).astimezone(
         datetime_timezone.utc
     )
@@ -470,6 +865,92 @@ def _services_label(appointment: Appointment) -> str:
     return ", ".join(names)
 
 
+def _workspace_appointment(*, partner: Partner, appointment_id: UUID) -> Appointment:
+    appointment = appointment_for_partner_by_id(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    if appointment is None:
+        raise ValidationError({"appointment": "Appointment was not found."})
+    return appointment
+
+
+def _status_action_rows(
+    *,
+    appointment: Appointment,
+    return_period: str,
+    return_page: int,
+    language: str,
+    now: datetime | None,
+) -> list[list[InlineKeyboardButton]]:
+    if appointment.status != Appointment.Status.CONFIRMED:
+        return []
+    targets = available_appointment_status_targets(
+        appointment=appointment,
+        now=now,
+    )
+    rows: list[list[InlineKeyboardButton]] = []
+    completion_row: list[InlineKeyboardButton] = []
+    for target in (Appointment.Status.COMPLETED, Appointment.Status.NO_SHOW):
+        if target in targets:
+            completion_row.append(
+                InlineKeyboardButton(
+                    text=_status_action_label(target, language),
+                    callback_data=_status_callback(
+                        "status",
+                        appointment=appointment,
+                        target_status=target,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            )
+    if completion_row:
+        rows.append(completion_row)
+    if Appointment.Status.CANCELLED_BY_MASTER in targets:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_status_action_label(
+                        Appointment.Status.CANCELLED_BY_MASTER,
+                        language,
+                    ),
+                    callback_data=_status_callback(
+                        "status",
+                        appointment=appointment,
+                        target_status=Appointment.Status.CANCELLED_BY_MASTER,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            ]
+        )
+    return rows
+
+
+def _available_no_show_penalty_settings(
+    appointment: Appointment,
+) -> PartnerPenaltySettings | None:
+    if appointment.status != Appointment.Status.NO_SHOW:
+        return None
+    settings = PartnerPenaltySettings.objects.filter(
+        partner=appointment.partner,
+        penalties_enabled=True,
+    ).first()
+    if settings is None:
+        return None
+    if appointment.source_penalties.filter(reason=Penalty.Reason.NO_SHOW).exists():
+        return None
+    return settings
+
+
+def _client_messaging_available(appointment: Appointment) -> bool:
+    return bool(
+        appointment.client_profile.telegram_identity_id
+        and not appointment.client_profile.bot_unreachable
+    )
+
+
 def _status_marker(status: str) -> str:
     return {
         Appointment.Status.REQUESTED: "?",
@@ -518,6 +999,17 @@ def _status_label(status: str, language: str) -> str:
     return translations.get(language, translations["uk"])
 
 
+def _status_action_label(status: str, language: str) -> str:
+    key = {
+        Appointment.Status.COMPLETED: "complete",
+        Appointment.Status.NO_SHOW: "no_show",
+        Appointment.Status.CANCELLED_BY_MASTER: "cancel_appointment",
+    }.get(status)
+    if key is None:
+        raise ValidationError({"status": "Unsupported workspace status action."})
+    return _label(key, language)
+
+
 def _period_label(period: str, language: str) -> str:
     return _label(
         {
@@ -545,6 +1037,33 @@ def _view_callback(*, appointment_id: UUID, period: str, page: int) -> str:
     return _callback("view", appointment_id.hex, period, page)
 
 
+def _appointment_callback(
+    action: str,
+    *,
+    appointment: Appointment,
+    period: str,
+    page: int,
+) -> str:
+    return _callback(action, appointment.id.hex, period, page)
+
+
+def _status_callback(
+    action: str,
+    *,
+    appointment: Appointment,
+    target_status: str,
+    period: str,
+    page: int,
+) -> str:
+    return _callback(
+        action,
+        appointment.id.hex,
+        _status_token(target_status),
+        period,
+        page,
+    )
+
+
 def _callback(action: str, *parts: object) -> str:
     values = (MASTER_WORKSPACE_CALLBACK_PREFIX, action, *(str(part) for part in parts))
     return ":".join(values)
@@ -565,6 +1084,28 @@ def _parse_uuid(value: str) -> UUID:
         return UUID(value)
     except (TypeError, ValueError) as exc:
         raise ValidationError({"appointment": "Invalid appointment."}) from exc
+
+
+def _status_token(status: str) -> str:
+    token = {
+        Appointment.Status.COMPLETED: "c",
+        Appointment.Status.NO_SHOW: "n",
+        Appointment.Status.CANCELLED_BY_MASTER: "x",
+    }.get(status)
+    if token is None:
+        raise ValidationError({"status": "Unsupported workspace status action."})
+    return token
+
+
+def _status_from_token(token: str) -> str:
+    status = {
+        "c": Appointment.Status.COMPLETED,
+        "n": Appointment.Status.NO_SHOW,
+        "x": Appointment.Status.CANCELLED_BY_MASTER,
+    }.get(token)
+    if status is None:
+        raise ValidationError({"status": "Unsupported workspace status action."})
+    return status
 
 
 def _validate_period(period: str) -> None:
@@ -609,6 +1150,34 @@ def _label(key: str, language: str) -> str:
         "comment": {"uk": "Коментар", "ru": "Комментарий", "en": "Comment"},
         "not_set": {"uk": "не вказано", "ru": "не указано", "en": "not set"},
         "client": {"uk": "Клієнт", "ru": "Клиент", "en": "Client"},
+        "complete": {"uk": "Завершити", "ru": "Завершить", "en": "Complete"},
+        "no_show": {"uk": "Не прийшов", "ru": "Не пришёл", "en": "No-show"},
+        "cancel_appointment": {
+            "uk": "Скасувати запис",
+            "ru": "Отменить запись",
+            "en": "Cancel appointment",
+        },
+        "confirm_action": {
+            "uk": "Підтвердити",
+            "ru": "Подтвердить",
+            "en": "Confirm",
+        },
+        "no_show_penalty": {
+            "uk": "Штраф за неявку",
+            "ru": "Штраф за неявку",
+            "en": "No-show penalty",
+        },
+        "create_penalty": {
+            "uk": "Створити штраф",
+            "ru": "Создать штраф",
+            "en": "Create penalty",
+        },
+        "message_client": {
+            "uk": "Написати клієнту",
+            "ru": "Написать клиенту",
+            "en": "Message client",
+        },
+        "cancel": {"uk": "Скасувати", "ru": "Отмена", "en": "Cancel"},
     }
     translations = labels[key]
     return translations.get(language, translations["uk"])
