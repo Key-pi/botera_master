@@ -353,6 +353,101 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         editable=False,
     ),
     _definition(
+        "master.workspace_main",
+        uk=(
+            "Робочий кабінет {partner_name}.\n"
+            "Заявки: {requested_count} · сьогодні: {today_count} · завтра: {tomorrow_count}\n"
+            "Проблеми доставки: {failed_count} · конфлікти календаря: {conflict_count}"
+        ),
+        ru=(
+            "Рабочий кабинет {partner_name}.\n"
+            "Заявки: {requested_count} · сегодня: {today_count} · завтра: {tomorrow_count}\n"
+            "Проблемы доставки: {failed_count} · конфликты календаря: {conflict_count}"
+        ),
+        en=(
+            "{partner_name} workspace.\n"
+            "Requests: {requested_count} · today: {today_count} · tomorrow: {tomorrow_count}\n"
+            "Delivery problems: {failed_count} · calendar conflicts: {conflict_count}"
+        ),
+        placeholders=(
+            "partner_name",
+            "requested_count",
+            "today_count",
+            "tomorrow_count",
+            "failed_count",
+            "conflict_count",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_list",
+        uk="{period}: {count}. Оберіть запис, щоб відкрити деталі.",
+        ru="{period}: {count}. Выберите запись, чтобы открыть детали.",
+        en="{period}: {count}. Choose an appointment to open its details.",
+        placeholders=("period", "count"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_empty",
+        uk="{period}: записів немає.",
+        ru="{period}: записей нет.",
+        en="{period}: no appointments.",
+        placeholders=("period", "count"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_appointment_details",
+        uk=(
+            "{client_name} · {client_phone}\n"
+            "Статус: {status}\n"
+            "{date}, {start_time}–{end_time}\n"
+            "{services}\n"
+            "Сума: {total} {currency}{comment}"
+        ),
+        ru=(
+            "{client_name} · {client_phone}\n"
+            "Статус: {status}\n"
+            "{date}, {start_time}–{end_time}\n"
+            "{services}\n"
+            "Сумма: {total} {currency}{comment}"
+        ),
+        en=(
+            "{client_name} · {client_phone}\n"
+            "Status: {status}\n"
+            "{date}, {start_time}–{end_time}\n"
+            "{services}\n"
+            "Total: {total} {currency}{comment}"
+        ),
+        placeholders=(
+            "client_name",
+            "client_phone",
+            "status",
+            "date",
+            "start_time",
+            "end_time",
+            "services",
+            "total",
+            "currency",
+            "comment",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_choose_language",
+        uk="Оберіть мову робочого кабінету та сповіщень майстра.",
+        ru="Выберите язык рабочего кабинета и уведомлений мастера.",
+        en="Choose the language for the master workspace and notifications.",
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_language_updated",
+        uk="Мову майстра змінено: {language}.",
+        ru="Язык мастера изменён: {language}.",
+        en="Master language changed to {language}.",
+        placeholders=("language",),
+        editable=False,
+    ),
+    _definition(
         "master.booking_request",
         uk="Нова заявка: {client_name} {client_phone}\n{date} о {time}\n{services}{fit_note}{comment}",
         ru="Новая заявка: {client_name} {client_phone}\n{date} в {time}\n{services}{fit_note}{comment}",

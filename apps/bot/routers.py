@@ -59,6 +59,16 @@ from apps.bot.master import (
     send_master_requested_alternative_proposal_reply,
     toggle_master_requested_alternative_slot_reply,
 )
+from apps.bot.master_workspace import (
+    MASTER_WORKSPACE_CALLBACK_PREFIX,
+    PERIOD_REQUESTS,
+    PERIOD_TODAY,
+    PERIOD_TOMORROW,
+    build_master_appointment_list_reply,
+    build_master_language_reply,
+    build_master_workspace_reply,
+    master_workspace_reply_from_callback_data,
+)
 from apps.bot.messaging import (
     MASTER_MESSAGE_CALLBACK_PREFIX,
     BotConversationReply,
@@ -115,7 +125,9 @@ from apps.bot.profile import (
 )
 from apps.bot.selectors import master_telegram_contact_for_user
 from apps.bot.services import (
+    MASTER_CONTACT_LINK_PREFIX,
     handle_start_command,
+    mark_master_contact_reachable,
     render_content_template,
     render_invalid_master_contact_link_message,
     resolve_client_profile_from_telegram_user,
@@ -250,6 +262,19 @@ def build_partner_router() -> Router:
 
         user = message.from_user
         payload = command.args or ""
+        if not payload.startswith(f"{MASTER_CONTACT_LINK_PREFIX}_"):
+            contact = await sync_to_async(master_telegram_contact_for_user)(
+                partner=partner,
+                telegram_user_id=user.id,
+            )
+            if contact is not None and contact.user is not None:
+                await sync_to_async(mark_master_contact_reachable)(contact=contact)
+                reply = await sync_to_async(build_master_workspace_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                )
+                await message.answer(reply.text, reply_markup=reply.reply_markup)
+                return
         try:
             result = await sync_to_async(handle_start_command)(
                 partner=partner,
@@ -262,7 +287,21 @@ def build_partner_router() -> Router:
                 start_payload=payload,
             )
             if result.master_contact_bound:
-                await message.answer(result.text)
+                contact = await sync_to_async(master_telegram_contact_for_user)(
+                    partner=partner,
+                    telegram_user_id=user.id,
+                )
+                if contact is None or contact.user is None:
+                    await message.answer(result.text)
+                    return
+                reply = await sync_to_async(build_master_workspace_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                )
+                await message.answer(
+                    f"{result.text}\n\n{reply.text}",
+                    reply_markup=reply.reply_markup,
+                )
                 return
 
             reply = build_client_start_reply(
@@ -273,6 +312,73 @@ def build_partner_router() -> Router:
         except ValidationError:
             text = await sync_to_async(render_invalid_master_contact_link_message)(partner=partner)
             await message.answer(text)
+
+    @router.message(Command("master"))
+    async def master_workspace_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_workspace_reply)(
+            partner=partner,
+            actor=contact.user,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("today"))
+    async def master_today_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_appointment_list_reply)(
+            partner=partner,
+            actor=contact.user,
+            period=PERIOD_TODAY,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("tomorrow"))
+    async def master_tomorrow_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_appointment_list_reply)(
+            partner=partner,
+            actor=contact.user,
+            period=PERIOD_TOMORROW,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("requests"))
+    async def master_requests_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_appointment_list_reply)(
+            partner=partner,
+            actor=contact.user,
+            period=PERIOD_REQUESTS,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
 
     @router.message(Command("book"))
     async def book_handler(message: Message, partner: Partner, state: FSMContext) -> None:
@@ -318,6 +424,14 @@ def build_partner_router() -> Router:
     @router.message(Command("language"))
     async def language_handler(message: Message, partner: Partner, state: FSMContext) -> None:
         await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is not None and contact.user is not None:
+            reply = await sync_to_async(build_master_language_reply)(
+                partner=partner,
+                actor=contact.user,
+            )
+            await message.answer(reply.text, reply_markup=reply.reply_markup)
+            return
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -550,6 +664,14 @@ def build_partner_router() -> Router:
         """Keep unmatched client input from ending in a silent bot response."""
 
         await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is not None and contact.user is not None:
+            reply = await sync_to_async(build_master_workspace_reply)(
+                partner=partner,
+                actor=contact.user,
+            )
+            await message.answer(reply.text, reply_markup=reply.reply_markup)
+            return
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -636,6 +758,50 @@ def build_partner_router() -> Router:
                 result=result,
             )
 
+        await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith(f"{MASTER_WORKSPACE_CALLBACK_PREFIX}:"))
+    async def master_workspace_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if callback.data == f"{MASTER_WORKSPACE_CALLBACK_PREFIX}:noop":
+            await callback.answer()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        try:
+            reply = await sync_to_async(master_workspace_reply_from_callback_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+            )
+        except ValidationError:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+
+        await state.clear()
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
 
@@ -1870,6 +2036,17 @@ async def _client_profile_for_message(*, message: Message, partner: Partner):
         language_code=message.from_user.language_code or "",
     )
     return profile
+
+
+async def _master_contact_for_message(*, message: Message, partner: Partner):
+    """Resolve a linked master before generic input can enter client flow."""
+
+    if message.from_user is None:
+        return None
+    return await sync_to_async(master_telegram_contact_for_user)(
+        partner=partner,
+        telegram_user_id=message.from_user.id,
+    )
 
 
 async def _client_profile_for_callback(*, callback: CallbackQuery, partner: Partner):

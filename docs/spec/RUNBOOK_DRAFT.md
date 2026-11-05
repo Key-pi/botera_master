@@ -314,6 +314,11 @@ flow.
    appointment/proposal state in partner admin. From a past confirmed visit,
    verify that master cancellation, **Completed**, and **No-show** each create
    the corresponding durable client notification.
+   From the already linked master account, send `/start` and verify that the
+   master workspace opens instead of the client menu. Check **Requests**,
+   **Today**, **Tomorrow**, **Upcoming**, one appointment detail, and the
+   workspace language switch. `/master`, `/requests`, `/today`, and `/tomorrow`
+   are equivalent direct entry commands for the linked master.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
    receives the queued reply through the partner bot.

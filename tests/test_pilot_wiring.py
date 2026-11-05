@@ -231,6 +231,10 @@ def test_start_router_sends_client_navigation_with_welcome(monkeypatch):
             master_contact_bound=False,
         ),
     )
+    monkeypatch.setattr(
+        "apps.bot.routers.master_telegram_contact_for_user",
+        lambda **_kwargs: None,
+    )
     router = build_partner_router()
     start_handler = next(
         handler.callback
@@ -283,7 +287,12 @@ def test_unmatched_client_message_returns_main_menu(monkeypatch):
     )
     state = SimpleNamespace(clear=AsyncMock())
     profile_resolver = AsyncMock(return_value=profile)
+    master_resolver = AsyncMock(return_value=None)
 
+    monkeypatch.setattr(
+        "apps.bot.routers._master_contact_for_message",
+        master_resolver,
+    )
     monkeypatch.setattr(
         "apps.bot.routers._client_profile_for_message",
         profile_resolver,
@@ -311,6 +320,7 @@ def test_unmatched_client_message_returns_main_menu(monkeypatch):
     )
 
     state.clear.assert_awaited_once()
+    master_resolver.assert_awaited_once_with(message=message, partner=partner)
     profile_resolver.assert_awaited_once_with(message=message, partner=partner)
     message.answer.assert_awaited_once_with(
         "Головне меню",

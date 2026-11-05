@@ -502,6 +502,15 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
 - Binding is created through a signed admin/deep link opened in the partner's own bot.
 - A normal client `/start` must never grant master-contact privileges.
 - MVP can expose one primary master contact, with room to add extra notification recipients later.
+- For an already linked active master contact, `/start` opens the master workspace instead of
+  creating or opening a partner-scoped client profile.
+- The MVP master workspace provides tenant-scoped views for pending booking requests, today's
+  appointments, tomorrow's appointments, upcoming appointments, appointment details, and the
+  master/bot language choice.
+- Pending requests opened from the workspace reuse the same confirm, decline, and propose-time
+  actions as actionable master notifications; callbacks never supply or override partner scope.
+- Business configuration remains admin-only in MVP. The Telegram workspace is an operational
+  surface, not a second settings panel.
 
 ### Multilingual Content
 
