@@ -519,6 +519,12 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
 - A linked master can queue a direct message from appointment details when the client has a
   reachable Telegram connection for that partner bot. Message delivery remains asynchronous and
   durable through the existing messaging/notification worker path.
+- For a future confirmed appointment with a reachable linked client, the workspace lets the
+  master propose up to five freshly validated replacement times. Sending the proposal does not
+  move the appointment or reserve a slot: the old confirmed time remains until the client accepts
+  one option, and acceptance performs the existing fresh availability/overlap check.
+- Manual clients without a Telegram link and currently unreachable bot clients do not receive a
+  Telegram reschedule-proposal action; those appointments remain manageable through admin.
 - Business configuration remains admin-only in MVP. The Telegram workspace is an operational
   surface, not a second settings panel.
 

@@ -59,6 +59,16 @@ from apps.bot.master import (
     send_master_requested_alternative_proposal_reply,
     toggle_master_requested_alternative_slot_reply,
 )
+from apps.bot.master_reschedule import (
+    MASTER_RESCHEDULE_CALLBACK_PREFIX,
+    BotMasterRescheduleReply,
+    build_master_reschedule_action_failed_reply,
+    build_master_reschedule_dates_reply,
+    build_master_reschedule_review_reply,
+    build_master_reschedule_slots_reply,
+    send_master_reschedule_proposal_reply,
+    toggle_master_reschedule_slot_reply,
+)
 from apps.bot.master_workspace import (
     MASTER_WORKSPACE_CALLBACK_PREFIX,
     MASTER_WORKSPACE_PERIODS,
@@ -208,6 +218,16 @@ class MasterCallbackResult:
     """Master adapter response plus its next ephemeral proposal state."""
 
     reply: BotMasterReply
+    appointment_id: UUID | None = None
+    selected_start_ats: tuple[datetime, ...] = ()
+    keep_proposal_state: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MasterRescheduleCallbackResult:
+    """Master reschedule response plus its next ephemeral proposal state."""
+
+    reply: BotMasterRescheduleReply
     appointment_id: UUID | None = None
     selected_start_ats: tuple[datetime, ...] = ()
     keep_proposal_state: bool = False
@@ -1036,6 +1056,59 @@ def build_partner_router() -> Router:
             )
         await callback.answer()
 
+    @router.callback_query(F.data.startswith(f"{MASTER_RESCHEDULE_CALLBACK_PREFIX}:"))
+    async def master_reschedule_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if callback.data == f"{MASTER_RESCHEDULE_CALLBACK_PREFIX}:noop":
+            await callback.answer()
+            return
+
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        proposal_state = _master_proposal_state_values(await state.get_data())
+        try:
+            result = await sync_to_async(_master_reschedule_result_from_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+                proposal_state=proposal_state,
+            )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(build_master_reschedule_action_failed_reply)(
+                partner=partner,
+            )
+        else:
+            reply = result.reply
+            if result.keep_proposal_state and result.appointment_id is not None:
+                await _store_master_proposal_state(
+                    state=state,
+                    appointment_id=result.appointment_id,
+                    selected_start_ats=result.selected_start_ats,
+                )
+            else:
+                await state.clear()
+
+        await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
+
     @router.callback_query(F.data.startswith(f"{MASTER_REQUEST_CALLBACK_PREFIX}:"))
     async def master_request_callback_handler(
         callback: CallbackQuery,
@@ -1653,6 +1726,90 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             language=parts[2],
         )
 
+    raise ValidationError({"callback": "Unsupported callback."})
+
+
+def _master_reschedule_result_from_data(
+    *,
+    partner: Partner,
+    actor,
+    data: str,
+    proposal_state: MasterProposalStateValues | None = None,
+) -> MasterRescheduleCallbackResult:
+    parts = data.split(":")
+    if len(parts) < 3 or parts[0] != MASTER_RESCHEDULE_CALLBACK_PREFIX:
+        raise ValidationError({"callback": "Unsupported callback."})
+
+    appointment_id = parse_master_request_appointment_id(parts[2])
+    proposal_state = proposal_state or MasterProposalStateValues()
+    selected_start_ats = (
+        proposal_state.selected_start_ats if proposal_state.appointment_id == appointment_id else ()
+    )
+    action = parts[1]
+    if action == "d" and len(parts) == 4:
+        return MasterRescheduleCallbackResult(
+            reply=build_master_reschedule_dates_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+                page=parse_master_proposal_page_token(parts[3]),
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "s" and len(parts) == 5:
+        return MasterRescheduleCallbackResult(
+            reply=build_master_reschedule_slots_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                local_date=parse_master_proposal_date_token(parts[3]),
+                selected_start_ats=selected_start_ats,
+                page=parse_master_proposal_page_token(parts[4]),
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "t" and len(parts) == 6:
+        selection = toggle_master_reschedule_slot_reply(
+            partner=partner,
+            actor=actor,
+            appointment_id=appointment_id,
+            start_at=parse_master_proposal_timestamp_token(parts[3]),
+            local_date=parse_master_proposal_date_token(parts[4]),
+            selected_start_ats=selected_start_ats,
+            page=parse_master_proposal_page_token(parts[5]),
+        )
+        return MasterRescheduleCallbackResult(
+            reply=selection.reply,
+            appointment_id=appointment_id,
+            selected_start_ats=selection.selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "v" and len(parts) == 3:
+        return MasterRescheduleCallbackResult(
+            reply=build_master_reschedule_review_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "g" and len(parts) == 3:
+        return MasterRescheduleCallbackResult(
+            reply=send_master_reschedule_proposal_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+            )
+        )
     raise ValidationError({"callback": "Unsupported callback."})
 
 

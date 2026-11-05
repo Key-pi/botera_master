@@ -24,6 +24,7 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.bot.master import master_booking_request_markup
+from apps.bot.master_reschedule import master_reschedule_start_callback
 from apps.finance.models import PartnerPenaltySettings, Penalty
 from apps.finance.services import create_no_show_penalty_for_appointment
 from apps.messaging.services import create_master_reply_to_client
@@ -265,6 +266,19 @@ def build_master_appointment_detail_reply(
                 now=now,
             )
         )
+        if (
+            appointment.status == Appointment.Status.CONFIRMED
+            and appointment.start_at > (now or timezone.now())
+            and _client_messaging_available(appointment)
+        ):
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=_label("propose_reschedule", language),
+                        callback_data=master_reschedule_start_callback(appointment.id),
+                    )
+                ]
+            )
     penalty_settings = _available_no_show_penalty_settings(appointment)
     if penalty_settings is not None:
         amount = Money(
@@ -1176,6 +1190,11 @@ def _label(key: str, language: str) -> str:
             "uk": "Написати клієнту",
             "ru": "Написать клиенту",
             "en": "Message client",
+        },
+        "propose_reschedule": {
+            "uk": "Запропонувати перенесення",
+            "ru": "Предложить перенос",
+            "en": "Propose reschedule",
         },
         "cancel": {"uk": "Скасувати", "ru": "Отмена", "en": "Cancel"},
     }

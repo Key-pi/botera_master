@@ -322,8 +322,11 @@ flow.
    start. With penalties enabled, **No-show** should offer (but not silently
    create) the configured no-show penalty. A linked reachable client should
    expose **Message client** and queue the entered text for the notifications
-   worker. `/master`, `/requests`, `/today`, and `/tomorrow` are equivalent
-   direct entry commands for the linked master.
+   worker. A future confirmed appointment for that client should also expose
+   **Propose reschedule**: select multiple options, review them, send, and verify
+   that the original appointment time remains confirmed while a pending
+   proposal/client notification is created. `/master`, `/requests`, `/today`,
+   and `/tomorrow` are equivalent direct entry commands for the linked master.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
    receives the queued reply through the partner bot.

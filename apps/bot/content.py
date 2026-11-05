@@ -503,6 +503,76 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         editable=False,
     ),
     _definition(
+        "master.reschedule_dates",
+        uk=(
+            "Оберіть дати для нового часу запису {client_name}. "
+            "Вибрано {selected_count} з {selection_limit} варіантів."
+        ),
+        ru=(
+            "Выберите даты для нового времени записи {client_name}. "
+            "Выбрано {selected_count} из {selection_limit} вариантов."
+        ),
+        en=(
+            "Choose dates for {client_name}'s new appointment time. "
+            "Selected {selected_count} of {selection_limit} options."
+        ),
+        placeholders=("client_name", "selected_count", "selection_limit"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_slots",
+        uk=("Оберіть новий час на {date}. Вибрано {selected_count} з {selection_limit} варіантів."),
+        ru=(
+            "Выберите новое время на {date}. "
+            "Выбрано {selected_count} из {selection_limit} вариантов."
+        ),
+        en=("Choose a new time on {date}. Selected {selected_count} of {selection_limit} options."),
+        placeholders=("date", "selected_count", "selection_limit"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_review",
+        uk="Надіслати {client_name} ці варіанти перенесення?\n\n{options}",
+        ru="Отправить {client_name} эти варианты переноса?\n\n{options}",
+        en="Send these reschedule options to {client_name}?\n\n{options}",
+        placeholders=("client_name", "options"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_sent",
+        uk="Клієнту {client_name} надіслано варіанти перенесення: {option_count}.",
+        ru="Клиенту {client_name} отправлены варианты переноса: {option_count}.",
+        en="Sent {option_count} reschedule options to {client_name}.",
+        placeholders=("client_name", "option_count"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_no_dates",
+        uk="Для запису {client_name} немає доступних дат для перенесення.",
+        ru="Для записи {client_name} нет доступных дат для переноса.",
+        en="No reschedule dates are available for {client_name}'s appointment.",
+        placeholders=("client_name",),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_no_slots",
+        uk="На {date} немає доступного часу. Оберіть іншу дату.",
+        ru="На {date} нет доступного времени. Выберите другую дату.",
+        en="No times are available on {date}. Choose another date.",
+        placeholders=("date",),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_action_failed",
+        uk=("Не вдалося підготувати перенесення. Запис або доступний час могли змінитися."),
+        ru=("Не удалось подготовить перенос. Запись или доступное время могли измениться."),
+        en=(
+            "The reschedule could not be prepared. The appointment or available "
+            "time may have changed."
+        ),
+        editable=False,
+    ),
+    _definition(
         "master.booking_request",
         uk="Нова заявка: {client_name} {client_phone}\n{date} о {time}\n{services}{fit_note}{comment}",
         ru="Новая заявка: {client_name} {client_phone}\n{date} в {time}\n{services}{fit_note}{comment}",
