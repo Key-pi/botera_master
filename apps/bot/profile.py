@@ -30,7 +30,11 @@ from apps.appointments.services import (
     client_cancellation_policy,
 )
 from apps.clients.models import ClientProfile
-from apps.clients.services import SUPPORTED_CLIENT_LANGUAGES, update_client_profile_language
+from apps.clients.services import (
+    SUPPORTED_CLIENT_LANGUAGES,
+    set_marketing_opt_out,
+    update_client_profile_language,
+)
 from apps.messaging.services import create_client_message_to_master
 from apps.partners.models import Partner
 from apps.schedule.models import PartnerScheduleSettings
@@ -110,6 +114,12 @@ def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text=_label("contact_master", language),
                 callback_data=_callback("contact"),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=_label("marketing", language),
+                callback_data=_callback("marketing"),
             )
         ],
         [
@@ -223,6 +233,75 @@ def set_profile_language_reply(
     )
     main = build_profile_main_reply(partner=partner, client_profile=updated_profile)
     return BotProfileReply(text=f"{text}\n\n{main.text}", reply_markup=main.reply_markup)
+
+
+def build_marketing_preferences_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+) -> BotProfileReply:
+    """Render the partner-scoped marketing subscription state."""
+
+    language = client_profile.language
+    if client_profile.marketing_opt_out:
+        status = _label("marketing_unsubscribed_status", language)
+        action_label = _label("marketing_subscribe", language)
+        action_value = "0"
+    else:
+        status = _label("marketing_subscribed_status", language)
+        action_label = _label("marketing_unsubscribe", language)
+        action_value = "1"
+
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key="profile.marketing_preferences",
+            language=language,
+            context={"marketing_status": status},
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=action_label,
+                        callback_data=_callback("marketing", action_value),
+                    )
+                ],
+                [_back_button(_callback("main"), language)],
+            ],
+        ),
+    )
+
+
+def set_marketing_preference_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    opt_out: bool,
+) -> BotProfileReply:
+    """Update marketing consent without changing service-message delivery."""
+
+    updated_profile = set_marketing_opt_out(
+        client_profile=client_profile,
+        opt_out=opt_out,
+    )
+    confirmation = _render(
+        partner=partner,
+        key=(
+            "profile.marketing_unsubscribed"
+            if updated_profile.marketing_opt_out
+            else "profile.marketing_subscribed"
+        ),
+        language=updated_profile.language,
+    )
+    preferences = build_marketing_preferences_reply(
+        partner=partner,
+        client_profile=updated_profile,
+    )
+    return BotProfileReply(
+        text=f"{confirmation}\n\n{preferences.text}",
+        reply_markup=preferences.reply_markup,
+    )
 
 
 def build_future_appointments_reply(
@@ -1942,6 +2021,27 @@ def _label(key: str, language: str) -> str:
         "future": {"uk": "Мої записи", "ru": "Мои записи", "en": "My bookings"},
         "history": {"uk": "Історія", "ru": "История", "en": "History"},
         "language": {"uk": "Мова", "ru": "Язык", "en": "Language"},
+        "marketing": {"uk": "Розсилки", "ru": "Рассылки", "en": "Broadcasts"},
+        "marketing_subscribe": {
+            "uk": "Підписатися на розсилки",
+            "ru": "Подписаться на рассылки",
+            "en": "Subscribe to broadcasts",
+        },
+        "marketing_subscribed_status": {
+            "uk": "підписка активна",
+            "ru": "подписка активна",
+            "en": "subscribed",
+        },
+        "marketing_unsubscribe": {
+            "uk": "Відписатися від розсилок",
+            "ru": "Отписаться от рассылок",
+            "en": "Unsubscribe from broadcasts",
+        },
+        "marketing_unsubscribed_status": {
+            "uk": "ви відписані",
+            "ru": "вы отписаны",
+            "en": "unsubscribed",
+        },
         "not_set": {"uk": "не вказано", "ru": "не указано", "en": "not set"},
         "needs_confirmation": {
             "uk": "потрібне підтвердження",

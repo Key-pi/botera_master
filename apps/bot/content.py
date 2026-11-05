@@ -873,6 +873,28 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         editable=False,
     ),
     _definition(
+        "profile.marketing_preferences",
+        uk="Розсилки: {marketing_status}.\nСервісні повідомлення про записи надходитимуть незалежно від цієї настройки.",
+        ru="Рассылки: {marketing_status}.\nСервисные сообщения о записях будут приходить независимо от этой настройки.",
+        en="Broadcasts: {marketing_status}.\nService messages about bookings are not affected by this setting.",
+        placeholders=("marketing_status",),
+        editable=False,
+    ),
+    _definition(
+        "profile.marketing_unsubscribed",
+        uk="Ви відписалися від розсилок. Сервісні повідомлення залишаються увімкненими.",
+        ru="Вы отписались от рассылок. Сервисные сообщения остаются включенными.",
+        en="You unsubscribed from broadcasts. Service messages remain enabled.",
+        editable=False,
+    ),
+    _definition(
+        "profile.marketing_subscribed",
+        uk="Ви підписалися на розсилки.",
+        ru="Вы подписались на рассылки.",
+        en="You subscribed to broadcasts.",
+        editable=False,
+    ),
+    _definition(
         "profile.future_appointments_empty",
         uk="Майбутніх записів немає.",
         ru="Будущих записей нет.",

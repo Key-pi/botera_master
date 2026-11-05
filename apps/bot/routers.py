@@ -114,6 +114,7 @@ from apps.bot.profile import (
     build_client_start_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
+    build_marketing_preferences_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     build_requested_alternative_dates_reply,
@@ -128,6 +129,7 @@ from apps.bot.profile import (
     decline_appointment_proposal_reply,
     parse_return_action_token,
     send_client_message_to_master_reply,
+    set_marketing_preference_reply,
     set_profile_language_reply,
 )
 from apps.bot.profile import (
@@ -1641,6 +1643,19 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
         return build_contact_master_prompt_reply(
             partner=partner,
             client_profile=client_profile,
+        )
+    if action == "marketing" and len(parts) == 2:
+        return build_marketing_preferences_reply(
+            partner=partner,
+            client_profile=client_profile,
+        )
+    if action == "marketing" and len(parts) == 3:
+        if parts[2] not in {"0", "1"}:
+            raise ValidationError({"callback": "Invalid marketing preference."})
+        return set_marketing_preference_reply(
+            partner=partner,
+            client_profile=client_profile,
+            opt_out=parts[2] == "1",
         )
     if action == "future" and len(parts) == 3:
         return build_future_appointments_reply(

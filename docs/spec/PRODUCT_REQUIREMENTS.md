@@ -617,7 +617,7 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   - `profile.penalties_empty` with no placeholders.
   - `profile.penalties_list` with `{penalties}`, `{total_penalties}`, `{currency}`.
   - `profile.contact_master_prompt` with `{partner_name}`.
-- `profile.updated_success`, `profile.marketing_unsubscribed`, `profile.marketing_subscribed`, and `profile.contact_master_sent` remain system-only localized in MVP.
+- `profile.updated_success`, `profile.marketing_preferences`, `profile.marketing_unsubscribed`, `profile.marketing_subscribed`, and `profile.contact_master_sent` remain system-only localized in MVP.
 - `profile.appointment_details` must be able to show penalties and total when penalties are applied to that appointment.
 - Profile detail `{comment}` and `{reason}` are optional; templates must render cleanly when either is empty.
 - Initial editable `penalties/no-show/late-arrival` keys:

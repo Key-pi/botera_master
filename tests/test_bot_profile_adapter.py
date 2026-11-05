@@ -26,6 +26,7 @@ from apps.bot.profile import (
     build_client_start_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
+    build_marketing_preferences_reply,
     build_profile_language_reply,
     build_profile_main_reply,
     build_requested_alternative_dates_reply,
@@ -39,8 +40,10 @@ from apps.bot.profile import (
     confirm_reschedule_reply,
     decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
+    set_marketing_preference_reply,
     set_profile_language_reply,
 )
+from apps.bot.routers import _profile_reply_from_callback_data
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     create_manual_client_profile,
@@ -155,6 +158,7 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     assert "pf:history:1" in callbacks
     assert "pf:lang" in callbacks
     assert "pf:contact" in callbacks
+    assert "pf:marketing" in callbacks
     assert "bk:cat:1" in callbacks
 
 
@@ -172,6 +176,70 @@ def test_client_start_reply_keeps_welcome_text_and_adds_navigation():
     assert "pf:history:1" in callbacks
     assert "pf:lang" in callbacks
     assert "pf:contact" in callbacks
+    assert "pf:marketing" in callbacks
+
+
+@pytest.mark.django_db
+def test_profile_marketing_preferences_toggle_only_marketing_delivery(bot_profile_context):
+    context = bot_profile_context
+    client = context["client"]
+    telegram_identity_id = client.telegram_identity_id
+
+    preferences = build_marketing_preferences_reply(
+        partner=context["partner"],
+        client_profile=client,
+    )
+    opted_out = set_marketing_preference_reply(
+        partner=context["partner"],
+        client_profile=client,
+        opt_out=True,
+    )
+
+    client.refresh_from_db()
+    assert "Broadcasts: subscribed" in preferences.text
+    assert "pf:marketing:1" in _button_callbacks(preferences)
+    assert client.marketing_opt_out is True
+    assert client.telegram_identity_id == telegram_identity_id
+    assert client.bot_unreachable is False
+    assert "Service messages remain enabled" in opted_out.text
+    assert "pf:marketing:0" in _button_callbacks(opted_out)
+
+    subscribed = set_marketing_preference_reply(
+        partner=context["partner"],
+        client_profile=client,
+        opt_out=False,
+    )
+
+    client.refresh_from_db()
+    assert client.marketing_opt_out is False
+    assert "subscribed to broadcasts" in subscribed.text
+    assert "pf:marketing:1" in _button_callbacks(subscribed)
+
+
+@pytest.mark.django_db
+def test_profile_marketing_callbacks_dispatch_and_validate_value(bot_profile_context):
+    context = bot_profile_context
+
+    preferences = _profile_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="pf:marketing",
+    )
+    _profile_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="pf:marketing:1",
+    )
+
+    context["client"].refresh_from_db()
+    assert "pf:marketing:1" in _button_callbacks(preferences)
+    assert context["client"].marketing_opt_out is True
+    with pytest.raises(ValidationError, match="Invalid marketing preference"):
+        _profile_reply_from_callback_data(
+            partner=context["partner"],
+            client_profile=context["client"],
+            data="pf:marketing:yes",
+        )
 
 
 @pytest.mark.django_db

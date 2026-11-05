@@ -267,6 +267,7 @@ def test_start_router_sends_client_navigation_with_welcome(monkeypatch):
         "pf:future:1",
         "pf:history:1",
         "pf:lang",
+        "pf:marketing",
     }
 
 
