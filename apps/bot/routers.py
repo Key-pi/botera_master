@@ -117,6 +117,7 @@ from apps.bot.profile import (
     build_marketing_preferences_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_profile_penalties_reply,
     build_requested_alternative_dates_reply,
     build_requested_alternative_final_confirm_reply,
     build_requested_alternative_slots_reply,
@@ -1656,6 +1657,12 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             partner=partner,
             client_profile=client_profile,
             opt_out=parts[2] == "1",
+        )
+    if action == "penalties" and len(parts) == 3:
+        return build_profile_penalties_reply(
+            partner=partner,
+            client_profile=client_profile,
+            page=parse_profile_page_token(parts[2]),
         )
     if action == "future" and len(parts) == 3:
         return build_future_appointments_reply(

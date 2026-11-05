@@ -35,16 +35,20 @@ from apps.clients.services import (
     set_marketing_opt_out,
     update_client_profile_language,
 )
+from apps.finance.models import Penalty
+from apps.finance.selectors import outstanding_penalties_for_client
 from apps.messaging.services import create_client_message_to_master
 from apps.partners.models import Partner
 from apps.schedule.models import PartnerScheduleSettings
 from core.money import Money
 from core.timezones import to_partner_time
 
+from .pagination import paginate_telegram_entities
 from .services import render_content_template
 
 PROFILE_CALLBACK_PREFIX = "pf"
 RESCHEDULE_SEARCH_DAYS = 30
+CLIENT_PENALTIES_PAGE_SIZE = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +124,12 @@ def _profile_main_markup(*, language: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text=_label("marketing", language),
                 callback_data=_callback("marketing"),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=_label("penalties", language),
+                callback_data=_callback("penalties", 1),
             )
         ],
         [
@@ -301,6 +311,58 @@ def set_marketing_preference_reply(
     return BotProfileReply(
         text=f"{confirmation}\n\n{preferences.text}",
         reply_markup=preferences.reply_markup,
+    )
+
+
+def build_profile_penalties_reply(
+    *,
+    partner: Partner,
+    client_profile: ClientProfile,
+    page: int = 1,
+) -> BotProfileReply:
+    """Render outstanding client debt separately from appointment history."""
+
+    language = client_profile.language
+    penalties = tuple(outstanding_penalties_for_client(client_profile))
+    if not penalties:
+        return _reply_with_back(
+            partner=partner,
+            key="profile.penalties_empty",
+            language=language,
+        )
+
+    penalty_page = paginate_telegram_entities(
+        penalties,
+        page=page,
+        per_page=CLIENT_PENALTIES_PAGE_SIZE,
+    )
+    total_penalties, currency = _penalty_total_context(penalties)
+    rows = _pagination_rows("penalties", penalty_page.page, penalty_page)
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_label("contact_master", language),
+                    callback_data=_callback("contact"),
+                )
+            ],
+            [_back_button(_callback("main"), language)],
+        ]
+    )
+    return BotProfileReply(
+        text=_render(
+            partner=partner,
+            key="profile.penalties_list",
+            language=language,
+            context={
+                "penalties": "\n".join(
+                    _penalty_list_line(penalty, language=language) for penalty in penalty_page.items
+                ),
+                "total_penalties": total_penalties,
+                "currency": currency,
+            },
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
     )
 
 
@@ -1987,6 +2049,74 @@ def _status_label(status: str, language: str) -> str:
     return translations.get(language, translations["uk"])
 
 
+def _penalty_list_line(penalty: Penalty, *, language: str) -> str:
+    late_suffix = ""
+    if penalty.reason == Penalty.Reason.LATE_ARRIVAL and penalty.late_by_minutes:
+        late_suffix = f" ({penalty.late_by_minutes} {_label('minutes_short', language)})"
+    return (
+        f"• {_penalty_reason_label(penalty.reason, language)}{late_suffix} — "
+        f"{_money_label(penalty.amount)} {penalty.currency} "
+        f"({_penalty_status_label(penalty.status, language)})"
+    )
+
+
+def _penalty_total_context(penalties: tuple[Penalty, ...]) -> tuple[str, str]:
+    totals_by_currency: dict[str, int] = {}
+    for penalty in penalties:
+        totals_by_currency[penalty.currency] = (
+            totals_by_currency.get(penalty.currency, 0) + penalty.amount
+        )
+    if len(totals_by_currency) == 1:
+        currency, total_amount = next(iter(totals_by_currency.items()))
+        return _money_label(total_amount), currency
+    return (
+        " + ".join(
+            f"{_money_label(amount)} {currency}"
+            for currency, amount in sorted(totals_by_currency.items())
+        ),
+        "",
+    )
+
+
+def _penalty_reason_label(reason: str, language: str) -> str:
+    labels = {
+        Penalty.Reason.LATE_CANCEL: {
+            "uk": "пізнє скасування",
+            "ru": "поздняя отмена",
+            "en": "late cancellation",
+        },
+        Penalty.Reason.NO_SHOW: {
+            "uk": "неявка",
+            "ru": "неявка",
+            "en": "no-show",
+        },
+        Penalty.Reason.LATE_ARRIVAL: {
+            "uk": "запізнення",
+            "ru": "опоздание",
+            "en": "late arrival",
+        },
+    }
+    translations = labels[reason]
+    return translations.get(language, translations["uk"])
+
+
+def _penalty_status_label(status: str, language: str) -> str:
+    labels = {
+        Penalty.Status.UNPAID: {
+            "uk": "не оплачено",
+            "ru": "не оплачено",
+            "en": "unpaid",
+        },
+        Penalty.Status.APPLIED_TO_APPOINTMENT: {
+            "uk": "додано до запису",
+            "ru": "добавлено к записи",
+            "en": "applied to booking",
+        },
+    }
+    translations = labels[status]
+    return translations.get(language, translations["uk"])
+
+
 def _label(key: str, language: str) -> str:
     labels = {
         "back": {"uk": "Назад", "ru": "Назад", "en": "Back"},
@@ -2042,12 +2172,14 @@ def _label(key: str, language: str) -> str:
             "ru": "вы отписаны",
             "en": "unsubscribed",
         },
+        "minutes_short": {"uk": "хв", "ru": "мин", "en": "min"},
         "not_set": {"uk": "не вказано", "ru": "не указано", "en": "not set"},
         "needs_confirmation": {
             "uk": "потрібне підтвердження",
             "ru": "нужно подтверждение",
             "en": "needs confirmation",
         },
+        "penalties": {"uk": "Штрафи", "ru": "Штрафы", "en": "Penalties"},
         "reason": {"uk": "Причина", "ru": "Причина", "en": "Reason"},
         "reschedule_appointment": {
             "uk": "Перенести запис",

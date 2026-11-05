@@ -335,7 +335,9 @@ flow.
    receives the queued reply through the partner bot. Open **Broadcasts**, unsubscribe,
    and verify the client is excluded from a new marketing campaign while service
    appointment notifications remain enabled. Subscribe again and verify the client is
-   eligible for subsequent campaigns.
+   eligible for subsequent campaigns. If the client has unpaid or applied penalties,
+   open **Penalties** and verify the paginated debt list, reason, status, and total;
+   paid or waived penalties must not appear there.
 8. Send a test broadcast with **Book** and **My appointments** actions. Verify
    each action opens its existing partner-scoped bot flow in a new message; this
    must also work when the broadcast itself contains a photo.

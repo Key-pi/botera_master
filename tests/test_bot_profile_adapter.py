@@ -29,6 +29,7 @@ from apps.bot.profile import (
     build_marketing_preferences_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_profile_penalties_reply,
     build_requested_alternative_dates_reply,
     build_requested_alternative_final_confirm_reply,
     build_requested_alternative_slots_reply,
@@ -51,7 +52,12 @@ from apps.clients.services import (
     upsert_telegram_identity,
 )
 from apps.finance.models import Penalty
-from apps.finance.services import update_penalty_settings
+from apps.finance.services import (
+    apply_penalties_to_appointment,
+    create_penalty,
+    mark_penalty_paid,
+    update_penalty_settings,
+)
 from apps.messaging.models import ConversationMessage
 from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
@@ -159,6 +165,7 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     assert "pf:lang" in callbacks
     assert "pf:contact" in callbacks
     assert "pf:marketing" in callbacks
+    assert "pf:penalties:1" in callbacks
     assert "bk:cat:1" in callbacks
 
 
@@ -177,6 +184,7 @@ def test_client_start_reply_keeps_welcome_text_and_adds_navigation():
     assert "pf:lang" in callbacks
     assert "pf:contact" in callbacks
     assert "pf:marketing" in callbacks
+    assert "pf:penalties:1" in callbacks
 
 
 @pytest.mark.django_db
@@ -240,6 +248,76 @@ def test_profile_marketing_callbacks_dispatch_and_validate_value(bot_profile_con
             client_profile=context["client"],
             data="pf:marketing:yes",
         )
+
+
+@pytest.mark.django_db
+def test_profile_penalties_show_outstanding_debt_with_pagination(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    penalties = [
+        create_penalty(
+            actor=context["owner"],
+            partner=context["partner"],
+            client_profile=context["client"],
+            reason=Penalty.Reason.LATE_ARRIVAL,
+            amount=2000,
+            late_by_minutes=20 + index,
+        )
+        for index in range(6)
+    ]
+    paid = create_penalty(
+        actor=context["owner"],
+        partner=context["partner"],
+        client_profile=context["client"],
+        reason=Penalty.Reason.NO_SHOW,
+        amount=5000,
+    )
+    mark_penalty_paid(actor=context["owner"], penalty=paid)
+    appointment = _create_confirmed(context, profile_start)
+    apply_penalties_to_appointment(
+        actor=context["owner"],
+        appointment=appointment,
+        penalties=[penalties[0]],
+    )
+
+    first_page = build_profile_penalties_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        page=1,
+    )
+    second_page = _profile_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="pf:penalties:2",
+    )
+
+    assert "Active penalties" in first_page.text
+    assert "Total: 120.00 UAH" in first_page.text
+    assert first_page.text.count("late arrival") == 5
+    assert "20.00 UAH (unpaid)" in first_page.text
+    assert "pf:penalties:2" in _button_callbacks(first_page)
+    assert "pf:contact" in _button_callbacks(first_page)
+    assert second_page.text.count("late arrival") == 1
+    assert "applied to booking" in second_page.text
+    assert "pf:penalties:1" in _button_callbacks(second_page)
+    assert "no-show" not in f"{first_page.text}\n{second_page.text}"
+    penalties[0].refresh_from_db()
+    assert penalties[0].status == Penalty.Status.APPLIED_TO_APPOINTMENT
+
+
+@pytest.mark.django_db
+def test_profile_penalties_empty_state_returns_to_profile(bot_profile_context):
+    context = bot_profile_context
+
+    reply = build_profile_penalties_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+    )
+
+    assert reply.text == "No active penalties."
+    assert _button_callbacks(reply) == ["pf:main"]
 
 
 @pytest.mark.django_db

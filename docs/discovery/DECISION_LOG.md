@@ -5,6 +5,7 @@ Status: discovery approved on 2026-08-07.
 ## CONFIRMED
 
 - 2026-11-05: The client Telegram profile exposes partner-scoped marketing preferences. Unsubscribing changes only `ClientProfile.marketing_opt_out`; appointment notifications and manual master messages remain enabled, and the client can subscribe again from the same screen.
+- 2026-11-05: The client Telegram profile exposes outstanding penalties separately from appointment history. The list includes unpaid and applied-but-unsettled debt, excludes paid/waived penalties, paginates at five rows, shows the full outstanding total, and offers the general contact-master action.
 - 2026-10-08: `IMPLEMENTATION_PLAN.md` is approved with `IMPLEMENTATION_PLAN_APPROVED`.
 - 2026-10-08: BoteraMaster implementation direction starts from a clean Django project and treats TableOS as a reference implementation, not a codebase to copy wholesale.
 - 2026-10-08: Even after implementation-plan approval, application code, migrations, AGENTS.md, and project skills remain gated by the next explicit implementation/project-rules approval step.
