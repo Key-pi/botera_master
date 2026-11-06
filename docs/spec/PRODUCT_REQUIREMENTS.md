@@ -517,6 +517,10 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
 - Appointment details show the combined amount of penalties already applied to that appointment.
   The master may explicitly mark all still-active applications as paid through a separate
   confirmation action; completing the appointment alone never marks them paid automatically.
+- Appointment details show the appointment-specific private master note when present. A verified
+  master may add, replace, or explicitly clear that note in Telegram without client confirmation
+  or notification. The note remains master-only and its raw text must not enter audit or technical
+  logs.
 - When penalties are enabled, a newly marked no-show offers the configured no-show penalty as a
   separate confirmed action. The penalty is never created implicitly by the status transition.
 - After a confirmed or completed appointment has started, the workspace offers late-arrival

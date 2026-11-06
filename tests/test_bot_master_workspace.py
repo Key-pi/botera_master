@@ -18,6 +18,7 @@ from apps.appointments.services import (
 )
 from apps.bot.master_workspace import (
     MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
+    MASTER_WORKSPACE_INPUT_PRIVATE_NOTE,
     PERIOD_REQUESTS,
     PERIOD_TODAY,
     PERIOD_TOMORROW,
@@ -28,11 +29,13 @@ from apps.bot.master_workspace import (
     master_workspace_reply_from_callback_data,
     queue_master_appointment_message_reply,
     set_master_language_reply,
+    update_master_private_note_reply,
 )
 from apps.bot.models import PartnerTelegramContact
 from apps.bot.routers import (
     MasterWorkspaceLateArrivalFlowState,
     MasterWorkspaceMessageFlowState,
+    MasterWorkspacePrivateNoteFlowState,
     build_partner_router,
 )
 from apps.catalog.services import create_service, create_service_category
@@ -438,6 +441,64 @@ def test_master_workspace_settles_applied_penalties_only_after_confirmation(
 
 
 @pytest.mark.django_db
+def test_master_workspace_shows_updates_and_clears_private_appointment_note(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 47),
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+        private_master_note="Prepare sensitive materials",
+    )
+
+    details = build_master_appointment_detail_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period="u",
+    )
+
+    note_callback = f"mw:note:{appointment.id.hex}:u:1"
+    assert "Приватна нотатка: Prepare sensitive materials" in details.text
+    assert note_callback in _callbacks(details)
+
+    prompt = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=note_callback,
+    )
+    assert prompt.wait_for_text is True
+    assert prompt.input_mode == MASTER_WORKSPACE_INPUT_PRIVATE_NOTE
+    assert "Prepare sensitive materials" in prompt.text
+    assert f"mw:noteclear:{appointment.id.hex}:u:1" in _callbacks(prompt)
+
+    updated = update_master_private_note_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period="u",
+        private_master_note="Updated internal note",
+    )
+    appointment.refresh_from_db()
+    assert appointment.private_master_note == "Updated internal note"
+    assert "Приватна нотатка: Updated internal note" in updated.text
+
+    cleared = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:noteclear:{appointment.id.hex}:u:1",
+    )
+    appointment.refresh_from_db()
+    assert appointment.private_master_note == ""
+    assert "Приватна нотатка:" not in cleared.text
+    assert note_callback in _callbacks(cleared)
+
+
+@pytest.mark.django_db
 def test_master_workspace_suggests_and_creates_enabled_no_show_penalty(
     master_workspace_context,
 ):
@@ -732,6 +793,62 @@ def test_master_workspace_late_arrival_callback_enters_own_input_state(monkeypat
         {
             "master_workspace_message_appointment_id": appointment_id,
             "master_workspace_message_period": "d0",
+            "master_workspace_message_page": 1,
+        }
+    )
+
+
+def test_master_workspace_private_note_callback_enters_own_input_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    actor = SimpleNamespace()
+    contact = SimpleNamespace(user=actor)
+    appointment_id = "5fd8e2f7632849358d40b8fb6af777cd"
+    reply = SimpleNamespace(
+        text="Надішліть приватну нотатку",
+        reply_markup=SimpleNamespace(inline_keyboard=[]),
+        wait_for_text=True,
+        appointment_id=UUID(appointment_id),
+        return_period="u",
+        return_page=1,
+        input_mode=MASTER_WORKSPACE_INPUT_PRIVATE_NOTE,
+    )
+    callback = SimpleNamespace(
+        data=f"mw:note:{appointment_id}:u:1",
+        from_user=SimpleNamespace(id=771001),
+        message=SimpleNamespace(edit_text=AsyncMock()),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(
+        clear=AsyncMock(),
+        set_state=AsyncMock(),
+        set_data=AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        "apps.bot.routers.master_telegram_contact_for_user",
+        lambda **_kwargs: contact,
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers.master_workspace_reply_from_callback_data",
+        lambda **_kwargs: reply,
+    )
+    router = build_partner_router()
+    handler = next(
+        handler.callback
+        for handler in router.callback_query.handlers
+        if handler.callback.__name__ == "master_workspace_callback_handler"
+    )
+
+    asyncio.run(handler(callback=callback, partner=partner, state=state))
+
+    state.clear.assert_awaited_once()
+    state.set_state.assert_awaited_once_with(
+        MasterWorkspacePrivateNoteFlowState.waiting_for_text
+    )
+    state.set_data.assert_awaited_once_with(
+        {
+            "master_workspace_message_appointment_id": appointment_id,
+            "master_workspace_message_period": "u",
             "master_workspace_message_page": 1,
         }
     )

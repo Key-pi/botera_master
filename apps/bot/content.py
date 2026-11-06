@@ -510,6 +510,40 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         editable=False,
     ),
     _definition(
+        "master.workspace_private_note_prompt",
+        uk=(
+            "Надішліть приватну нотатку до запису клієнта {client_name}. "
+            "Її бачить лише майстер. Поточне значення:\n{current_note}\n\n"
+            "Максимум {max_length} символів."
+        ),
+        ru=(
+            "Отправьте приватную заметку к записи клиента {client_name}. "
+            "Её видит только мастер. Текущее значение:\n{current_note}\n\n"
+            "Максимум {max_length} символов."
+        ),
+        en=(
+            "Send a private note for {client_name}'s appointment. Only the master can "
+            "see it. Current value:\n{current_note}\n\nMaximum {max_length} characters."
+        ),
+        placeholders=("client_name", "current_note", "max_length"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_private_note_invalid",
+        uk="Нотатка має бути непорожньою і не довшою за {max_length} символів.",
+        ru="Заметка должна быть непустой и не длиннее {max_length} символов.",
+        en="The note must be non-empty and at most {max_length} characters.",
+        placeholders=("max_length",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_private_note_updated",
+        uk="Приватну нотатку оновлено.",
+        ru="Приватная заметка обновлена.",
+        en="Private note updated.",
+        editable=False,
+    ),
+    _definition(
         "master.workspace_no_show_penalty_confirm",
         uk=("Створити для {client_name} штраф за неявку {penalty_amount} {currency}?"),
         ru=("Создать для {client_name} штраф за неявку {penalty_amount} {currency}?"),

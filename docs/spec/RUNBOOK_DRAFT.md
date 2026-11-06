@@ -319,7 +319,10 @@ flow.
    **Today**, **Tomorrow**, **Upcoming**, one appointment detail, and the
    workspace language switch. For a confirmed appointment, verify cancellation
    requires a second click and **Completed**/**No-show** appear only after its
-   start. For an appointment with applied penalties, verify the combined amount
+   start. Add, replace, and explicitly clear the appointment private note; verify
+   it appears only in the verified master workspace, creates no client notification,
+   and its raw text is absent from audit payloads and technical logs. For an
+   appointment with applied penalties, verify the combined amount
    is visible, **Completed** does not silently settle the debt, and the separate
    **Mark penalties paid** confirmation settles each active application exactly once.
    With penalties enabled, **No-show** should offer (but not silently

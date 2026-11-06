@@ -132,6 +132,10 @@ def test_content_template_override_validation_and_language_fallback(content_cont
         key="master.workspace_penalty_payment_confirm",
         language="en",
     )
+    private_note_template = SystemTemplate.objects.get(
+        key="master.workspace_private_note_prompt",
+        language="en",
+    )
     assert required_field_template.editable is False
     assert required_field_template.placeholder_allowlist == ["missing_fields"]
     assert "comment" in final_confirm_template.placeholder_allowlist
@@ -152,6 +156,12 @@ def test_content_template_override_validation_and_language_fallback(content_cont
         "penalty_count",
         "penalty_amount",
         "currency",
+    ]
+    assert private_note_template.editable is False
+    assert private_note_template.placeholder_allowlist == [
+        "client_name",
+        "current_note",
+        "max_length",
     ]
 
     override = set_partner_template_override(

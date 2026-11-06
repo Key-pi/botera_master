@@ -20,8 +20,10 @@ from apps.appointments.selectors import (
     requested_appointments_for_partner,
 )
 from apps.appointments.services import (
+    MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH,
     available_appointment_status_targets,
     transition_appointment_status,
+    update_appointment_private_master_note,
 )
 from apps.bot.master import master_booking_request_markup
 from apps.bot.master_reschedule import master_reschedule_start_callback
@@ -45,6 +47,7 @@ MASTER_WORKSPACE_CALLBACK_PREFIX = "mw"
 MASTER_WORKSPACE_PAGE_SIZE = 5
 MASTER_WORKSPACE_INPUT_MESSAGE = "message"
 MASTER_WORKSPACE_INPUT_LATE_ARRIVAL = "late_arrival"
+MASTER_WORKSPACE_INPUT_PRIVATE_NOTE = "private_note"
 
 PERIOD_REQUESTS = "r"
 PERIOD_TODAY = "d0"
@@ -266,6 +269,9 @@ def build_master_appointment_detail_reply(
             "comment": comment_block,
         },
     )
+    private_note = appointment.private_master_note.strip()
+    if private_note:
+        text = f"{text}\n{_label('private_note', language)}: {private_note}"
     if appointment.penalties_total_amount:
         applied_amount = Money(
             amount=appointment.penalties_total_amount,
@@ -375,6 +381,19 @@ def build_master_appointment_detail_reply(
                 )
             ]
         )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=_label("edit_private_note", language),
+                callback_data=_appointment_callback(
+                    "note",
+                    appointment=appointment,
+                    period=return_period,
+                    page=return_page,
+                ),
+            )
+        ]
+    )
     if _client_messaging_available(appointment):
         rows.append(
             [
@@ -731,6 +750,123 @@ def create_master_no_show_penalty_reply(
             "penalty_amount": str(amount),
             "currency": penalty.currency,
         },
+    )
+    return BotMasterWorkspaceReply(
+        text=f"{confirmation}\n\n{details.text}",
+        reply_markup=details.reply_markup,
+    )
+
+
+def build_master_private_note_prompt_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+    invalid_input: bool = False,
+) -> BotMasterWorkspaceReply:
+    """Prompt a verified master for one appointment-only private note."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    language = partner.default_language
+    context = {
+        "client_name": appointment.client_profile.display_name,
+        "current_note": appointment.private_master_note.strip()
+        or _label("not_set", language),
+        "max_length": str(MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH),
+    }
+    prompt = _render(
+        partner=partner,
+        key="master.workspace_private_note_prompt",
+        language=language,
+        context=context,
+    )
+    if invalid_input:
+        invalid = _render(
+            partner=partner,
+            key="master.workspace_private_note_invalid",
+            language=language,
+            context={"max_length": str(MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH)},
+        )
+        prompt = f"{invalid}\n\n{prompt}"
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if appointment.private_master_note.strip():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_label("clear_private_note", language),
+                    callback_data=_appointment_callback(
+                        "noteclear",
+                        appointment=appointment,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=_label("back", language),
+                callback_data=_view_callback(
+                    appointment_id=appointment.id,
+                    period=return_period,
+                    page=return_page,
+                ),
+            )
+        ]
+    )
+    return BotMasterWorkspaceReply(
+        text=prompt,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        wait_for_text=True,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+        input_mode=MASTER_WORKSPACE_INPUT_PRIVATE_NOTE,
+    )
+
+
+def update_master_private_note_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+    private_master_note: str,
+) -> BotMasterWorkspaceReply:
+    """Persist a private note through the appointment owner service."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    stored = update_appointment_private_master_note(
+        actor=actor,
+        appointment=appointment,
+        private_master_note=private_master_note,
+    )
+    details = build_master_appointment_detail_reply(
+        partner=partner,
+        actor=actor,
+        appointment_id=stored.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+    confirmation = _render(
+        partner=partner,
+        key="master.workspace_private_note_updated",
+        language=partner.default_language,
     )
     return BotMasterWorkspaceReply(
         text=f"{confirmation}\n\n{details.text}",
@@ -1097,6 +1233,17 @@ def master_workspace_reply_from_callback_data(
         if parts[1] == "pay":
             return build_master_penalty_payment_confirmation_reply(**kwargs)
         return settle_master_appointment_penalties_reply(**kwargs)
+    if len(parts) == 5 and parts[1] in {"note", "noteclear"}:
+        kwargs = {
+            "partner": partner,
+            "actor": actor,
+            "appointment_id": _parse_uuid(parts[2]),
+            "return_period": parts[3],
+            "return_page": _parse_page(parts[4]),
+        }
+        if parts[1] == "note":
+            return build_master_private_note_prompt_reply(**kwargs)
+        return update_master_private_note_reply(private_master_note="", **kwargs)
     if len(parts) == 5 and parts[1] == "message":
         return build_master_appointment_message_prompt_reply(
             partner=partner,
@@ -1585,6 +1732,21 @@ def _label(key: str, language: str) -> str:
             "uk": "Позначити штрафи сплаченими",
             "ru": "Отметить штрафы оплаченными",
             "en": "Mark penalties paid",
+        },
+        "private_note": {
+            "uk": "Приватна нотатка",
+            "ru": "Приватная заметка",
+            "en": "Private note",
+        },
+        "edit_private_note": {
+            "uk": "Редагувати приватну нотатку",
+            "ru": "Редактировать приватную заметку",
+            "en": "Edit private note",
+        },
+        "clear_private_note": {
+            "uk": "Очистити приватну нотатку",
+            "ru": "Очистить приватную заметку",
+            "en": "Clear private note",
         },
         "create_penalty": {
             "uk": "Створити штраф",

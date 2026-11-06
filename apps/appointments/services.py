@@ -77,6 +77,7 @@ ALLOWED_STATUS_TRANSITIONS = {
         Appointment.Status.CANCELLED_BY_MASTER,
     },
 }
+MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH = 2_000
 
 
 def available_appointment_status_targets(
@@ -156,6 +157,52 @@ def create_requested_appointment(
         )
         _on_commit_schedule_requested_notifications(appointment.id)
     return appointment
+
+
+def update_appointment_private_master_note(
+    *,
+    actor: User,
+    appointment: Appointment,
+    private_master_note: str,
+) -> Appointment:
+    """Update one appointment-only private note without client-visible side effects."""
+
+    ensure_partner_access(actor, appointment.partner)
+    cleaned_note = (private_master_note or "").strip()
+    if len(cleaned_note) > MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH:
+        raise ValidationError(
+            {
+                "private_master_note": (
+                    "Private master note must be "
+                    f"{MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH} characters or shorter."
+                )
+            }
+        )
+
+    with transaction.atomic():
+        stored = (
+            Appointment.objects.select_for_update()
+            .select_related("partner")
+            .get(id=appointment.id, partner=appointment.partner)
+        )
+        previous_note = stored.private_master_note
+        if previous_note == cleaned_note:
+            return stored
+        stored.private_master_note = cleaned_note
+        stored.save(update_fields=["private_master_note", "updated_at"])
+        record_audit_event(
+            partner=stored.partner,
+            actor=actor,
+            event_type="appointment.private_note_updated",
+            target=stored,
+            message="Private appointment note updated.",
+            payload={
+                "was_present": bool(previous_note),
+                "is_present": bool(cleaned_note),
+                "character_count": len(cleaned_note),
+            },
+        )
+    return stored
 
 
 def create_confirmed_appointment(
