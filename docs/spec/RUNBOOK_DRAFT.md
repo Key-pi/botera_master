@@ -319,7 +319,10 @@ flow.
    **Today**, **Tomorrow**, **Upcoming**, one appointment detail, and the
    workspace language switch. For a confirmed appointment, verify cancellation
    requires a second click and **Completed**/**No-show** appear only after its
-   start. With penalties enabled, **No-show** should offer (but not silently
+   start. For an appointment with applied penalties, verify the combined amount
+   is visible, **Completed** does not silently settle the debt, and the separate
+   **Mark penalties paid** confirmation settles each active application exactly once.
+   With penalties enabled, **No-show** should offer (but not silently
    create) the configured no-show penalty. A started confirmed/completed visit
    should also expose **Record late arrival**: enter minutes and an optional
    note, then verify the configured threshold is enforced and exactly one

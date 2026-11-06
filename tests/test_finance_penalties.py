@@ -29,6 +29,7 @@ from apps.finance.services import (
     create_penalty,
     mark_penalty_paid,
     release_penalty_application,
+    settle_active_penalty_applications_for_appointment,
     settle_penalty_application,
     update_penalty_settings,
     waive_penalty,
@@ -123,6 +124,62 @@ def test_apply_and_settle_penalty_updates_statuses_and_appointment_total(finance
     assert application.status == PenaltyApplication.Status.SETTLED
     assert penalty.status == Penalty.Status.PAID
     assert appointment.total_amount == 55000
+
+
+@pytest.mark.django_db
+def test_settle_all_active_penalties_for_appointment_is_atomic_and_idempotent(
+    finance_context,
+):
+    context = finance_context
+    appointment = _confirmed(context, timezone.now() + timedelta(days=2))
+    penalties = [
+        create_penalty(
+            actor=context["owner"],
+            partner=context["partner"],
+            client_profile=context["client"],
+            reason=reason,
+            amount=amount,
+        )
+        for reason, amount in (
+            (Penalty.Reason.LATE_CANCEL, 5_000),
+            (Penalty.Reason.LATE_ARRIVAL, 2_000),
+        )
+    ]
+    applications = apply_penalties_to_appointment(
+        actor=context["owner"],
+        appointment=appointment,
+        penalties=penalties,
+    )
+
+    settled = settle_active_penalty_applications_for_appointment(
+        actor=context["owner"],
+        appointment=appointment,
+    )
+
+    assert [application.id for application in settled] == [
+        application.id for application in applications
+    ]
+    assert set(
+        PenaltyApplication.objects.filter(
+            appointment=appointment,
+        ).values_list("status", flat=True)
+    ) == {PenaltyApplication.Status.SETTLED}
+    assert set(
+        Penalty.objects.filter(id__in=[penalty.id for penalty in penalties]).values_list(
+            "status",
+            flat=True,
+        )
+    ) == {Penalty.Status.PAID}
+    appointment.refresh_from_db()
+    assert appointment.penalties_total_amount == 7_000
+    assert appointment.total_amount == 57_000
+    assert (
+        settle_active_penalty_applications_for_appointment(
+            actor=context["owner"],
+            appointment=appointment,
+        )
+        == ()
+    )
 
 
 @pytest.mark.django_db

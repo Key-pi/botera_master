@@ -94,6 +94,17 @@ def penalty_applications_for_appointment(
     )
 
 
+def active_penalty_applications_for_appointment(
+    *,
+    appointment: Appointment,
+) -> QuerySet[PenaltyApplication]:
+    """Return unsettled penalty applications currently included in an appointment."""
+
+    return penalty_applications_for_appointment(appointment=appointment).filter(
+        status=PenaltyApplication.Status.ACTIVE,
+    )
+
+
 def penalty_settings_for_partner(*, partner: Partner) -> PartnerPenaltySettings | None:
     """Return stored penalty configuration without creating data in a read path."""
 

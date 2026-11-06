@@ -514,6 +514,9 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   services, audit, reminder invalidation, and client-notification flow as the admin workspace.
 - Completion and no-show become available only after the appointment starts. Final-status
   correction remains in the audited admin correction flow rather than a Telegram quick action.
+- Appointment details show the combined amount of penalties already applied to that appointment.
+  The master may explicitly mark all still-active applications as paid through a separate
+  confirmation action; completing the appointment alone never marks them paid automatically.
 - When penalties are enabled, a newly marked no-show offers the configured no-show penalty as a
   separate confirmed action. The penalty is never created implicitly by the status transition.
 - After a confirmed or completed appointment has started, the workspace offers late-arrival

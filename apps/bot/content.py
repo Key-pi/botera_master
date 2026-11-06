@@ -464,6 +464,52 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         editable=False,
     ),
     _definition(
+        "master.workspace_penalty_payment_confirm",
+        uk=(
+            "Позначити сплаченими застосовані штрафи клієнта {client_name}: "
+            "{penalty_count} на суму {penalty_amount} {currency}?"
+        ),
+        ru=(
+            "Отметить оплаченными применённые штрафы клиента {client_name}: "
+            "{penalty_count} на сумму {penalty_amount} {currency}?"
+        ),
+        en=(
+            "Mark {client_name}'s applied penalties as paid: {penalty_count} totaling "
+            "{penalty_amount} {currency}?"
+        ),
+        placeholders=(
+            "client_name",
+            "penalty_count",
+            "penalty_amount",
+            "currency",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_penalties_paid",
+        uk=(
+            "Застосовані штрафи позначено сплаченими: {penalty_count} на суму "
+            "{penalty_amount} {currency}."
+        ),
+        ru=(
+            "Применённые штрафы отмечены оплаченными: {penalty_count} на сумму "
+            "{penalty_amount} {currency}."
+        ),
+        en=(
+            "Applied penalties marked paid: {penalty_count} totaling "
+            "{penalty_amount} {currency}."
+        ),
+        placeholders=("penalty_count", "penalty_amount", "currency"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_penalties_already_paid",
+        uk="Застосовані штрафи вже сплачені або більше не очікують оплати.",
+        ru="Применённые штрафы уже оплачены или больше не ожидают оплаты.",
+        en="Applied penalties are already paid or no longer awaiting payment.",
+        editable=False,
+    ),
+    _definition(
         "master.workspace_no_show_penalty_confirm",
         uk=("Створити для {client_name} штраф за неявку {penalty_amount} {currency}?"),
         ru=("Создать для {client_name} штраф за неявку {penalty_amount} {currency}?"),

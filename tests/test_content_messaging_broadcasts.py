@@ -128,6 +128,10 @@ def test_content_template_override_validation_and_language_fallback(content_cont
         key="profile.edit_data",
         language="en",
     )
+    penalty_payment_template = SystemTemplate.objects.get(
+        key="master.workspace_penalty_payment_confirm",
+        language="en",
+    )
     assert required_field_template.editable is False
     assert required_field_template.placeholder_allowlist == ["missing_fields"]
     assert "comment" in final_confirm_template.placeholder_allowlist
@@ -142,6 +146,13 @@ def test_content_template_override_validation_and_language_fallback(content_cont
     assert marketing_preferences_template.placeholder_allowlist == ["marketing_status"]
     assert profile_edit_template.editable is False
     assert profile_edit_template.placeholder_allowlist == ["name", "phone", "extra_text"]
+    assert penalty_payment_template.editable is False
+    assert penalty_payment_template.placeholder_allowlist == [
+        "client_name",
+        "penalty_count",
+        "penalty_amount",
+        "currency",
+    ]
 
     override = set_partner_template_override(
         actor=created.owner,

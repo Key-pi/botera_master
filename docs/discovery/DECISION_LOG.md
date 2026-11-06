@@ -4,6 +4,7 @@ Status: discovery approved on 2026-08-07.
 
 ## CONFIRMED
 
+- 2026-11-06: The master Telegram appointment detail shows the combined applied-penalty amount and offers a separate confirmed action that atomically marks every still-active application on that appointment paid. Completing an appointment never implies payment; duplicate payment callbacks are idempotent, and existing per-penalty audit and client notification behavior remains authoritative.
 - 2026-11-05: The client Telegram profile exposes partner-scoped marketing preferences. Unsubscribing changes only `ClientProfile.marketing_opt_out`; appointment notifications and manual master messages remain enabled, and the client can subscribe again from the same screen.
 - 2026-11-05: The client Telegram profile exposes outstanding penalties separately from appointment history. The list includes unpaid and applied-but-unsettled debt, excludes paid/waived penalties, paginates at five rows, shows the full outstanding total, and offers the general contact-master action.
 - 2026-11-05: A client may edit their partner-scoped name, phone, and `extra_client_text` from the Telegram profile. These narrow runtime services cannot edit `private_master_note`; explicit clear actions are available for optional fields, and the same Telegram identity's profiles under other partners remain unchanged.

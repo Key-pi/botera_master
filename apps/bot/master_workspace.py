@@ -26,9 +26,11 @@ from apps.appointments.services import (
 from apps.bot.master import master_booking_request_markup
 from apps.bot.master_reschedule import master_reschedule_start_callback
 from apps.finance.models import PartnerPenaltySettings, Penalty
+from apps.finance.selectors import active_penalty_applications_for_appointment
 from apps.finance.services import (
     create_late_arrival_penalty_for_appointment,
     create_no_show_penalty_for_appointment,
+    settle_active_penalty_applications_for_appointment,
 )
 from apps.messaging.services import create_master_reply_to_client
 from apps.partners.models import SUPPORTED_PARTNER_LANGUAGES, Partner
@@ -91,6 +93,15 @@ class MasterAppointmentPage:
     @property
     def indicator(self) -> str:
         return f"{self.page}/{self.total_pages}"
+
+
+@dataclass(frozen=True, slots=True)
+class MasterAppliedPenaltySummary:
+    """Active applied penalties that the master may explicitly mark paid."""
+
+    count: int
+    amount: int
+    currency: str
 
 
 def build_master_workspace_reply(
@@ -255,6 +266,15 @@ def build_master_appointment_detail_reply(
             "comment": comment_block,
         },
     )
+    if appointment.penalties_total_amount:
+        applied_amount = Money(
+            amount=appointment.penalties_total_amount,
+            currency=appointment.currency,
+        ).to_major_decimal()
+        text = (
+            f"{text}\n{_label('applied_penalties', language)}: "
+            f"{applied_amount} {appointment.currency}"
+        )
     rows: list[list[InlineKeyboardButton]] = []
     if appointment.status == Appointment.Status.REQUESTED:
         rows.extend(
@@ -326,6 +346,28 @@ def build_master_appointment_detail_reply(
                     ),
                     callback_data=_appointment_callback(
                         "late",
+                        appointment=appointment,
+                        period=return_period,
+                        page=return_page,
+                    ),
+                )
+            ]
+        )
+    active_penalties = _active_applied_penalty_summary(appointment)
+    if active_penalties is not None:
+        amount = Money(
+            amount=active_penalties.amount,
+            currency=active_penalties.currency,
+        ).to_major_decimal()
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{_label('mark_penalties_paid', language)} · "
+                        f"{amount} {active_penalties.currency}"
+                    ),
+                    callback_data=_appointment_callback(
+                        "pay",
                         appointment=appointment,
                         period=return_period,
                         page=return_page,
@@ -462,6 +504,127 @@ def transition_master_appointment_status_reply(
         language=partner.default_language,
         context={"status": _status_label(stored.status, partner.default_language)},
     )
+    return BotMasterWorkspaceReply(
+        text=f"{confirmation}\n\n{details.text}",
+        reply_markup=details.reply_markup,
+    )
+
+
+def build_master_penalty_payment_confirmation_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+) -> BotMasterWorkspaceReply:
+    """Require confirmation before settling applied penalties from Telegram."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    summary = _active_applied_penalty_summary(appointment)
+    if summary is None:
+        raise ValidationError({"penalties": "No active applied penalties remain."})
+
+    amount = Money(
+        amount=summary.amount,
+        currency=summary.currency,
+    ).to_major_decimal()
+    language = partner.default_language
+    return BotMasterWorkspaceReply(
+        text=_render(
+            partner=partner,
+            key="master.workspace_penalty_payment_confirm",
+            language=language,
+            context={
+                "client_name": appointment.client_profile.display_name,
+                "penalty_count": str(summary.count),
+                "penalty_amount": str(amount),
+                "currency": summary.currency,
+            },
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_label("mark_penalties_paid", language),
+                        callback_data=_appointment_callback(
+                            "paygo",
+                            appointment=appointment,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=_label("back", language),
+                        callback_data=_view_callback(
+                            appointment_id=appointment.id,
+                            period=return_period,
+                            page=return_page,
+                        ),
+                    )
+                ],
+                [_main_button(language)],
+            ]
+        ),
+    )
+
+
+def settle_master_appointment_penalties_reply(
+    *,
+    partner: Partner,
+    actor: User,
+    appointment_id: UUID,
+    return_period: str,
+    return_page: int = 1,
+) -> BotMasterWorkspaceReply:
+    """Settle all active applications through the finance owner service."""
+
+    ensure_partner_access(actor, partner)
+    _validate_period(return_period)
+    appointment = _workspace_appointment(
+        partner=partner,
+        appointment_id=appointment_id,
+    )
+    settled = settle_active_penalty_applications_for_appointment(
+        actor=actor,
+        appointment=appointment,
+    )
+    details = build_master_appointment_detail_reply(
+        partner=partner,
+        actor=actor,
+        appointment_id=appointment.id,
+        return_period=return_period,
+        return_page=return_page,
+    )
+    language = partner.default_language
+    if not settled:
+        confirmation = _render(
+            partner=partner,
+            key="master.workspace_penalties_already_paid",
+            language=language,
+        )
+    else:
+        amount = sum(application.amount_snapshot for application in settled)
+        currency = settled[0].currency
+        confirmation = _render(
+            partner=partner,
+            key="master.workspace_penalties_paid",
+            language=language,
+            context={
+                "penalty_count": str(len(settled)),
+                "penalty_amount": str(
+                    Money(amount=amount, currency=currency).to_major_decimal()
+                ),
+                "currency": currency,
+            },
+        )
     return BotMasterWorkspaceReply(
         text=f"{confirmation}\n\n{details.text}",
         reply_markup=details.reply_markup,
@@ -923,6 +1086,17 @@ def master_workspace_reply_from_callback_data(
         if parts[1] == "penalty":
             return build_master_no_show_penalty_confirmation_reply(**kwargs)
         return create_master_no_show_penalty_reply(**kwargs)
+    if len(parts) == 5 and parts[1] in {"pay", "paygo"}:
+        kwargs = {
+            "partner": partner,
+            "actor": actor,
+            "appointment_id": _parse_uuid(parts[2]),
+            "return_period": parts[3],
+            "return_page": _parse_page(parts[4]),
+        }
+        if parts[1] == "pay":
+            return build_master_penalty_payment_confirmation_reply(**kwargs)
+        return settle_master_appointment_penalties_reply(**kwargs)
     if len(parts) == 5 and parts[1] == "message":
         return build_master_appointment_message_prompt_reply(
             partner=partner,
@@ -1143,6 +1317,21 @@ def _available_late_arrival_penalty_settings(
     if appointment.source_penalties.filter(reason=Penalty.Reason.LATE_ARRIVAL).exists():
         return None
     return settings
+
+
+def _active_applied_penalty_summary(
+    appointment: Appointment,
+) -> MasterAppliedPenaltySummary | None:
+    applications = tuple(
+        active_penalty_applications_for_appointment(appointment=appointment)
+    )
+    if not applications:
+        return None
+    return MasterAppliedPenaltySummary(
+        count=len(applications),
+        amount=sum(application.amount_snapshot for application in applications),
+        currency=appointment.currency,
+    )
 
 
 def _parse_late_arrival_input(value: str) -> tuple[int, str]:
@@ -1386,6 +1575,16 @@ def _label(key: str, language: str) -> str:
             "uk": "Зафіксувати запізнення",
             "ru": "Зафиксировать опоздание",
             "en": "Record late arrival",
+        },
+        "applied_penalties": {
+            "uk": "Застосовані штрафи",
+            "ru": "Применённые штрафы",
+            "en": "Applied penalties",
+        },
+        "mark_penalties_paid": {
+            "uk": "Позначити штрафи сплаченими",
+            "ru": "Отметить штрафы оплаченными",
+            "en": "Mark penalties paid",
         },
         "create_penalty": {
             "uk": "Створити штраф",

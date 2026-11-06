@@ -360,6 +360,55 @@ def settle_penalty_application(
     return application
 
 
+def settle_active_penalty_applications_for_appointment(
+    *,
+    actor: User,
+    appointment: Appointment,
+) -> tuple[PenaltyApplication, ...]:
+    """Atomically mark every active penalty application on one appointment paid."""
+
+    ensure_partner_access(actor, appointment.partner)
+    settled_at = timezone.now()
+    with transaction.atomic():
+        locked_appointment = Appointment.objects.select_for_update().get(
+            id=appointment.id,
+            partner=appointment.partner,
+        )
+        applications = list(
+            PenaltyApplication.objects.select_for_update()
+            .filter(
+                partner=appointment.partner,
+                appointment=locked_appointment,
+                status=PenaltyApplication.Status.ACTIVE,
+            )
+            .order_by("created_at", "id")
+        )
+        if not applications:
+            return ()
+
+        penalty_ids = [application.penalty_id for application in applications]
+        penalties_by_id = {
+            penalty.id: penalty
+            for penalty in Penalty.objects.select_for_update().filter(
+                partner=appointment.partner,
+                id__in=penalty_ids,
+            )
+        }
+        if len(penalties_by_id) != len(set(penalty_ids)):
+            raise ValidationError({"penalties": "One or more applied penalties were not found."})
+
+        for application in applications:
+            application.appointment = locked_appointment
+            _settle_locked_application(
+                application=application,
+                penalty=penalties_by_id[application.penalty_id],
+                settled_at=settled_at,
+                actor=actor,
+            )
+
+    return tuple(applications)
+
+
 def release_penalty_application(
     *,
     actor: User,

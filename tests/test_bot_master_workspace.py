@@ -40,8 +40,12 @@ from apps.clients.services import (
     resolve_client_profile_for_telegram_identity,
     upsert_telegram_identity,
 )
-from apps.finance.models import Penalty
-from apps.finance.services import update_penalty_settings
+from apps.finance.models import Penalty, PenaltyApplication
+from apps.finance.services import (
+    apply_penalties_to_appointment,
+    create_penalty,
+    update_penalty_settings,
+)
 from apps.messaging.models import ConversationMessage
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.selectors import default_booking_resource_for_partner
@@ -344,6 +348,93 @@ def test_master_workspace_status_actions_require_confirmation_and_use_owner_serv
     assert appointment.status == Appointment.Status.COMPLETED
     assert "Статус запису змінено: завершено" in completed.text
     assert not any(callback.startswith("mw:status:") for callback in _callbacks(completed))
+
+
+@pytest.mark.django_db
+def test_master_workspace_settles_applied_penalties_only_after_confirmation(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    now = timezone.now()
+    client = _client(context, 46)
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=client,
+        start_at=now - timedelta(hours=2),
+        service_items=[AppointmentServiceItemInput(service=context["service"])],
+    )
+    penalties = [
+        create_penalty(
+            actor=context["owner"],
+            partner=context["partner"],
+            client_profile=client,
+            reason=reason,
+            amount=amount,
+        )
+        for reason, amount in (
+            (Penalty.Reason.LATE_CANCEL, 5_000),
+            (Penalty.Reason.LATE_ARRIVAL, 2_000),
+        )
+    ]
+    applications = apply_penalties_to_appointment(
+        actor=context["owner"],
+        appointment=appointment,
+        penalties=penalties,
+    )
+
+    completed = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:statusgo:{appointment.id.hex}:c:d0:1",
+    )
+
+    payment_callback = f"mw:pay:{appointment.id.hex}:d0:1"
+    assert "Застосовані штрафи: 70.00 UAH" in completed.text
+    assert payment_callback in _callbacks(completed)
+    assert all(
+        application.status == PenaltyApplication.Status.ACTIVE
+        for application in PenaltyApplication.objects.filter(
+            id__in=[application.id for application in applications]
+        )
+    )
+
+    confirmation = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=payment_callback,
+    )
+    assert "2 на суму 70.00 UAH" in confirmation.text
+    assert f"mw:paygo:{appointment.id.hex}:d0:1" in _callbacks(confirmation)
+    assert Penalty.objects.filter(
+        id__in=[penalty.id for penalty in penalties],
+        status=Penalty.Status.APPLIED_TO_APPOINTMENT,
+    ).count() == 2
+
+    paid = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:paygo:{appointment.id.hex}:d0:1",
+    )
+
+    assert "Застосовані штрафи позначено сплаченими: 2" in paid.text
+    assert payment_callback not in _callbacks(paid)
+    assert Penalty.objects.filter(
+        id__in=[penalty.id for penalty in penalties],
+        status=Penalty.Status.PAID,
+    ).count() == 2
+    assert PenaltyApplication.objects.filter(
+        id__in=[application.id for application in applications],
+        status=PenaltyApplication.Status.SETTLED,
+    ).count() == 2
+
+    repeated = master_workspace_reply_from_callback_data(
+        partner=context["partner"],
+        actor=context["owner"],
+        data=f"mw:paygo:{appointment.id.hex}:d0:1",
+    )
+    assert "вже сплачені" in repeated.text
 
 
 @pytest.mark.django_db
