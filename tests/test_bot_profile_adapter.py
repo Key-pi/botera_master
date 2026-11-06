@@ -509,6 +509,39 @@ def test_profile_future_history_and_details_are_paginated(
 
 
 @pytest.mark.django_db
+def test_profile_details_show_service_snapshot_and_master_override(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=profile_start,
+        service_items=[
+            AppointmentServiceItemInput(
+                service=context["service"],
+                price_amount=55_000,
+                duration_minutes=75,
+            )
+        ],
+    )
+
+    details = build_appointment_details_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        return_action="future",
+    )
+
+    assert "- Manicure: 550.00 UAH, 75 min (changed by master)" in details.text
+    assert "Services: 550.00" in details.text
+    assert "Penalties: 0.00" in details.text
+
+
+@pytest.mark.django_db
 def test_profile_auto_reschedule_flow_moves_booking_and_notifies_master(
     bot_profile_context,
     profile_start,

@@ -47,6 +47,7 @@ from apps.schedule.models import PartnerScheduleSettings
 from core.money import Money
 from core.timezones import to_partner_time
 
+from .appointment_display import appointment_service_details, telegram_safe_appointment_text
 from .pagination import paginate_telegram_entities
 from .services import render_content_template
 
@@ -599,6 +600,7 @@ def build_appointment_details_reply(
             language=language,
         ),
     )
+    text = telegram_safe_appointment_text(text)
     rows = []
     pending_proposal = _pending_proposal_for_appointment(
         appointment=appointment,
@@ -2044,7 +2046,10 @@ def _appointment_details_context(
     return {
         "date": partner_time.date().isoformat(),
         "time": partner_time.strftime("%H:%M"),
-        "services": _appointment_services_label(appointment),
+        "services": appointment_service_details(
+            appointment=appointment,
+            language=language,
+        ),
         "status": _status_label(appointment.status, language),
         "service_total": _money_label(appointment.service_total_amount),
         "penalties_total": _money_label(appointment.penalties_total_amount),

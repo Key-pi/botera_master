@@ -15,6 +15,7 @@ from apps.appointments.services import (
     AppointmentServiceItemInput,
     create_confirmed_appointment,
     create_requested_appointment,
+    transition_appointment_status,
 )
 from apps.bot.master_workspace import (
     MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
@@ -496,6 +497,45 @@ def test_master_workspace_shows_updates_and_clears_private_appointment_note(
     assert appointment.private_master_note == ""
     assert "Приватна нотатка:" not in cleared.text
     assert note_callback in _callbacks(cleared)
+
+
+@pytest.mark.django_db
+def test_master_workspace_details_show_service_snapshots_and_client_reason(
+    master_workspace_context,
+):
+    context = master_workspace_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=_client(context, 48),
+        start_at=timezone.now() + timedelta(days=3),
+        service_items=[
+            AppointmentServiceItemInput(
+                service=context["service"],
+                price_amount=55_000,
+                duration_minutes=75,
+            )
+        ],
+    )
+    transition_appointment_status(
+        actor=context["owner"],
+        appointment=appointment,
+        new_status=Appointment.Status.CANCELLED_BY_MASTER,
+        reason="Schedule changed",
+    )
+
+    details = build_master_appointment_detail_reply(
+        partner=context["partner"],
+        actor=context["owner"],
+        appointment_id=appointment.id,
+        return_period="u",
+    )
+
+    assert "- Manicure: 550.00 UAH, 75 хв (змінено майстром)" in details.text
+    assert "Послуги: 550.00 UAH" in details.text
+    assert "Застосовані штрафи: 0.00 UAH" in details.text
+    assert "Причина: Schedule changed" in details.text
 
 
 @pytest.mark.django_db

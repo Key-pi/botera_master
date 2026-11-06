@@ -41,6 +41,7 @@ from apps.partners.services import update_partner_settings
 from core.money import Money
 from core.timezones import get_zone, to_partner_time
 
+from .appointment_display import appointment_service_details, telegram_safe_appointment_text
 from .services import render_content_template
 
 MASTER_WORKSPACE_CALLBACK_PREFIX = "mw"
@@ -247,6 +248,31 @@ def build_master_appointment_detail_reply(
     local_end = to_partner_time(appointment.end_at, partner.timezone)
     comment = appointment.client_comment.strip()
     comment_block = f"\n{_label('comment', language)}: {comment}" if comment else ""
+    reason = appointment.client_visible_reason.strip()
+    service_amount = Money(
+        amount=appointment.service_total_amount,
+        currency=appointment.currency,
+    ).to_major_decimal()
+    penalties_amount = Money(
+        amount=appointment.penalties_total_amount,
+        currency=appointment.currency,
+    ).to_major_decimal()
+    services_block = "\n".join(
+        [
+            appointment_service_details(
+                appointment=appointment,
+                language=language,
+            ),
+            (
+                f"{_label('service_total', language)}: "
+                f"{service_amount} {appointment.currency}"
+            ),
+            (
+                f"{_label('applied_penalties', language)}: "
+                f"{penalties_amount} {appointment.currency}"
+            ),
+        ]
+    )
     text = _render(
         partner=partner,
         key="master.workspace_appointment_details",
@@ -258,7 +284,7 @@ def build_master_appointment_detail_reply(
             "date": local_start.date().isoformat(),
             "start_time": local_start.strftime("%H:%M"),
             "end_time": local_end.strftime("%H:%M"),
-            "services": _services_label(appointment),
+            "services": services_block,
             "total": str(
                 Money(
                     amount=appointment.total_amount,
@@ -272,15 +298,9 @@ def build_master_appointment_detail_reply(
     private_note = appointment.private_master_note.strip()
     if private_note:
         text = f"{text}\n{_label('private_note', language)}: {private_note}"
-    if appointment.penalties_total_amount:
-        applied_amount = Money(
-            amount=appointment.penalties_total_amount,
-            currency=appointment.currency,
-        ).to_major_decimal()
-        text = (
-            f"{text}\n{_label('applied_penalties', language)}: "
-            f"{applied_amount} {appointment.currency}"
-        )
+    if reason:
+        text = f"{text}\n{_label('reason', language)}: {reason}"
+    text = telegram_safe_appointment_text(text)
     rows: list[list[InlineKeyboardButton]] = []
     if appointment.status == Appointment.Status.REQUESTED:
         rows.extend(
@@ -1359,11 +1379,6 @@ def _appointment_button_label(appointment: Appointment, *, language: str) -> str
     return f"{marker} {local_start:%d.%m %H:%M} · {client_name}"
 
 
-def _services_label(appointment: Appointment) -> str:
-    names = [item.service_name_snapshot for item in appointment.service_items.all()]
-    return ", ".join(names)
-
-
 def _workspace_appointment(*, partner: Partner, appointment_id: UUID) -> Appointment:
     appointment = appointment_for_partner_by_id(
         partner=partner,
@@ -1699,6 +1714,12 @@ def _label(key: str, language: str) -> str:
         "previous": {"uk": "←", "ru": "←", "en": "←"},
         "next": {"uk": "→", "ru": "→", "en": "→"},
         "comment": {"uk": "Коментар", "ru": "Комментарий", "en": "Comment"},
+        "reason": {"uk": "Причина", "ru": "Причина", "en": "Reason"},
+        "service_total": {
+            "uk": "Послуги",
+            "ru": "Услуги",
+            "en": "Services",
+        },
         "not_set": {"uk": "не вказано", "ru": "не указано", "en": "not set"},
         "client": {"uk": "Клієнт", "ru": "Клиент", "en": "Client"},
         "complete": {"uk": "Завершити", "ru": "Завершить", "en": "Complete"},
