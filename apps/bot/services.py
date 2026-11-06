@@ -562,23 +562,30 @@ def _record_connection_check(
 def seed_system_templates() -> int:
     """Synchronize code-owned MVP content defaults into editable DB records."""
 
-    changed = 0
-    for definition in SYSTEM_TEMPLATE_DEFINITIONS:
-        for language, body in definition.translations.items():
-            template, created = SystemTemplate.objects.update_or_create(
-                key=definition.key,
-                language=language,
-                defaults={
-                    "body": body,
-                    "content_type": definition.content_type,
-                    "editable": definition.editable,
-                    "is_required": definition.is_required,
-                    "placeholder_allowlist": list(definition.placeholders),
-                    "sample_context": dict(definition.sample_context),
-                },
-            )
-            changed += int(created or bool(template.updated_at))
-    return changed
+    synchronized_count = 0
+    with transaction.atomic():
+        for definition in SYSTEM_TEMPLATE_DEFINITIONS:
+            for language, body in definition.translations.items():
+                validate_template_body(
+                    body=body,
+                    allowed_placeholders=definition.placeholders,
+                    sample_context=definition.sample_context,
+                    content_type=definition.content_type,
+                )
+                SystemTemplate.objects.update_or_create(
+                    key=definition.key,
+                    language=language,
+                    defaults={
+                        "body": body,
+                        "content_type": definition.content_type,
+                        "editable": definition.editable,
+                        "is_required": definition.is_required,
+                        "placeholder_allowlist": list(definition.placeholders),
+                        "sample_context": dict(definition.sample_context),
+                    },
+                )
+                synchronized_count += 1
+    return synchronized_count
 
 
 def set_partner_template_override(

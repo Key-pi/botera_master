@@ -1,7 +1,7 @@
 # BoteraMaster MVP Runbook
 
 Status: implemented operational baseline for the approved Pilot Wiring milestone.
-Last updated: 2026-10-29.
+Last updated: 2026-11-06.
 
 This runbook covers the implemented single-host Docker Compose pilot. Durable
 business state remains in PostgreSQL; Redis and Celery transport work but do not
@@ -58,7 +58,8 @@ the admin all exercise the same deployment shape.
    commands in that file. Keep those values stable after storing bot tokens.
 3. Run `./scripts/compose.sh dev up --build -d`.
 4. Inspect `./scripts/compose.sh dev logs init`. The idempotent init service validates
-   bot-token security, runs checks/migrations, synchronizes owner permissions,
+   bot-token security, runs checks/migrations, synchronizes the code-owned multilingual
+   system-template registry and owner permissions,
    and ensures local demo users, catalog, booking settings, and seven upcoming
    availability windows.
 5. Open `http://127.0.0.1:${WEB_PORT_ON_HOST:-8001}/admin/`. Add the real test
@@ -122,8 +123,8 @@ Recommended production flow:
 1. Pull the reviewed revision.
 2. Validate the merged Compose configuration.
 3. Build/start the stack. The one-shot production `init` service runs deployment
-   checks, migrations, and owner permission synchronization before long-running
-   application processes are allowed to start.
+   checks, migrations, system-template synchronization, and owner permission
+   synchronization before long-running application processes are allowed to start.
 4. Inspect service/init health, run the bot runtime dry-run, and run one
    configured partner readiness check.
 5. Inspect health records and recent masked platform diagnostics.

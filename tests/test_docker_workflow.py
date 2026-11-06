@@ -158,3 +158,13 @@ def test_compose_launcher_rejects_unknown_mode() -> None:
 
     assert result.returncode == 2
     assert "Unknown Docker mode: staging" in result.stderr
+
+
+def test_compose_init_syncs_content_after_migrations_before_services_start() -> None:
+    init_script = (REPOSITORY_ROOT / "infrastructure" / "docker" / "init.sh").read_text()
+
+    migration_index = init_script.index("python manage.py migrate --noinput")
+    content_index = init_script.index("python manage.py sync_system_templates")
+    owner_access_index = init_script.index("python manage.py sync_partner_owner_access")
+
+    assert migration_index < content_index < owner_access_index

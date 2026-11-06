@@ -33,6 +33,9 @@ fi
 echo "==> Applying migrations"
 python manage.py migrate --noinput
 
+echo "==> Synchronizing code-owned system templates"
+python manage.py sync_system_templates
+
 echo "==> Synchronizing partner-owner admin access"
 python manage.py sync_partner_owner_access
 
