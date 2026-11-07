@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -168,3 +169,46 @@ def test_compose_init_syncs_content_after_migrations_before_services_start() -> 
     owner_access_index = init_script.index("python manage.py sync_partner_owner_access")
 
     assert migration_index < content_index < owner_access_index
+
+
+def test_postgres_test_settings_keep_compose_database_and_deterministic_language() -> None:
+    environment = {
+        **os.environ,
+        "DJANGO_SETTINGS_MODULE": "core.settings.postgres_test",
+        "POSTGRES_DB": "botera_test_source",
+        "POSTGRES_USER": "botera_test_user",
+        "POSTGRES_PASSWORD": "test-only-password",
+        "POSTGRES_HOST": "postgres",
+        "POSTGRES_PORT": "5432",
+    }
+    script = """
+import json
+import django
+
+django.setup()
+from django.conf import settings
+
+print(json.dumps({
+    "engine": settings.DATABASES["default"]["ENGINE"],
+    "name": settings.DATABASES["default"]["NAME"],
+    "language": settings.LANGUAGE_CODE,
+    "celery_eager": settings.CELERY_TASK_ALWAYS_EAGER,
+}))
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    settings_snapshot = json.loads(result.stdout)
+
+    assert settings_snapshot == {
+        "engine": "django.db.backends.postgresql",
+        "name": "botera_test_source",
+        "language": "en",
+        "celery_eager": True,
+    }

@@ -84,8 +84,14 @@ an isolated PostgreSQL test database and covers backend-specific advisory-lock
 and row-lock behavior that SQLite cannot validate:
 
 ```bash
-./scripts/compose.sh dev exec web pytest -q
+./scripts/compose.sh dev exec web env \
+  DJANGO_SETTINGS_MODULE=core.settings.postgres_test pytest -q
 ```
+
+Do not omit the settings override: the running `web` service normally uses
+`core.settings.local`, including Ukrainian as the interface default. The dedicated
+container test settings keep the Compose PostgreSQL connection while making test
+language, password hashing, and eager Celery behavior deterministic.
 
 PostgreSQL and Redis intentionally have no host ports. For temporary host-side
 CLI access, use:
