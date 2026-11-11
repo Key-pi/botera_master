@@ -429,7 +429,7 @@ def test_finance_report_uses_partner_timezone_and_separates_penalties_and_expens
     finance_context,
 ):
     context = finance_context
-    context["partner"].timezone = "Europe/Kiev"
+    context["partner"].timezone = "Europe/Kyiv"
     context["partner"].save(update_fields=["timezone", "updated_at"])
     completed_start = datetime(2026, 1, 1, 22, 30, tzinfo=datetime_timezone.utc)
     completed = _confirmed(context, completed_start)

@@ -239,7 +239,7 @@ def test_partner_settings_workspace_updates_defaults_and_audit(bot_workspace_con
     assert event.payload_masked == {
         "previous": {
             "name": "Workspace Studio",
-            "timezone": "Europe/Kiev",
+            "timezone": "Europe/Kyiv",
             "default_language": "uk",
         },
         "current": {
@@ -269,7 +269,7 @@ def test_partner_settings_workspace_rejects_unknown_timezone_without_mutation(
     assert response.status_code == 200
     partner.refresh_from_db()
     assert partner.default_language == "uk"
-    assert partner.timezone == "Europe/Kiev"
+    assert partner.timezone == "Europe/Kyiv"
     assert not AuditEvent.objects.filter(
         partner=partner,
         event_type="partner.settings_updated",
@@ -801,7 +801,7 @@ def test_superuser_can_switch_visible_partner_in_workspace(bot_workspace_context
     assert response.status_code == 200
     assert "Workspace Studio" in content
     assert "Foreign Workspace Studio" in content
-    assert "Europe/Kiev" in content
+    assert "Europe/Kyiv" in content
 
 
 @pytest.mark.django_db

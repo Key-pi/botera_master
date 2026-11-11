@@ -27,7 +27,7 @@ class Partner(TimeStampedModel):
         choices=Status.choices,
         default=Status.SETUP_REQUIRED,
     )
-    timezone = models.CharField(_("timezone"), max_length=64, default="Europe/Kiev")
+    timezone = models.CharField(_("timezone"), max_length=64, default="Europe/Kyiv")
     default_language = models.CharField(_("default language"), max_length=8, default="uk")
 
     class Meta:

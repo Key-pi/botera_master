@@ -111,6 +111,18 @@ CELERY_TASK_QUEUES = (
     Queue("broadcasts"),
     Queue("maintenance"),
 )
+CELERY_TASK_ROUTES = {
+    "appointments.expire_pending_proposals": {"queue": "maintenance"},
+    "audit.cleanup_expired_retained_records": {"queue": "maintenance"},
+    "audit.heartbeat": {"queue": "maintenance"},
+    "audit.refresh_worker_health": {"queue": "maintenance"},
+    "broadcasts.dispatch_due_recipients": {"queue": "broadcasts"},
+    "broadcasts.queue_due_campaigns": {"queue": "broadcasts"},
+    "integrations.deliver_pending_events": {"queue": "default"},
+    "messaging.dispatch_queued_conversation_messages": {"queue": "notifications"},
+    "notifications.dispatch_due_notifications": {"queue": "notifications"},
+    "notifications.schedule_morning_digests": {"queue": "notifications"},
+}
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BEAT_SCHEDULE = {
     "dispatch-due-notifications": {

@@ -9,7 +9,7 @@ from apps.integrations.services import (
 )
 
 
-@shared_task(name="integrations.deliver_pending_events", queue="default")
+@shared_task(name="integrations.deliver_pending_events")
 def deliver_pending_events_task() -> int:
     """Dispatch integration events only when an external target is configured.
 

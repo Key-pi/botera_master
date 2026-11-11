@@ -22,6 +22,7 @@ cd "$project_root"
 case "$mode" in
     dev|development)
         env_file=${BOTERA_ENV_FILE:-.env}
+        project_name=${BOTERA_COMPOSE_PROJECT_NAME:-botera-master}
         if [ ! -f "$env_file" ]; then
             printf '%s\n' "Development env file not found: $env_file" >&2
             printf '%s\n' "Create it from .env.example first." >&2
@@ -29,13 +30,14 @@ case "$mode" in
         fi
         export BOTERA_ENV_FILE="$env_file"
         exec docker compose \
-            --project-name botera-master \
+            --project-name "$project_name" \
             --env-file "$env_file" \
             -f docker-compose.yml \
             "$@"
         ;;
     prod|production)
         env_file=${BOTERA_PRODUCTION_ENV_FILE:-.env.production}
+        project_name=${BOTERA_PRODUCTION_COMPOSE_PROJECT_NAME:-botera-master-production}
         if [ ! -f "$env_file" ]; then
             printf '%s\n' "Production env file not found: $env_file" >&2
             printf '%s\n' "Create it from .env.production.example first." >&2
@@ -43,7 +45,7 @@ case "$mode" in
         fi
         export BOTERA_PRODUCTION_ENV_FILE="$env_file"
         exec docker compose \
-            --project-name botera-master-production \
+            --project-name "$project_name" \
             --env-file "$env_file" \
             -f docker-compose.yml \
             -f docker-compose.production.yml \

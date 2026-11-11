@@ -12,7 +12,7 @@ from apps.accounts.services import ensure_partner_access
 from apps.audit.services import record_audit_event
 from apps.partners.models import SUPPORTED_PARTNER_LANGUAGES, Partner
 from apps.partners.setup import get_partner_setup_status
-from core.timezones import DEFAULT_TIMEZONE, get_zone
+from core.timezones import DEFAULT_TIMEZONE, get_zone, normalize_timezone_name
 
 DEFAULT_LANGUAGE = "uk"
 
@@ -40,7 +40,7 @@ def create_partner_with_owner(
 
     _ensure_superuser(actor)
     partner_name = _normalize_partner_name(partner_name)
-    timezone = timezone.strip()
+    timezone = normalize_timezone_name(timezone)
     default_language = default_language.strip().lower()
     _validate_partner_defaults(timezone=timezone, default_language=default_language)
 
@@ -121,7 +121,7 @@ def update_partner_settings(
 
     ensure_partner_access(actor, partner)
     normalized_name = _normalize_partner_name(partner_name) if partner_name is not None else None
-    normalized_timezone = timezone.strip() if timezone is not None else None
+    normalized_timezone = normalize_timezone_name(timezone) if timezone is not None else None
     normalized_language = default_language.strip().lower() if default_language is not None else None
     if normalized_timezone is not None or normalized_language is not None:
         _validate_partner_defaults(

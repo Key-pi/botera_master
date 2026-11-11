@@ -9,7 +9,7 @@ from apps.partners.selectors import active_partners
 from core.timezones import get_zone
 
 
-@shared_task(name="notifications.dispatch_due_notifications", queue="notifications")
+@shared_task(name="notifications.dispatch_due_notifications")
 def dispatch_due_notifications_task() -> int:
     """Dispatch due notifications through the real Telegram delivery adapter."""
 
@@ -17,7 +17,7 @@ def dispatch_due_notifications_task() -> int:
     return summary.sent + summary.failed + summary.queued_for_retry + summary.skipped
 
 
-@shared_task(name="notifications.schedule_morning_digests", queue="notifications")
+@shared_task(name="notifications.schedule_morning_digests")
 def schedule_morning_digests_task() -> int:
     """Schedule one idempotent morning digest per active partner local day."""
 

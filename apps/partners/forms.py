@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import User
 from apps.partners.models import PARTNER_LANGUAGE_CHOICES, Partner
-from core.timezones import get_zone
+from core.timezones import get_zone, normalize_timezone_name
 
 
 class PartnerOnboardingAdminForm(forms.ModelForm):
@@ -32,7 +32,7 @@ class PartnerOnboardingAdminForm(forms.ModelForm):
         fields = ("name", "timezone", "default_language")
 
     def clean_timezone(self) -> str:
-        timezone_name = self.cleaned_data["timezone"].strip()
+        timezone_name = normalize_timezone_name(self.cleaned_data["timezone"])
         try:
             get_zone(timezone_name)
         except Exception as exc:

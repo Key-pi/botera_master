@@ -21,6 +21,8 @@ Pilot Wiring milestone was implemented on 2026-11-01 after explicit user
 approval with `PILOT_WIRING_APPROVED`.
 Production ingress dependencies and the Pilot Wiring ingress slice were
 approved on 2026-10-29 with `PRODUCTION_INGRESS_DEPENDENCIES_APPROVED`.
+Pilot Acceptance And Release Hardening milestone implementation completed on
+2026-11-11 after explicit approval with `PILOT_ACCEPTANCE_APPROVED`.
 Application code is allowed only within the currently approved milestone scope.
 
 ## System summary
@@ -48,6 +50,7 @@ Read these before implementation work:
 - architecture decisions: `docs/spec/ARCHITECTURE_DECISIONS.md`
 - data map: `docs/spec/SCHEMA_DRAFT.md`
 - implementation sequence: `docs/spec/IMPLEMENTATION_PLAN.md`
+- pilot acceptance: `docs/spec/PILOT_ACCEPTANCE.md`
 - operational direction: `docs/spec/RUNBOOK_DRAFT.md`
 - diagnostics direction: `docs/spec/DIAGNOSTICS_TAXONOMY.md`
 - ecosystem guardrails: `docs/spec/ECOSYSTEM_GUARDRAILS_DRAFT.md`

@@ -84,6 +84,7 @@ def test_superuser_onboards_partner_and_owner_through_admin(client) -> None:
     partner = Partner.objects.get(name="Fresh Pilot")
     owner = User.objects.get(username="fresh-owner")
     assert partner.status == Partner.Status.SETUP_REQUIRED
+    assert partner.timezone == "Europe/Kyiv"
     assert owner.check_password("Strong-pilot-password-482")
     assert owner.is_staff is True
     assert PartnerMembership.objects.filter(user=owner, partner=partner, is_active=True).exists()
@@ -182,6 +183,30 @@ def test_partner_settings_service_enforces_scope_and_supported_language() -> Non
     assert first.partner.default_language == "uk"
     assert second.partner.default_language == "uk"
     assert not AuditEvent.objects.filter(event_type="partner.settings_updated").exists()
+
+
+@pytest.mark.django_db
+def test_partner_settings_service_normalizes_legacy_kyiv_timezone() -> None:
+    superuser = User.objects.create_superuser(username="root", password="secret")
+    created = create_partner_with_owner(
+        actor=superuser,
+        partner_name="Legacy Timezone",
+        owner_username="legacy-timezone-owner",
+        owner_password="secret",
+        timezone="Europe/Kiev",
+    )
+
+    assert created.partner.timezone == "Europe/Kyiv"
+
+    created.partner.timezone = "Europe/Warsaw"
+    created.partner.save(update_fields=["timezone", "updated_at"])
+    updated = update_partner_settings(
+        actor=created.owner,
+        partner=created.partner,
+        timezone=" Europe/Kiev ",
+    )
+
+    assert updated.timezone == "Europe/Kyiv"
 
 
 @pytest.mark.django_db

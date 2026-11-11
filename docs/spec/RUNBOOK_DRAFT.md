@@ -93,6 +93,19 @@ Do not omit the settings override: the running `web` service normally uses
 container test settings keep the Compose PostgreSQL connection while making test
 language, password hashing, and eager Celery behavior deterministic.
 
+Rehearse a completely fresh local installation in an isolated Compose project
+and isolated volumes without touching the active pilot stack:
+
+```bash
+./scripts/check_clean_bootstrap.sh .env
+```
+
+The script accepts only project names beginning with
+`botera-master-acceptance`, uses host port `18081` by default, reruns the
+idempotent startup synchronizers, checks migrations/health, and removes its
+containers and volumes on exit. Set `KEEP_ACCEPTANCE_STACK=true` only when a
+failed rehearsal must remain available for debugging.
+
 PostgreSQL and Redis intentionally have no host ports. For temporary host-side
 CLI access, use:
 
@@ -165,10 +178,17 @@ script writes to the ignored `backups/` directory by default and immediately
 checks that `pg_restore` can read the archive catalog.
 
 ```bash
-./scripts/backup_postgres.sh
-BACKUP_DIR=/secure/off-host/path ./scripts/backup_postgres.sh
-./scripts/verify_postgres_backup.sh backups/botera_master_<timestamp>.dump
+./scripts/backup_postgres.sh dev
+BACKUP_DIR=/secure/off-host/path ./scripts/backup_postgres.sh prod
+./scripts/verify_postgres_backup.sh prod backups/botera_master_<timestamp>.dump
+./scripts/rehearse_postgres_restore.sh prod backups/botera_master_<timestamp>.dump
 ```
+
+The mode argument is mandatory. It routes every database command through the
+same mode-safe Compose launcher as deploy/restart operations, preventing a
+production backup from silently targeting the local `botera-master` project.
+Backups are written to a private partial file, verified, and only then renamed
+to the final `0600` archive.
 
 Rules:
 - Copy successful backups off the VPS and protect them like production data;
@@ -183,7 +203,10 @@ Rules:
 - Never commit backup archives or place them under the repository working tree
   for long-term storage.
 
-Example rehearsal against a separate database inside the PostgreSQL container:
+The rehearsal script always uses the fixed temporary database
+`botera_master_restore_check`, verifies that the restored Django migration
+history is readable, and drops the database on success or failure. Its
+equivalent low-level flow is:
 
 ```bash
 ./scripts/compose.sh prod exec -T postgres sh -c \

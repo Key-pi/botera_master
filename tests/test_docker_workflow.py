@@ -161,6 +161,54 @@ def test_compose_launcher_rejects_unknown_mode() -> None:
     assert "Unknown Docker mode: staging" in result.stderr
 
 
+@pytest.mark.skipif(shutil.which("docker") is None, reason="Docker Compose is unavailable")
+def test_compose_launcher_allows_isolated_acceptance_project() -> None:
+    environment = {
+        **os.environ,
+        "BOTERA_ENV_FILE": ".env.example",
+        "BOTERA_COMPOSE_PROJECT_NAME": "botera-master-acceptance-test",
+    }
+    result = subprocess.run(
+        [
+            str(REPOSITORY_ROOT / "scripts" / "compose.sh"),
+            "dev",
+            "config",
+            "--format",
+            "json",
+            "--no-env-resolution",
+        ],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout)["name"] == "botera-master-acceptance-test"
+
+
+def test_clean_bootstrap_script_guards_its_project_namespace(tmp_path: Path) -> None:
+    environment = {
+        **os.environ,
+        "BOTERA_ACCEPTANCE_PROJECT_NAME": "botera-master",
+    }
+
+    result = subprocess.run(
+        [
+            str(REPOSITORY_ROOT / "scripts" / "check_clean_bootstrap.sh"),
+            str(REPOSITORY_ROOT / ".env.example"),
+        ],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "must start with botera-master-acceptance" in result.stderr
+
+
 def test_compose_init_syncs_content_after_migrations_before_services_start() -> None:
     init_script = (REPOSITORY_ROOT / "infrastructure" / "docker" / "init.sh").read_text()
 
@@ -169,6 +217,14 @@ def test_compose_init_syncs_content_after_migrations_before_services_start() -> 
     owner_access_index = init_script.index("python manage.py sync_partner_owner_access")
 
     assert migration_index < content_index < owner_access_index
+
+
+def test_docker_image_reinstalls_and_validates_timezone_database() -> None:
+    dockerfile = (REPOSITORY_ROOT / "infrastructure" / "docker" / "Dockerfile").read_text()
+
+    assert "--reinstall tzdata" in dockerfile
+    assert "rm -rf /var/lib/apt/lists/*" in dockerfile
+    assert "ZoneInfo('Europe/Kyiv')" in dockerfile
 
 
 def test_postgres_test_settings_keep_compose_database_and_deterministic_language() -> None:
@@ -211,4 +267,24 @@ print(json.dumps({
         "name": "botera_test_source",
         "language": "en",
         "celery_eager": True,
+    }
+
+
+def test_celery_task_routes_keep_delivery_work_isolated() -> None:
+    from core.settings import base
+
+    assert base.CELERY_TASK_ROUTES["notifications.dispatch_due_notifications"] == {
+        "queue": "notifications"
+    }
+    assert base.CELERY_TASK_ROUTES["messaging.dispatch_queued_conversation_messages"] == {
+        "queue": "notifications"
+    }
+    assert base.CELERY_TASK_ROUTES["broadcasts.dispatch_due_recipients"] == {
+        "queue": "broadcasts"
+    }
+    assert base.CELERY_TASK_ROUTES["audit.cleanup_expired_retained_records"] == {
+        "queue": "maintenance"
+    }
+    assert base.CELERY_TASK_ROUTES["integrations.deliver_pending_events"] == {
+        "queue": "default"
     }

@@ -565,6 +565,50 @@ Do not cut:
 - reminder idempotency
 - partner-scoped client profiles
 
+## Pilot Acceptance And Release Hardening Milestone
+
+Status: completed on 2026-11-11 after explicit approval with
+`PILOT_ACCEPTANCE_APPROVED` and the evidence recorded in
+`PILOT_ACCEPTANCE.md`.
+
+Goal:
+- Prove the implemented MVP as a reproducible pilot candidate before adding
+  more product scope.
+- Turn runbook-only expectations into executable checks where practical.
+- Find and repair integration, restart, deployment, and real Telegram-flow
+  defects without redesigning approved business behavior.
+
+Scope:
+- Traceable acceptance coverage for client booking, master operations,
+  notifications, proposals, messaging, penalties, broadcasts, and admin.
+- Clean Docker Compose bootstrap against PostgreSQL and Redis.
+- Restart/resume and idempotency checks for runner, beat, and isolated workers.
+- Production Compose/settings validation, ingress smoke checks, and backup/
+  restore rehearsal safety.
+- Tenant-isolation and sensitive-data regression checks on pilot-critical paths.
+- Live test-bot verification where an external Telegram interaction is needed.
+
+Boundaries:
+- No new product feature is implied by this milestone.
+- Fixes stay inside already approved MVP behavior unless the user explicitly
+  approves a product change.
+- External Telegram actions that cannot be deterministic in CI remain an
+  explicit manual evidence item; domain and adapter behavior still require
+  automated coverage.
+- Destructive restore tests must use a separate temporary database and must
+  never target the active pilot database.
+
+Exit criteria:
+- The acceptance matrix in `PILOT_ACCEPTANCE.md` has automated or explicit
+  manual evidence for every release-critical scenario.
+- Host and Compose/PostgreSQL suites pass from the documented commands.
+- A clean Compose project reaches healthy services and passes readiness checks.
+- Restarted workers and bot runner resume from durable state without duplicate
+  business delivery.
+- Production Compose configuration validates with safe example inputs.
+- Backup verification and isolated restore rehearsal succeed.
+- Remaining limitations are documented and do not block the first pilot.
+
 ## Approval Checklist Review
 
 Recommended approval state:

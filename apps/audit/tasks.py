@@ -10,21 +10,21 @@ from apps.audit.services import (
 )
 
 
-@shared_task(name="audit.cleanup_expired_retained_records", queue="maintenance")
+@shared_task(name="audit.cleanup_expired_retained_records")
 def cleanup_expired_retained_records_task() -> int:
     """Delete expired cleanup-eligible records from the approved allowlist."""
 
     return cleanup_expired_retained_records().total_deleted
 
 
-@shared_task(name="audit.refresh_worker_health", queue="maintenance")
+@shared_task(name="audit.refresh_worker_health")
 def refresh_worker_health_task() -> int:
     """Recompute current worker health statuses from stale heartbeat thresholds."""
 
     return refresh_worker_heartbeat_statuses()
 
 
-@shared_task(name="audit.heartbeat", queue="maintenance")
+@shared_task(name="audit.heartbeat")
 def heartbeat_task(component: str = PlatformDiagnostic.Component.DEFAULT_WORKER) -> str:
     """Record a simple heartbeat for low-priority maintenance/default worker checks."""
 

@@ -10,6 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends --reinstall tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -c "from zoneinfo import ZoneInfo; ZoneInfo('Europe/Kyiv')"
+
 RUN pip install --upgrade pip
 
 COPY pyproject.toml README.md /app/

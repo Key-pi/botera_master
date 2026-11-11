@@ -131,6 +131,7 @@ pip-selfcheck.json
 .idea/**/uiDesigner.xml
 .idea/**/dbnavigator.xml
 backups/
+.playwright-cli/
 
 # Gradle
 .idea/**/gradle.xml
