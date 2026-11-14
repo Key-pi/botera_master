@@ -1,4 +1,7 @@
+import asyncio
 from datetime import time, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -22,6 +25,7 @@ from apps.appointments.services import (
     transition_appointment_status,
 )
 from apps.bot.models import BotInstance, PartnerTelegramContact, PartnerTelegramContactLink
+from apps.bot.routers import ClientProfileEditState, build_partner_router
 from apps.bot.selectors import primary_master_telegram_contact
 from apps.bot.services import (
     bind_master_contact_from_start_payload,
@@ -48,13 +52,17 @@ from apps.messaging.models import ConversationMessage
 from apps.messaging.services import create_client_message_to_master, create_master_reply_to_client
 from apps.messaging.tasks import dispatch_queued_conversation_messages_task
 from apps.notifications.models import PartnerNotificationSettings, ScheduledNotification
+from apps.notifications.services import schedule_client_schedule_conflict_reschedule_request
 from apps.notifications.tasks import (
     dispatch_due_notifications_task,
     schedule_morning_digests_task,
 )
 from apps.partners.models import Partner
 from apps.partners.services import create_partner_with_owner
-from apps.schedule.selectors import default_booking_resource_for_partner
+from apps.schedule.selectors import (
+    default_booking_resource_for_partner,
+    schedule_conflicts_for_partner_period,
+)
 from core.timezones import get_zone
 
 VALID_TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
@@ -196,7 +204,229 @@ def test_start_command_without_admin_payload_resolves_partner_client_profile(
 
     assert result.master_contact_bound is False
     assert result.client_profile_id
+    assert result.client_language == "ru"
     assert result.text == f"Добро пожаловать в бот {created.partner.name}."
+
+
+def test_start_router_sends_client_navigation_with_welcome(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(
+            id=555008,
+            username="client",
+            first_name="Client",
+            last_name="",
+            is_premium=False,
+            language_code="ru",
+        ),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+
+    monkeypatch.setattr(
+        "apps.bot.routers.handle_start_command",
+        lambda **_kwargs: SimpleNamespace(
+            text="Добро пожаловать в бот Pilot Partner.",
+            client_language="ru",
+            master_contact_bound=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers.master_telegram_contact_for_user",
+        lambda **_kwargs: None,
+    )
+    router = build_partner_router()
+    start_handler = next(
+        handler.callback
+        for handler in router.message.handlers
+        if handler.callback.__name__ == "start_handler"
+    )
+
+    asyncio.run(
+        start_handler(
+            message=message,
+            command=SimpleNamespace(args=None),
+            partner=partner,
+            state=state,
+        )
+    )
+
+    state.clear.assert_awaited_once()
+    message.answer.assert_awaited_once()
+    text, = message.answer.await_args.args
+    reply_markup = message.answer.await_args.kwargs["reply_markup"]
+    callbacks = {
+        button.callback_data
+        for row in reply_markup.inline_keyboard
+        for button in row
+    }
+    assert text == "Добро пожаловать в бот Pilot Partner."
+    assert callbacks == {
+        "bk:cat:1",
+        "pf:contact",
+        "pf:edit",
+        "pf:future:1",
+        "pf:history:1",
+        "pf:lang",
+        "pf:marketing",
+        "pf:penalties:1",
+    }
+
+
+def test_profile_edit_callback_enters_field_input_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    profile = SimpleNamespace(language="en")
+    reply_markup = SimpleNamespace(inline_keyboard=[])
+    callback = SimpleNamespace(
+        data="pf:edit:name",
+        from_user=SimpleNamespace(id=555010),
+        message=SimpleNamespace(edit_text=AsyncMock()),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(set_state=AsyncMock(), clear=AsyncMock())
+
+    monkeypatch.setattr(
+        "apps.bot.routers._client_profile_for_callback",
+        AsyncMock(return_value=profile),
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers._profile_reply_from_callback_data",
+        lambda **_kwargs: SimpleNamespace(
+            text="Send a new name",
+            reply_markup=reply_markup,
+        ),
+    )
+    router = build_partner_router()
+    profile_handler = next(
+        handler.callback
+        for handler in router.callback_query.handlers
+        if handler.callback.__name__ == "profile_callback_handler"
+    )
+
+    asyncio.run(
+        profile_handler(
+            callback=callback,
+            partner=partner,
+            state=state,
+        )
+    )
+
+    state.set_state.assert_awaited_once_with(ClientProfileEditState.waiting_for_name)
+    state.clear.assert_not_awaited()
+    callback.message.edit_text.assert_awaited_once_with(
+        "Send a new name",
+        reply_markup=reply_markup,
+    )
+    callback.answer.assert_awaited_once()
+
+
+def test_profile_edit_message_updates_field_and_clears_state(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    profile = SimpleNamespace(language="en")
+    reply_markup = SimpleNamespace(inline_keyboard=[])
+    message = SimpleNamespace(
+        text="New client name",
+        contact=None,
+        from_user=SimpleNamespace(id=555011),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+    update_reply = Mock(
+        return_value=SimpleNamespace(
+            text="Profile updated",
+            reply_markup=reply_markup,
+        )
+    )
+
+    monkeypatch.setattr(
+        "apps.bot.routers._client_profile_for_message",
+        AsyncMock(return_value=profile),
+    )
+    monkeypatch.setattr("apps.bot.routers.update_profile_field_reply", update_reply)
+    router = build_partner_router()
+    name_handler = next(
+        handler.callback
+        for handler in router.message.handlers
+        if handler.callback.__name__ == "client_profile_name_handler"
+    )
+
+    asyncio.run(
+        name_handler(
+            message=message,
+            partner=partner,
+            state=state,
+        )
+    )
+
+    update_reply.assert_called_once_with(
+        partner=partner,
+        client_profile=profile,
+        field="name",
+        value="New client name",
+    )
+    state.clear.assert_awaited_once()
+    message.answer.assert_awaited_once_with(
+        "Profile updated",
+        reply_markup=reply_markup,
+    )
+
+
+def test_unmatched_client_message_returns_main_menu(monkeypatch):
+    partner = SimpleNamespace(default_language="uk")
+    profile = SimpleNamespace(language="uk")
+    reply_markup = SimpleNamespace(inline_keyboard=[])
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(
+            id=555009,
+            username="client",
+            first_name="Client",
+            last_name="",
+            is_premium=False,
+            language_code="uk",
+        ),
+        answer=AsyncMock(),
+    )
+    state = SimpleNamespace(clear=AsyncMock())
+    profile_resolver = AsyncMock(return_value=profile)
+    master_resolver = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        "apps.bot.routers._master_contact_for_message",
+        master_resolver,
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers._client_profile_for_message",
+        profile_resolver,
+    )
+    monkeypatch.setattr(
+        "apps.bot.routers.build_profile_main_reply",
+        lambda **_kwargs: SimpleNamespace(
+            text="Головне меню",
+            reply_markup=reply_markup,
+        ),
+    )
+    router = build_partner_router()
+    fallback_handler = next(
+        handler.callback
+        for handler in router.message.handlers
+        if handler.callback.__name__ == "fallback_client_menu_handler"
+    )
+
+    asyncio.run(
+        fallback_handler(
+            message=message,
+            partner=partner,
+            state=state,
+        )
+    )
+
+    state.clear.assert_awaited_once()
+    master_resolver.assert_awaited_once_with(message=message, partner=partner)
+    profile_resolver.assert_awaited_once_with(message=message, partner=partner)
+    message.answer.assert_awaited_once_with(
+        "Головне меню",
+        reply_markup=reply_markup,
+    )
 
 
 @pytest.mark.django_db
@@ -1083,6 +1313,93 @@ def test_client_reschedule_request_and_acceptance_dispatch_to_each_side(
             "text": "Новий час підтверджено: "
             f"{local_start.date().isoformat()} о {local_start.strftime('%H:%M')}, Manicure.",
         }
+    ]
+
+
+@pytest.mark.django_db
+def test_schedule_conflict_reschedule_request_dispatches_client_actions(
+    bot_token_settings,
+    partner_with_bot_username,
+    monkeypatch,
+):
+    created = partner_with_bot_username
+    set_bot_token(
+        actor=created.owner,
+        partner=created.partner,
+        raw_token=VALID_TOKEN,
+    )
+    PartnerNotificationSettings.objects.filter(partner=created.partner).update(
+        quiet_hours_enabled=False,
+    )
+    identity = upsert_telegram_identity(
+        telegram_user_id=555090,
+        username="conflict-reschedule-client",
+        first_name="Ira",
+    )
+    client_profile = resolve_client_profile_for_telegram_identity(
+        partner=created.partner,
+        telegram_identity=identity,
+    )
+    category = create_service_category(
+        actor=created.owner,
+        partner=created.partner,
+        name="Nails",
+    )
+    service = create_service(
+        actor=created.owner,
+        partner=created.partner,
+        category=category,
+        name="Manicure",
+        price_amount=50_000,
+        duration_minutes=60,
+    )
+    appointment = create_confirmed_appointment(
+        actor=created.owner,
+        partner=created.partner,
+        booking_resource=default_booking_resource_for_partner(created.partner),
+        client_profile=client_profile,
+        start_at=timezone.now() + timedelta(days=2),
+        service_items=[AppointmentServiceItemInput(service=service)],
+    )
+    conflict = schedule_conflicts_for_partner_period(
+        partner=created.partner,
+        booking_resource=appointment.booking_resource,
+        start_at=appointment.start_at,
+        end_at=appointment.end_at + timedelta(microseconds=1),
+    )[0]
+    notice = schedule_client_schedule_conflict_reschedule_request(
+        appointment=appointment,
+        conflict_fingerprint=conflict.fingerprint,
+    )
+    assert notice is not None
+    sent_payloads = []
+
+    async def fake_send(token, chat_id, text, photo="", reply_markup=None):
+        sent_payloads.append(
+            {
+                "token": token,
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": reply_markup,
+            }
+        )
+
+    monkeypatch.setattr("apps.bot.delivery._send_telegram_payload", fake_send)
+
+    assert dispatch_due_notifications_task() == 1
+    notice.refresh_from_db()
+    assert notice.status == ScheduledNotification.Status.SENT
+    assert sent_payloads[0]["token"] == VALID_TOKEN
+    assert sent_payloads[0]["chat_id"] == 555090
+    assert "Поточний запис залишається підтвердженим" in sent_payloads[0]["text"]
+    callbacks = [
+        button.callback_data
+        for row in sent_payloads[0]["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert callbacks == [
+        f"pf:rsd:{appointment.id.hex}:1:1",
+        "pf:contact",
     ]
 
 

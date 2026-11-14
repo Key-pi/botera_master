@@ -1,0 +1,5290 @@
+# BoteraMaster administration translations.
+# Copyright (C) 2026 BoteraMaster
+# This file is distributed under the same license as BoteraMaster.
+msgid ""
+msgstr ""
+"Project-Id-Version: BoteraMaster\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-04 12:43+0000\n"
+"PO-Revision-Date: 2026-11-04 00:00+0200\n"
+"Last-Translator: BoteraMaster team\n"
+"Language-Team: Russian\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n%100>=11 && n%100<=14) ? 2 : 3);\n"
+
+#: apps/accounts/apps.py:9
+msgid "Accounts"
+msgstr "Учетные записи"
+
+#: apps/accounts/models.py:21 apps/bot/models.py:85
+msgid "Owner/master"
+msgstr "Владелец/мастер"
+
+#: apps/accounts/models.py:27 apps/bot/models.py:100 apps/bot/models.py:148
+msgid "user"
+msgstr "пользователь"
+
+#: apps/accounts/models.py:33 apps/audit/models.py:80 apps/bot/models.py:34
+#: apps/finance/models.py:24 apps/notifications/models.py:37
+#: apps/partners/models.py:34 apps/schedule/models.py:93
+#: core/database/models.py:42
+msgid "partner"
+msgstr "партнер"
+
+#: apps/accounts/models.py:35 apps/bot/models.py:103
+msgid "role"
+msgstr "роль"
+
+#: apps/accounts/models.py:36 apps/bot/models.py:106 apps/bot/models.py:232
+#: apps/catalog/models.py:18 apps/catalog/models.py:48
+#: apps/notifications/models.py:84 apps/schedule/models.py:46
+#: apps/schedule/models.py:153
+msgid "active"
+msgstr "активный"
+
+#: apps/accounts/models.py:39
+msgid "partner membership"
+msgstr "доступ к партнеру"
+
+#: apps/accounts/models.py:40
+msgid "partner memberships"
+msgstr "доступы к партнерам"
+
+#: apps/appointments/admin.py:139 apps/appointments/admin.py:1058
+msgid "Start at (partner time)"
+msgstr "Начало в (партнерское время)"
+
+#: apps/appointments/admin.py:143 apps/appointments/admin.py:1062
+msgid "End at (partner time)"
+msgstr "Окончание в (партнерское время)"
+
+#: apps/appointments/admin.py:147 apps/appointments/admin.py:1066
+msgid "Selected at (partner time)"
+msgstr "Выбрано в (партнерское время)"
+
+#: apps/appointments/admin.py:161
+msgid "appointment period"
+msgstr "период записи"
+
+#: apps/appointments/admin.py:166 templates/partners/dashboard.html:377
+#: templates/schedule/calendar.html:856 templates/schedule/calendar.html:880
+msgid "Today"
+msgstr "Сегодня"
+
+#: apps/appointments/admin.py:167 templates/partners/dashboard.html:387
+msgid "Tomorrow"
+msgstr "Завтра"
+
+#: apps/appointments/admin.py:168
+msgid "Next 7 days"
+msgstr "Следующие 7 дней"
+
+#: apps/appointments/admin.py:169
+msgid "Next 30 days"
+msgstr "Следующие 30 дней"
+
+#: apps/appointments/admin.py:170
+msgid "All upcoming"
+msgstr "Все предстоящие"
+
+#: apps/appointments/admin.py:171
+msgid "Past"
+msgstr "Прошлое"
+
+#: apps/appointments/admin.py:186 apps/finance/models.py:120
+msgid "penalties"
+msgstr "штрафы"
+
+#: apps/appointments/admin.py:191
+msgid "Has a penalty"
+msgstr "Имеет штраф"
+
+#: apps/appointments/admin.py:192 apps/clients/admin.py:109
+msgid "Has an outstanding penalty"
+msgstr "Есть неоплаченный штраф"
+
+#: apps/appointments/admin.py:193
+msgid "No penalties"
+msgstr "Без штрафов"
+
+#: apps/appointments/admin.py:272 apps/audit/presentation.py:262
+#: apps/catalog/admin.py:103
+#: templates/admin/appointments/appointment/status_form.html:90
+#: templates/admin/appointments/manual_appointment_add.html:112
+#: templates/admin/clients/clientprofile/change_form.html:151
+#: templates/admin/clients/clientprofile/change_form.html:192
+#: templates/finance/report.html:320 templates/finance/report.html:330
+#: templates/partners/includes/appointment_table.html:10
+#: templates/partners/includes/appointment_table.html:28
+#: templates/schedule/calendar.html:691
+msgid "Services"
+msgstr "Услуги"
+
+#: apps/appointments/admin.py:277
+msgid "Start (partner time)"
+msgstr "Начало (партнерское время)"
+
+#: apps/appointments/admin.py:281
+msgid "End (partner time)"
+msgstr "Конец (партнерское время)"
+
+#: apps/appointments/admin.py:285 apps/audit/presentation.py:280
+#: templates/admin/clients/clientprofile/change_form.html:153
+#: templates/admin/clients/clientprofile/change_form.html:194
+#: templates/partners/includes/appointment_table.html:12
+#: templates/partners/includes/appointment_table.html:36
+#: templates/schedule/calendar.html:699
+msgid "Total"
+msgstr "Итого"
+
+#: apps/appointments/admin.py:332 templates/schedule/calendar.html:725
+msgid "Mark completed"
+msgstr "Отметить завершенной"
+
+#: apps/appointments/admin.py:336 templates/schedule/calendar.html:726
+msgid "Mark no-show"
+msgstr "Отметить неявку"
+
+#: apps/appointments/admin.py:340
+msgid "Cancel by master"
+msgstr "Отменить от имени мастера"
+
+#: apps/appointments/admin.py:344
+msgid "Confirm requested appointments"
+msgstr "Подтвердить выбранные заявки"
+
+#: apps/appointments/admin.py:392
+msgid "Created manual appointment."
+msgstr "Ручная запись создана."
+
+#: apps/appointments/admin.py:397
+#: templates/admin/appointments/manual_appointment_add.html:68
+msgid "Create manual appointment"
+msgstr "Создать ручную запись"
+
+#: apps/appointments/admin.py:479 apps/appointments/admin.py:571
+#: apps/appointments/admin.py:661 apps/appointments/admin.py:747
+#: apps/schedule/views.py:489 apps/schedule/views.py:491
+#: apps/schedule/views.py:498
+msgid "Appointment not found."
+msgstr "Запись не найдена."
+
+#: apps/appointments/admin.py:515
+#, python-format
+msgid "Changed status to %(status)s."
+msgstr "Статус изменен на %(status)s."
+
+#: apps/appointments/admin.py:520
+#, python-format
+msgid "Appointment status changed to %(status)s."
+msgstr "Статус записи изменен на %(status)s."
+
+#: apps/appointments/admin.py:530
+msgid "Review the optional no-show penalty before returning to the appointment."
+msgstr "Прежде чем вернуться на встречу, ознакомьтесь с дополнительным штрафом за неявку."
+
+#: apps/appointments/admin.py:549
+msgid "Change appointment status"
+msgstr "Изменить статус записи"
+
+#: apps/appointments/admin.py:580
+msgid "Only requested or confirmed appointments can receive a time proposal."
+msgstr "Другое время можно предложить только для заявки или подтвержденной записи."
+
+#: apps/appointments/admin.py:589
+msgid "This client has no Telegram connection and cannot respond to a proposal."
+msgstr "Этот клиент не имеет подключения к Telegram и не может ответить на предложение."
+
+#: apps/appointments/admin.py:623
+#, python-format
+msgid "Created %(type)s proposal."
+msgstr "Создано предложение %(type)s."
+
+#: apps/appointments/admin.py:627
+msgid "Time proposal created and queued for delivery."
+msgstr "Предложение по времени создано и поставлено в очередь на доставку."
+
+#: apps/appointments/admin.py:638
+#: templates/admin/appointments/appointment/change_form.html:22
+#: templates/admin/appointments/appointment/proposal_form.html:43
+#: templates/schedule/calendar.html:728
+msgid "Propose another time"
+msgstr "Предложить другое время"
+
+#: apps/appointments/admin.py:683
+#, python-format
+msgid "Applied %(count)s client penalty record."
+msgid_plural "Applied %(count)s client penalty records."
+msgstr[0] "Применен %(count)s штраф клиента."
+msgstr[1] "Применены %(count)s штрафа клиента."
+msgstr[2] "Применено %(count)s штрафов клиента."
+msgstr[3] "Применено %(count)s штрафа клиента."
+
+#: apps/appointments/admin.py:692
+#, python-format
+msgid "Applied %(count)s penalty record to the appointment."
+msgid_plural "Applied %(count)s penalty records to the appointment."
+msgstr[0] "К записи применен %(count)s штраф."
+msgstr[1] "К записи применены %(count)s штрафа."
+msgstr[2] "К записи применено %(count)s штрафов."
+msgstr[3] "К записи применено %(count)s штрафа."
+
+#: apps/appointments/admin.py:707
+msgid "Manage appointment penalties"
+msgstr "Управлять штрафами записи"
+
+#: apps/appointments/admin.py:759
+msgid "Penalties are disabled for this partner."
+msgstr "Для этого партнера отключены штрафы."
+
+#: apps/appointments/admin.py:766
+msgid "The appointment status does not allow this penalty."
+msgstr "Статус записи не позволяет создать этот штраф."
+
+#: apps/appointments/admin.py:776
+msgid "This appointment already has a penalty for that incident."
+msgstr "Для этого события в записи уже создан штраф."
+
+#: apps/appointments/admin.py:783
+#: templates/admin/appointments/appointment/change_form.html:7
+msgid "Create no-show penalty"
+msgstr "Создать штраф за неявку"
+
+#: apps/appointments/admin.py:791
+#: templates/admin/appointments/appointment/change_form.html:12
+msgid "Record late arrival"
+msgstr "Зафиксировать опоздание"
+
+#: apps/appointments/admin.py:816
+#, python-format
+msgid "Created %(reason)s penalty."
+msgstr "Создан штраф %(reason)s."
+
+#: apps/appointments/admin.py:821
+#, python-format
+msgid "%(reason)s penalty created for the client."
+msgstr "Для клиента создан штраф %(reason)s."
+
+#: apps/appointments/admin.py:892
+#, python-format
+msgid "Updated %(changed)s appointments; %(failed)s failed validation."
+msgstr "Обновлены встречи %(changed)s; %(failed)s не прошел проверку."
+
+#: apps/appointments/admin.py:900
+#, python-format
+msgid "Updated %(count)s appointment."
+msgid_plural "Updated %(count)s appointments."
+msgstr[0] "Обновлена %(count)s запись."
+msgstr[1] "Обновлены %(count)s записи."
+msgstr[2] "Обновлено %(count)s записей."
+msgstr[3] "Обновлено %(count)s записи."
+
+#: apps/appointments/admin.py:938
+msgid "Accept selected client reschedule requests"
+msgstr "Принять выбранные запросы клиента на перенос графика"
+
+#: apps/appointments/admin.py:960
+msgid "accepted"
+msgstr "принят"
+
+#: apps/appointments/admin.py:963
+msgid "Decline selected client reschedule requests"
+msgstr "Отклонить выбранные запросы клиента на перенос графика"
+
+#: apps/appointments/admin.py:981
+msgid "declined"
+msgstr "отказался"
+
+#: apps/appointments/admin.py:995
+#, python-format
+msgid "Client requests %(verb)s: %(success)s; failed validation: %(failed)s."
+msgstr "Клиентские запросы %(verb)s: %(success)s; неудачная проверка: %(failed)s."
+
+#: apps/appointments/admin.py:1004
+msgid "Expires at (partner time)"
+msgstr "Срок действия истекает в (партнерское время)"
+
+#: apps/appointments/admin.py:1008
+msgid "Responded at (partner time)"
+msgstr "Ответ получен в (партнерское время)"
+
+#: apps/appointments/admin.py:1012
+msgid "Created at (partner time)"
+msgstr "Создано в (партнерское время)"
+
+#: apps/appointments/admin.py:1016
+msgid "Updated at (partner time)"
+msgstr "Обновлено в (партнерское время)"
+
+#: apps/appointments/apps.py:9 apps/audit/presentation.py:33
+#: apps/bot/views.py:112 templates/bot/workspace.html:555
+#: templates/finance/report.html:287 templates/partners/dashboard.html:276
+#: templates/schedule/calendar.html:572 templates/schedule/conflicts.html:291
+msgid "Appointments"
+msgstr "Записи"
+
+#: apps/appointments/forms.py:34 templates/schedule/calendar.html:604
+#: templates/schedule/calendar.html:640
+msgid "Calendar resource"
+msgstr "Ресурс календаря"
+
+#: apps/appointments/forms.py:37 apps/schedule/forms.py:52
+msgid "Start time"
+msgstr "Время начала"
+
+#: apps/appointments/forms.py:43
+msgid "Existing client"
+msgstr "Существующий клиент"
+
+#: apps/appointments/forms.py:44
+msgid "Choose an existing client, or create a manual client below."
+msgstr "Выберите существующий клиент или создайте клиент вручную ниже."
+
+#: apps/appointments/forms.py:49
+msgid "New client name"
+msgstr "Новое имя клиента"
+
+#: apps/appointments/forms.py:54
+msgid "New client phone"
+msgstr "Новый клиентский телефон"
+
+#: apps/appointments/forms.py:55
+msgid "A new manual client needs at least a name or phone."
+msgstr "Новому ручному клиенту нужно как минимум имя или телефон."
+
+#: apps/appointments/forms.py:84 apps/appointments/forms.py:240
+#, python-format
+msgid "Enter local time in %(timezone)s."
+msgstr "Введите местное время в формате %(timezone)s."
+
+#: apps/appointments/forms.py:91
+msgid "The entered time uses the selected partner's timezone."
+msgstr "Введенное время использует часовой пояс выбранного партнера."
+
+#: apps/appointments/forms.py:129
+msgid "Calendar resource must belong to the selected partner."
+msgstr "Ресурс календаря должен принадлежать выбранному партнеру."
+
+#: apps/appointments/forms.py:138
+msgid "Client must belong to the selected partner."
+msgstr "Клиент должен принадлежать выбранному партнеру."
+
+#: apps/appointments/forms.py:145
+msgid "Choose an existing client or enter a new client, not both."
+msgstr "Выберите существующего клиента или введите нового клиента, но не то и другое."
+
+#: apps/appointments/forms.py:150
+msgid "Choose an existing client or enter a new client name or phone."
+msgstr "Выберите существующего клиента или введите имя или телефон нового клиента."
+
+#: apps/appointments/forms.py:176 apps/audit/presentation.py:250
+msgid "New status"
+msgstr "Новый статус"
+
+#: apps/appointments/forms.py:181
+msgid "Shown to the client for cancellations. Required for final-status corrections."
+msgstr "Показывается клиенту при отмене. Требуется для корректировки окончательного статуса."
+
+#: apps/appointments/forms.py:189
+msgid "Select status"
+msgstr "Выберите статус"
+
+#: apps/appointments/forms.py:195
+msgid "Required audit reason for correcting a final appointment status."
+msgstr "Требуемая причина аудита для исправления окончательного статуса встречи."
+
+#: apps/appointments/forms.py:201
+msgid "Correction reason is required."
+msgstr "Укажите причину исправления."
+
+#: apps/appointments/forms.py:211
+msgid "Optional message shown to the client with the proposed times."
+msgstr "Дополнительное сообщение, отображаемое клиенту с предлагаемым временем."
+
+#: apps/appointments/forms.py:217
+msgid "Optional client-visible reason. For a requested appointment, this is also used if the unanswered proposal expires and the request is cancelled."
+msgstr "Необязательная причина, видимая клиенту. Для запрошенной встречи это также используется, если срок действия предложения без ответа истек и запрос отменен."
+
+#: apps/appointments/forms.py:233
+msgid "Proposed start time"
+msgstr "Предлагаемое время начала"
+
+#: apps/appointments/forms.py:257
+msgid "Proposed time must be in the future."
+msgstr "Предлагаемое время должно быть в будущем."
+
+#: apps/appointments/forms.py:259
+msgid "Choose a time different from the current booking."
+msgstr "Выберите время, отличное от текущего бронирования."
+
+#: apps/appointments/forms.py:281
+msgid "Each proposed time must be unique."
+msgstr "Каждое предлагаемое время должно быть уникальным."
+
+#: apps/appointments/forms.py:284
+msgid "Add at least one proposed time."
+msgstr "Добавьте хотя бы одно предложенное время."
+
+#: apps/appointments/forms.py:316 apps/partners/setup.py:17
+msgid "Catalog service"
+msgstr "Сервис каталогов"
+
+#: apps/appointments/forms.py:321
+msgid "Custom service name"
+msgstr "Название специальной услуги"
+
+#: apps/appointments/forms.py:325
+msgid "Description override / custom description"
+msgstr "Переопределение описания/собственное описание"
+
+#: apps/appointments/forms.py:333
+msgid "Price / override, UAH"
+msgstr "Цена/переопределение, грн."
+
+#: apps/appointments/forms.py:334
+msgid "Leave blank to use the catalog price."
+msgstr "Оставьте поле пустым, чтобы использовать цену по каталогу."
+
+#: apps/appointments/forms.py:339
+msgid "Duration / override, minutes"
+msgstr "Продолжительность/переопределение, минуты"
+
+#: apps/appointments/forms.py:340
+msgid "Leave blank to use the catalog duration."
+msgstr "Оставьте пустым, чтобы использовать продолжительность каталога."
+
+#: apps/appointments/forms.py:361
+msgid "Leave custom name blank when a catalog service is selected."
+msgstr "Оставьте название разовой услуги пустым, если выбрана услуга из каталога."
+
+#: apps/appointments/forms.py:366
+msgid "Custom service name is required."
+msgstr "Укажите название разовой услуги."
+
+#: apps/appointments/forms.py:368
+msgid "Custom service price is required."
+msgstr "Укажите цену разовой услуги."
+
+#: apps/appointments/forms.py:372
+msgid "Custom service duration is required."
+msgstr "Укажите продолжительность разовой услуги."
+
+#: apps/appointments/forms.py:401
+msgid "Add at least one service line."
+msgstr "Добавьте хотя бы одну строку обслуживания."
+
+#: apps/appointments/forms.py:421
+msgid "Every service must belong to the selected partner."
+msgstr "Каждая услуга должна принадлежать выбранному партнеру."
+
+#: apps/appointments/models.py:16 apps/audit/presentation.py:311
+#: templates/schedule/calendar.html:833
+msgid "Requested"
+msgstr "Заявка"
+
+#: apps/appointments/models.py:17 apps/audit/presentation.py:298
+#: templates/schedule/calendar.html:834
+msgid "Confirmed"
+msgstr "Подтверждено"
+
+#: apps/appointments/models.py:18 apps/audit/presentation.py:293
+#: apps/bot/views.py:138
+msgid "Cancelled by client"
+msgstr "Отменено клиентом"
+
+#: apps/appointments/models.py:19 apps/audit/presentation.py:294
+#: apps/bot/views.py:139
+msgid "Cancelled by master"
+msgstr "Отменено мастером"
+
+#: apps/appointments/models.py:20 apps/audit/presentation.py:297
+#: apps/broadcasts/models.py:23
+msgid "Completed"
+msgstr "Завершено"
+
+#: apps/appointments/models.py:21 apps/audit/presentation.py:307
+#: apps/finance/admin.py:46 apps/finance/models.py:76
+msgid "No-show"
+msgstr "Неявка"
+
+#: apps/appointments/models.py:24 apps/audit/presentation.py:295
+msgid "Client bot"
+msgstr "Клиентский бот"
+
+#: apps/appointments/models.py:25
+msgid "Partner admin"
+msgstr "Администратор партнера"
+
+#: apps/appointments/models.py:26
+msgid "Proposal"
+msgstr "Предложение"
+
+#: apps/appointments/models.py:32 apps/schedule/models.py:56
+#: apps/schedule/models.py:210 apps/schedule/models.py:258
+msgid "booking resource"
+msgstr "ресурс календаря"
+
+#: apps/appointments/models.py:38 apps/broadcasts/models.py:97
+#: apps/clients/models.py:56 apps/finance/models.py:89
+#: apps/messaging/models.py:29 apps/notifications/models.py:227
+msgid "client profile"
+msgstr "профиль клиента"
+
+#: apps/appointments/models.py:40 apps/appointments/models.py:258
+#: apps/schedule/models.py:212 apps/schedule/models.py:260
+msgid "start at"
+msgstr "начало"
+
+#: apps/appointments/models.py:41 apps/appointments/models.py:259
+#: apps/schedule/models.py:213 apps/schedule/models.py:261
+msgid "end at"
+msgstr "окончание"
+
+#: apps/appointments/models.py:42 apps/appointments/models.py:194
+#: apps/audit/models.py:131 apps/bot/models.py:37 apps/broadcasts/models.py:32
+#: apps/broadcasts/models.py:100 apps/finance/models.py:101
+#: apps/finance/models.py:196 apps/integrations/models.py:25
+#: apps/notifications/models.py:256 apps/notifications/models.py:382
+#: apps/partners/models.py:25
+msgid "status"
+msgstr "статус"
+
+#: apps/appointments/models.py:44
+msgid "source"
+msgstr "источник"
+
+#: apps/appointments/models.py:47
+msgid "confirmation mode snapshot"
+msgstr "режим подтверждения на момент создания"
+
+#: apps/appointments/models.py:49 apps/appointments/models.py:265
+msgid "near-fit"
+msgstr "почти помещается в окно"
+
+#: apps/appointments/models.py:50
+msgid "client comment"
+msgstr "комментарий клиента"
+
+#: apps/appointments/models.py:51 apps/clients/models.py:44
+msgid "private master note"
+msgstr "приватная заметка мастера"
+
+#: apps/appointments/models.py:52
+msgid "client-visible reason"
+msgstr "причина, видимая клиенту"
+
+#: apps/appointments/models.py:53 apps/appointments/models.py:261
+msgid "services total"
+msgstr "сумма услуг"
+
+#: apps/appointments/models.py:54 apps/appointments/models.py:262
+msgid "penalties total"
+msgstr "сумма штрафов"
+
+#: apps/appointments/models.py:55 apps/appointments/models.py:263
+msgid "total amount"
+msgstr "общая сумма"
+
+#: apps/appointments/models.py:56 apps/appointments/models.py:141
+#: apps/appointments/models.py:264 apps/appointments/models.py:334
+#: apps/catalog/models.py:45 apps/finance/models.py:42
+#: apps/finance/models.py:104 apps/finance/models.py:194
+#: apps/finance/models.py:245
+msgid "currency"
+msgstr "валюта"
+
+#: apps/appointments/models.py:63 apps/appointments/models.py:205
+#: apps/broadcasts/models.py:45 apps/broadcasts/models.py:159
+#: apps/finance/models.py:113 apps/finance/models.py:253
+#: apps/messaging/models.py:48 apps/schedule/models.py:228
+#: apps/schedule/models.py:269
+msgid "created by"
+msgstr "автор"
+
+#: apps/appointments/models.py:65
+msgid "requested at"
+msgstr "заявка создана"
+
+#: apps/appointments/models.py:66
+msgid "confirmed at"
+msgstr "подтверждено"
+
+#: apps/appointments/models.py:67
+msgid "cancelled at"
+msgstr "отменено"
+
+#: apps/appointments/models.py:68
+msgid "completed at"
+msgstr "завершено"
+
+#: apps/appointments/models.py:69
+msgid "no-show at"
+msgstr "неявка отмечена"
+
+#: apps/appointments/models.py:70
+msgid "status changed at"
+msgstr "статус изменён"
+
+#: apps/appointments/models.py:71
+msgid "last correction reason"
+msgstr "последняя причина исправления"
+
+#: apps/appointments/models.py:72
+msgid "last correction at"
+msgstr "последнее исправление"
+
+#: apps/appointments/models.py:79
+msgid "last corrected by"
+msgstr "последнее исправление выполнил"
+
+#: apps/appointments/models.py:83 apps/appointments/models.py:125
+#: apps/appointments/models.py:190 apps/finance/models.py:191
+#: apps/notifications/models.py:211 apps/schedule/models.py:299
+msgid "appointment"
+msgstr "запись"
+
+#: apps/appointments/models.py:84
+msgid "appointments"
+msgstr "записи"
+
+#: apps/appointments/models.py:133 apps/appointments/models.py:326
+#: apps/catalog/models.py:51
+msgid "service"
+msgstr "услуга"
+
+#: apps/appointments/models.py:136 apps/appointments/models.py:329
+msgid "category name snapshot"
+msgstr "название категории на момент записи"
+
+#: apps/appointments/models.py:138 apps/appointments/models.py:331
+msgid "service name snapshot"
+msgstr "название услуги на момент записи"
+
+#: apps/appointments/models.py:139 apps/appointments/models.py:332
+msgid "description snapshot"
+msgstr "описание на момент записи"
+
+#: apps/appointments/models.py:140 apps/appointments/models.py:333
+#: apps/catalog/models.py:44
+msgid "price amount"
+msgstr "цена"
+
+#: apps/appointments/models.py:142 apps/appointments/models.py:335
+#: apps/catalog/models.py:46
+msgid "duration in minutes"
+msgstr "продолжительность в минутах"
+
+#: apps/appointments/models.py:143 apps/appointments/models.py:336
+msgid "custom service"
+msgstr "разовая услуга"
+
+#: apps/appointments/models.py:144 apps/appointments/models.py:337
+msgid "overridden"
+msgstr "изменено мастером"
+
+#: apps/appointments/models.py:145 apps/appointments/models.py:266
+#: apps/appointments/models.py:338 apps/catalog/models.py:17
+#: apps/catalog/models.py:47 apps/schedule/models.py:47
+#: apps/schedule/models.py:154
+msgid "sort order"
+msgstr "порядок сортировки"
+
+#: apps/appointments/models.py:148
+msgid "appointment service item"
+msgstr "услуга записи"
+
+#: apps/appointments/models.py:149
+msgid "appointment service items"
+msgstr "услуги записи"
+
+#: apps/appointments/models.py:174
+msgid "Reschedule confirmed"
+msgstr "Перенос подтверждённой записи"
+
+#: apps/appointments/models.py:175 apps/audit/presentation.py:312
+msgid "Requested alternatives"
+msgstr "Альтернативы для заявки"
+
+#: apps/appointments/models.py:176 apps/audit/presentation.py:289
+msgid "Appointment change"
+msgstr "Изменение записи"
+
+#: apps/appointments/models.py:179 apps/integrations/models.py:11
+#: apps/partners/admin.py:84 templates/bot/workspace.html:634
+#: templates/partners/setup.html:210 templates/partners/setup.html:228
+msgid "Pending"
+msgstr "Ожидается"
+
+#: apps/appointments/models.py:180
+msgid "Accepted"
+msgstr "Принято"
+
+#: apps/appointments/models.py:181
+msgid "Declined"
+msgstr "Отклонено"
+
+#: apps/appointments/models.py:182
+msgid "Expired"
+msgstr "Срок действия истек"
+
+#: apps/appointments/models.py:183 apps/audit/presentation.py:292
+#: apps/broadcasts/models.py:24 apps/notifications/models.py:202
+msgid "Cancelled"
+msgstr "Отменено"
+
+#: apps/appointments/models.py:184
+msgid "Superseded"
+msgstr "Заменено"
+
+#: apps/appointments/models.py:192 apps/notifications/models.py:253
+#: apps/schedule/models.py:40
+msgid "type"
+msgstr "тип"
+
+#: apps/appointments/models.py:207 apps/bot/models.py:153
+msgid "expires at"
+msgstr "действует до"
+
+#: apps/appointments/models.py:208 apps/audit/models.py:17
+#: apps/audit/models.py:91
+msgid "message"
+msgstr "сообщение"
+
+#: apps/appointments/models.py:209 apps/audit/models.py:19
+#: apps/finance/models.py:99 apps/schedule/models.py:262
+msgid "reason"
+msgstr "причина"
+
+#: apps/appointments/models.py:210
+msgid "responded at"
+msgstr "ответ получен"
+
+#: apps/appointments/models.py:217
+msgid "selected option"
+msgstr "выбранный вариант"
+
+#: apps/appointments/models.py:221 apps/notifications/models.py:219
+msgid "appointment proposal"
+msgstr "предложение изменения записи"
+
+#: apps/appointments/models.py:222
+msgid "appointment proposals"
+msgstr "предложения изменений записи"
+
+#: apps/appointments/models.py:256
+msgid "proposal"
+msgstr "предложение"
+
+#: apps/appointments/models.py:260
+msgid "total duration in minutes"
+msgstr "общая продолжительность в минутах"
+
+#: apps/appointments/models.py:267
+msgid "selected at"
+msgstr "выбрано"
+
+#: apps/appointments/models.py:270
+msgid "appointment proposal option"
+msgstr "вариант изменения записи"
+
+#: apps/appointments/models.py:271
+msgid "appointment proposal options"
+msgstr "варианты изменений записи"
+
+#: apps/appointments/models.py:318
+msgid "option"
+msgstr "вариант"
+
+#: apps/appointments/models.py:341
+msgid "proposal option service item"
+msgstr "услуга в варианте предложения"
+
+#: apps/appointments/models.py:342
+msgid "proposal option service items"
+msgstr "услуги в вариантах предложений"
+
+#: apps/audit/admin.py:34
+msgid "activity area"
+msgstr "область деятельности"
+
+#: apps/audit/admin.py:60
+msgid "resolution"
+msgstr "резолюция"
+
+#: apps/audit/admin.py:64
+msgid "Unresolved"
+msgstr "нерешенный"
+
+#: apps/audit/admin.py:64
+msgid "Resolved"
+msgstr "Решено"
+
+#: apps/audit/admin.py:133 apps/audit/admin.py:197
+msgid "Activity"
+msgstr "Деятельность"
+
+#: apps/audit/admin.py:144
+msgid "Context"
+msgstr "Контекст"
+
+#: apps/audit/admin.py:156
+msgid "Retention"
+msgstr "Удержание"
+
+#: apps/audit/admin.py:166
+msgid "Masked technical context"
+msgstr "Замаскированный технический контекст"
+
+#: apps/audit/admin.py:170
+msgid "Support-only identifiers and already-redacted payload. Partner users do not see this section."
+msgstr "Идентификаторы только для поддержки и уже отредактированные полезные данные. Пользователи-партнеры не видят этот раздел."
+
+#: apps/audit/admin.py:183 templates/bot/workspace.html:561
+#: templates/finance/report.html:293 templates/partners/dashboard.html:282
+#: templates/schedule/calendar.html:578 templates/schedule/conflicts.html:297
+msgid "Activity Log"
+msgstr "Журнал активности"
+
+#: apps/audit/admin.py:188
+msgid "Activity details"
+msgstr "Подробности о деятельности"
+
+#: apps/audit/admin.py:201
+msgid "Area"
+msgstr "Площадь"
+
+#: apps/audit/admin.py:205 apps/audit/admin.py:212
+msgid "Summary"
+msgstr "Резюме"
+
+#: apps/audit/admin.py:216 apps/schedule/forms.py:62
+#: templates/admin/appointments/appointment/penalty_form.html:104
+#: templates/admin/clients/clientprofile/change_form.html:233
+#: templates/admin/clients/clientprofile/penalty_action_form.html:81
+msgid "Reason"
+msgstr "Причина"
+
+#: apps/audit/admin.py:218 templates/schedule/calendar.html:637
+msgid "Not provided"
+msgstr "Не предусмотрено"
+
+#: apps/audit/admin.py:220
+msgid "Business details"
+msgstr "Детали бизнеса"
+
+#: apps/audit/admin.py:224
+msgid "No additional details"
+msgstr "Никаких дополнительных подробностей"
+
+#: apps/audit/admin.py:231
+msgid "Subject"
+msgstr "Тема"
+
+#: apps/audit/admin.py:242
+#, python-brace-format
+msgid "<a href=\"{}\">Open {}</a>"
+msgstr "<a href=\"{}\">Открыть {}</a>"
+
+#: apps/audit/admin.py:244
+msgid "Performed by"
+msgstr "Исполнитель:"
+
+#: apps/audit/admin.py:248
+msgid "Occurred at (partner time)"
+msgstr "Произошло в (партнерское время)"
+
+#: apps/audit/admin.py:252
+msgid "Stored until (partner time)"
+msgstr "Хранится до (время партнера)"
+
+#: apps/audit/admin.py:256
+msgid "Technical identity"
+msgstr "Техническая идентичность"
+
+#: apps/audit/admin.py:260
+msgid "Masked payload"
+msgstr "Маскированные данные"
+
+#: apps/audit/admin.py:340
+#: templates/admin/audit/workerheartbeat/change_list.html:4
+msgid "Platform health"
+msgstr "Состояние платформы"
+
+#: apps/audit/admin.py:346
+#: templates/admin/appointments/appointment/status_form.html:82
+#: templates/admin/clients/clientprofile/penalty_action_form.html:89
+msgid "Current status"
+msgstr "Текущий статус"
+
+#: apps/audit/apps.py:9
+msgid "Activity and diagnostics"
+msgstr "Действия и диагностика"
+
+#: apps/audit/models.py:14 apps/integrations/models.py:18
+msgid "event type"
+msgstr "тип события"
+
+#: apps/audit/models.py:15 apps/audit/models.py:95
+msgid "target type"
+msgstr "тип цели"
+
+#: apps/audit/models.py:16 apps/audit/models.py:96
+msgid "target ID"
+msgstr "целевой идентификатор"
+
+#: apps/audit/models.py:18
+msgid "masked payload"
+msgstr "маскированные данные"
+
+#: apps/audit/models.py:26
+msgid "actor"
+msgstr "инициатор"
+
+#: apps/audit/models.py:30
+msgid "audit event"
+msgstr "событие аудита"
+
+#: apps/audit/models.py:31
+msgid "audit events"
+msgstr "события аудита"
+
+#: apps/audit/models.py:52
+msgid "Info"
+msgstr "Информация"
+
+#: apps/audit/models.py:53 apps/audit/models.py:120
+msgid "Warning"
+msgstr "Предупреждение"
+
+#: apps/audit/models.py:54 apps/audit/presentation.py:300 apps/bot/models.py:25
+msgid "Error"
+msgstr "Ошибка"
+
+#: apps/audit/models.py:55 apps/audit/models.py:121
+msgid "Critical"
+msgstr "Критический"
+
+#: apps/audit/models.py:58 apps/audit/selectors.py:165
+msgid "Web"
+msgstr "Веб"
+
+#: apps/audit/models.py:59 apps/audit/selectors.py:23
+msgid "Bot runner"
+msgstr "Процесс ботов"
+
+#: apps/audit/models.py:60 apps/clients/admin.py:213
+#: templates/admin/clients/clientprofile/change_form.html:119
+#: templates/admin/messaging/conversationmessage/reply_form.html:72
+#: templates/bot/workspace.html:652 templates/schedule/calendar.html:652
+msgid "Telegram"
+msgstr "Telegram"
+
+#: apps/audit/models.py:61 apps/audit/selectors.py:24
+msgid "Celery beat"
+msgstr "Celery beat"
+
+#: apps/audit/models.py:62 apps/audit/selectors.py:25
+msgid "Notifications worker"
+msgstr "Воркер уведомлений"
+
+#: apps/audit/models.py:63 apps/audit/selectors.py:26
+msgid "Broadcast worker"
+msgstr "Воркер рассылок"
+
+#: apps/audit/models.py:64
+msgid "Default worker"
+msgstr "Основной воркер"
+
+#: apps/audit/models.py:65
+msgid "Queue"
+msgstr "Очередь"
+
+#: apps/audit/models.py:66 apps/audit/selectors.py:171
+msgid "PostgreSQL"
+msgstr "PostgreSQL"
+
+#: apps/audit/models.py:67
+msgid "Redis"
+msgstr "Redis"
+
+#: apps/audit/models.py:68
+msgid "Cleanup"
+msgstr "Очистка"
+
+#: apps/audit/models.py:69
+msgid "Security"
+msgstr "Безопасность"
+
+#: apps/audit/models.py:70 apps/bot/views.py:104 apps/broadcasts/admin.py:109
+#: apps/broadcasts/admin.py:166
+msgid "Content"
+msgstr "Контент"
+
+#: apps/audit/models.py:71
+msgid "Scheduler"
+msgstr "Планировщик"
+
+#: apps/audit/models.py:72
+#: templates/admin/audit/workerheartbeat/change_list.html:144
+msgid "Health"
+msgstr "Состояние системы"
+
+#: apps/audit/models.py:83 apps/audit/models.py:124
+msgid "component"
+msgstr "компонент"
+
+#: apps/audit/models.py:89
+msgid "code"
+msgstr "код"
+
+#: apps/audit/models.py:90
+msgid "severity"
+msgstr "уровень"
+
+#: apps/audit/models.py:92 apps/audit/models.py:136
+msgid "metadata"
+msgstr "метаданные"
+
+#: apps/audit/models.py:93 apps/audit/models.py:129
+msgid "queue"
+msgstr "очередь"
+
+#: apps/audit/models.py:94 apps/audit/models.py:130
+msgid "worker"
+msgstr "воркер"
+
+#: apps/audit/models.py:97
+msgid "resolved at"
+msgstr "решено"
+
+#: apps/audit/models.py:100
+msgid "platform diagnostic"
+msgstr "диагностика платформы"
+
+#: apps/audit/models.py:101
+msgid "platform diagnostics"
+msgstr "диагностика платформы"
+
+#: apps/audit/models.py:132 apps/clients/models.py:18
+msgid "last seen at"
+msgstr "последняя активность"
+
+#: apps/audit/models.py:133
+msgid "last success at"
+msgstr "последнее успешное выполнение"
+
+#: apps/audit/models.py:134
+msgid "last error at"
+msgstr "последняя ошибка"
+
+#: apps/audit/models.py:135 apps/bot/models.py:58
+#: apps/integrations/models.py:28
+msgid "last error code"
+msgstr "последний код ошибки"
+
+#: apps/audit/models.py:139
+msgid "worker heartbeat"
+msgstr "состояние воркера"
+
+#: apps/audit/models.py:140
+msgid "worker heartbeats"
+msgstr "состояния воркеров"
+
+#: apps/audit/presentation.py:34 apps/schedule/views.py:166
+#: templates/bot/workspace.html:554 templates/finance/report.html:286
+#: templates/partners/dashboard.html:275 templates/schedule/calendar.html:545
+#: templates/schedule/calendar.html:571 templates/schedule/conflicts.html:290
+msgid "Calendar"
+msgstr "Календарь"
+
+#: apps/audit/presentation.py:35 apps/bot/views.py:107 apps/bot/views.py:116
+#: templates/schedule/calendar.html:695
+msgid "Penalties"
+msgstr "Штрафы"
+
+#: apps/audit/presentation.py:36 templates/finance/report.html:323
+msgid "Expenses"
+msgstr "Расходы"
+
+#: apps/audit/presentation.py:37 apps/broadcasts/apps.py:9
+#: templates/bot/workspace.html:558 templates/finance/report.html:290
+#: templates/partners/dashboard.html:279 templates/schedule/calendar.html:575
+#: templates/schedule/conflicts.html:294
+msgid "Broadcasts"
+msgstr "Рассылки"
+
+#: apps/audit/presentation.py:38
+msgid "Messages"
+msgstr "Сообщения"
+
+#: apps/audit/presentation.py:39 apps/bot/views.py:105
+#: apps/notifications/apps.py:9
+msgid "Notifications"
+msgstr "Уведомления"
+
+#: apps/audit/presentation.py:40
+msgid "Bot and settings"
+msgstr "Бот и настройки"
+
+#: apps/audit/presentation.py:41
+msgid "Clients and catalog"
+msgstr "Клиенты и каталог"
+
+#: apps/audit/presentation.py:42
+msgid "Other"
+msgstr "Другое"
+
+#: apps/audit/presentation.py:58
+msgid "Appointment created"
+msgstr "Запись создана"
+
+#: apps/audit/presentation.py:60
+msgid "Appointment status changed"
+msgstr "Статус записи изменен"
+
+#: apps/audit/presentation.py:64
+msgid "Final appointment status corrected"
+msgstr "Финальный статус записи исправлен"
+
+#: apps/audit/presentation.py:68
+msgid "Appointment change proposed"
+msgstr "Предложено изменение записи"
+
+#: apps/audit/presentation.py:72
+msgid "Appointment change accepted"
+msgstr "Изменение записи принято"
+
+#: apps/audit/presentation.py:76
+msgid "Appointment change declined"
+msgstr "Изменение записи отклонено"
+
+#: apps/audit/presentation.py:80
+msgid "Appointment change proposal cancelled"
+msgstr "Предложение изменения записи отменено"
+
+#: apps/audit/presentation.py:84
+msgid "Appointment change proposal expired"
+msgstr "Срок предложения изменения записи истек"
+
+#: apps/audit/presentation.py:88
+msgid "Client reschedule request declined"
+msgstr "Запрос клиента на перенос графика отклонен"
+
+#: apps/audit/presentation.py:92
+msgid "Client selected another time"
+msgstr "Клиент выбран в другой раз"
+
+#: apps/audit/presentation.py:96
+msgid "Client rescheduled appointment"
+msgstr "Клиент перенес запись"
+
+#: apps/audit/presentation.py:100
+msgid "Schedule conflicts kept as is"
+msgstr "Конфликты расписаний сохраняются без изменений"
+
+#: apps/audit/presentation.py:104
+msgid "Schedule conflicts reopened"
+msgstr "Конфликты расписаний возобновлены"
+
+#: apps/audit/presentation.py:108
+msgid "Conflict reschedules requested"
+msgstr "Запрошен перенос графика из-за конфликта"
+
+#: apps/audit/presentation.py:112
+msgid "Booking settings updated"
+msgstr "Настройки бронирования обновлены."
+
+#: apps/audit/presentation.py:116
+msgid "Penalty settings updated"
+msgstr "Обновлены настройки штрафов."
+
+#: apps/audit/presentation.py:119
+msgid "Penalty created"
+msgstr "Штраф создан"
+
+#: apps/audit/presentation.py:120 apps/bot/views.py:180
+msgid "Penalty applied to appointment"
+msgstr "Штраф применён к записи"
+
+#: apps/audit/presentation.py:121
+msgid "Penalty marked paid"
+msgstr "Штраф отмечен как уплаченный"
+
+#: apps/audit/presentation.py:122
+msgid "Penalty released from appointment"
+msgstr "Штраф отвязан от записи"
+
+#: apps/audit/presentation.py:123 apps/bot/views.py:182
+msgid "Penalty waived"
+msgstr "Штраф отменен"
+
+#: apps/audit/presentation.py:124
+msgid "Expense recorded"
+msgstr "Расходы зафиксированы"
+
+#: apps/audit/presentation.py:125
+msgid "Expense updated"
+msgstr "Расход обновлен"
+
+#: apps/audit/presentation.py:126
+msgid "Expense deleted"
+msgstr "Расход удален."
+
+#: apps/audit/presentation.py:127
+msgid "Broadcast created"
+msgstr "Трансляция создана"
+
+#: apps/audit/presentation.py:128
+msgid "Broadcast updated"
+msgstr "Трансляция обновлена"
+
+#: apps/audit/presentation.py:129
+msgid "Broadcast scheduled"
+msgstr "Трансляция запланирована"
+
+#: apps/audit/presentation.py:130
+msgid "Broadcast started"
+msgstr "Трансляция началась"
+
+#: apps/audit/presentation.py:131
+msgid "Broadcast cancelled"
+msgstr "Трансляция отменена"
+
+#: apps/audit/presentation.py:132
+msgid "Broadcast completed"
+msgstr "Трансляция завершена"
+
+#: apps/audit/presentation.py:134
+msgid "Broadcast completed with failures"
+msgstr "Трансляция завершилась неудачно"
+
+#: apps/audit/presentation.py:138
+msgid "Broadcast template created"
+msgstr "Шаблон рассылки создан"
+
+#: apps/audit/presentation.py:142
+msgid "Broadcast template updated"
+msgstr "Шаблон рассылки обновлён"
+
+#: apps/audit/presentation.py:146
+msgid "Broadcast template deleted"
+msgstr "Шаблон рассылки удалён"
+
+#: apps/audit/presentation.py:150
+msgid "Client-master message created"
+msgstr "Сообщение клиент-мастер создано."
+
+#: apps/audit/presentation.py:153
+msgid "Notification sent"
+msgstr "Уведомление отправлено"
+
+#: apps/audit/presentation.py:154
+msgid "Notification delivery failed"
+msgstr "Доставка уведомления не удалась"
+
+#: apps/audit/presentation.py:156
+msgid "Notification settings updated"
+msgstr "Настройки уведомлений обновлены."
+
+#: apps/audit/presentation.py:160
+msgid "Appointment reminder rules updated"
+msgstr "Обновлены правила напоминания о встречах"
+
+#: apps/audit/presentation.py:163
+msgid "Reminder sent"
+msgstr "Напоминание отправлено"
+
+#: apps/audit/presentation.py:164
+msgid "Reminder delivery failed"
+msgstr "Не удалось доставить напоминание"
+
+#: apps/audit/presentation.py:165
+msgid "Bot token updated"
+msgstr "Токен бота обновлен."
+
+#: apps/audit/presentation.py:166
+msgid "Bot status changed"
+msgstr "Статус бота изменен"
+
+#: apps/audit/presentation.py:167
+msgid "Bot connection checked"
+msgstr "Подключение бота проверено"
+
+#: apps/audit/presentation.py:169
+msgid "Master Telegram connection link created"
+msgstr "Создана ссылка для подключения Master Telegram."
+
+#: apps/audit/presentation.py:173
+msgid "Bot content customized"
+msgstr "Контент бота настраивается"
+
+#: apps/audit/presentation.py:177
+msgid "Bot content reset to default"
+msgstr "Содержимое бота сброшено по умолчанию"
+
+#: apps/audit/presentation.py:180
+msgid "Bot settings updated"
+msgstr "Настройки бота обновлены."
+
+#: apps/audit/presentation.py:181
+msgid "Partner settings updated"
+msgstr "Настройки партнера обновлены."
+
+#: apps/audit/presentation.py:182
+msgid "Client created"
+msgstr "Клиент создан"
+
+#: apps/audit/presentation.py:183
+msgid "Client updated"
+msgstr "Клиент обновлен"
+
+#: apps/audit/presentation.py:184
+msgid "Service created"
+msgstr "Сервис создан"
+
+#: apps/audit/presentation.py:185
+msgid "Service updated"
+msgstr "Сервис обновлен"
+
+#: apps/audit/presentation.py:191 apps/schedule/forms.py:43
+#: templates/admin/appointments/appointment/create_penalty_form.html:58
+#: templates/admin/appointments/appointment/penalty_form.html:76
+#: templates/admin/appointments/appointment/status_form.html:75
+msgid "Appointment"
+msgstr "Запись"
+
+#: apps/audit/presentation.py:195
+msgid "Appointment proposal"
+msgstr "Предложение изменения записи"
+
+#: apps/audit/presentation.py:197
+#: templates/admin/clients/clientprofile/penalty_action_form.html:74
+msgid "Penalty"
+msgstr "Штраф"
+
+#: apps/audit/presentation.py:200
+msgid "Penalty settings"
+msgstr "Настройки штрафов"
+
+#: apps/audit/presentation.py:202
+msgid "Expense"
+msgstr "Расход"
+
+#: apps/audit/presentation.py:205
+msgid "Broadcast"
+msgstr "Трансляция"
+
+#: apps/audit/presentation.py:209
+msgid "Broadcast template"
+msgstr "Шаблон рассылки"
+
+#: apps/audit/presentation.py:213 apps/bot/models.py:174 apps/bot/views.py:983
+#: apps/broadcasts/admin.py:160 apps/broadcasts/admin.py:396
+#: apps/messaging/forms.py:13 templates/schedule/conflicts.html:443
+msgid "Message"
+msgstr "Сообщение"
+
+#: apps/audit/presentation.py:217 apps/audit/presentation.py:354
+#: apps/audit/presentation.py:359 apps/audit/presentation.py:364
+#: apps/audit/presentation.py:366 apps/notifications/models.py:79
+#: templates/admin/appointments/appointment/create_penalty_form.html:61
+#: templates/admin/appointments/appointment/penalty_form.html:79
+#: templates/admin/appointments/appointment/status_form.html:78
+#: templates/admin/appointments/manual_appointment_add.html:99
+#: templates/admin/clients/clientprofile/penalty_action_form.html:77
+#: templates/admin/messaging/conversationmessage/reply_form.html:65
+#: templates/partners/includes/appointment_table.html:9
+#: templates/partners/includes/appointment_table.html:23
+#: templates/schedule/calendar.html:632
+msgid "Client"
+msgstr "Клиент"
+
+#: apps/audit/presentation.py:219 apps/bot/apps.py:9 apps/bot/views.py:527
+#: templates/bot/workspace.html:532 templates/bot/workspace.html:560
+#: templates/finance/report.html:292 templates/partners/dashboard.html:281
+#: templates/schedule/calendar.html:577 templates/schedule/conflicts.html:296
+msgid "Bot"
+msgstr "Бот"
+
+#: apps/audit/presentation.py:222 templates/bot/workspace.html:695
+msgid "Bot content"
+msgstr "Контент бота"
+
+#: apps/audit/presentation.py:226
+msgid "Notification settings"
+msgstr "Настройки уведомлений"
+
+#: apps/audit/presentation.py:230
+msgid "Schedule settings"
+msgstr "Настройки расписания"
+
+#: apps/audit/presentation.py:232 templates/schedule/calendar.html:668
+msgid "Service"
+msgstr "Сервис"
+
+#: apps/audit/presentation.py:235
+msgid "Service category"
+msgstr "Категория услуги"
+
+#: apps/audit/presentation.py:237 apps/partners/admin.py:18
+#: templates/admin/audit/workerheartbeat/change_list.html:140
+#: templates/admin/audit/workerheartbeat/change_list.html:191
+#: templates/bot/workspace.html:541 templates/bot/workspace.html:594
+#: templates/finance/report.html:271 templates/partners/dashboard.html:251
+#: templates/partners/setup.html:163 templates/schedule/calendar.html:584
+#: templates/schedule/conflicts.html:261
+msgid "Partner"
+msgstr "Партнер"
+
+#: apps/audit/presentation.py:249
+msgid "Previous status"
+msgstr "Предыдущий статус"
+
+#: apps/audit/presentation.py:251
+msgid "Resulting status"
+msgstr "Итоговый статус"
+
+#: apps/audit/presentation.py:252
+#: templates/admin/appointments/appointment/create_penalty_form.html:69
+#: templates/admin/appointments/appointment/penalty_form.html:87
+#: templates/admin/appointments/appointment/penalty_form.html:106
+#: templates/admin/clients/clientprofile/change_form.html:152
+#: templates/admin/clients/clientprofile/change_form.html:193
+#: templates/admin/clients/clientprofile/change_form.html:234
+#: templates/partners/includes/appointment_table.html:11
+#: templates/partners/includes/appointment_table.html:35
+#: templates/schedule/calendar.html:644
+msgid "Status"
+msgstr "Статус"
+
+#: apps/audit/presentation.py:253 templates/schedule/calendar.html:648
+#: templates/schedule/calendar.html:796
+msgid "Source"
+msgstr "Источник"
+
+#: apps/audit/presentation.py:254
+msgid "Proposal type"
+msgstr "Тип предложения"
+
+#: apps/audit/presentation.py:255
+msgid "Direction"
+msgstr "Направление"
+
+#: apps/audit/presentation.py:256
+msgid "Appointment time"
+msgstr "Время записи"
+
+#: apps/audit/presentation.py:257
+msgid "Previous time"
+msgstr "Предыдущий раз"
+
+#: apps/audit/presentation.py:258
+msgid "New time"
+msgstr "Новое время"
+
+#: apps/audit/presentation.py:259
+msgid "Expires"
+msgstr "Срок действия истекает"
+
+#: apps/audit/presentation.py:260
+msgid "Scheduled for"
+msgstr "Запланировано на"
+
+#: apps/audit/presentation.py:261 apps/schedule/forms.py:48
+#: templates/finance/report.html:310 templates/finance/report.html:345
+#: templates/finance/report.html:349
+msgid "Date"
+msgstr "Дата"
+
+#: apps/audit/presentation.py:263
+msgid "Options"
+msgstr "Опции"
+
+#: apps/audit/presentation.py:264
+msgid "Affected records"
+msgstr "Затронутые записи"
+
+#: apps/audit/presentation.py:265
+msgid "Reschedule requests"
+msgstr "Перенести запросы"
+
+#: apps/audit/presentation.py:266
+msgid "Skipped without Telegram"
+msgstr "Пропущено без Telegram"
+
+#: apps/audit/presentation.py:267
+msgid "Pending recipients"
+msgstr "Ожидающие получатели"
+
+#: apps/audit/presentation.py:268 apps/audit/presentation.py:316
+#: apps/broadcasts/models.py:83 apps/integrations/models.py:13
+#: apps/messaging/models.py:21 apps/notifications/models.py:199
+#: apps/notifications/models.py:348
+msgid "Sent"
+msgstr "Отправлено"
+
+#: apps/audit/presentation.py:269 apps/audit/presentation.py:301
+#: apps/broadcasts/models.py:84 apps/integrations/models.py:15
+#: apps/messaging/models.py:22 apps/notifications/models.py:200
+#: apps/notifications/models.py:349
+msgid "Failed"
+msgstr "Не удалось"
+
+#: apps/audit/presentation.py:270 apps/audit/presentation.py:318
+#: apps/broadcasts/models.py:85 apps/messaging/models.py:23
+#: apps/notifications/models.py:201 apps/notifications/models.py:350
+msgid "Skipped"
+msgstr "Пропущено"
+
+#: apps/audit/presentation.py:271
+msgid "Near-fit slot"
+msgstr "Почти подходящий слот"
+
+#: apps/audit/presentation.py:272
+msgid "Successful"
+msgstr "Успешный"
+
+#: apps/audit/presentation.py:273
+msgid "Token changed"
+msgstr "Токен изменен"
+
+#: apps/audit/presentation.py:274
+msgid "Content key"
+msgstr "Ключ контента"
+
+#: apps/audit/presentation.py:275 apps/partners/setup.py:15
+#: templates/bot/workspace.html:733
+msgid "Language"
+msgstr "Язык"
+
+#: apps/audit/presentation.py:276
+msgid "Appointment cancelled"
+msgstr "Запись отменена"
+
+#: apps/audit/presentation.py:277
+msgid "Penalties enabled"
+msgstr "Штрафы включены"
+
+#: apps/audit/presentation.py:278 apps/bot/forms.py:445
+#: templates/admin/appointments/appointment/create_penalty_form.html:78
+msgid "Late-arrival threshold"
+msgstr "Порог позднего прибытия"
+
+#: apps/audit/presentation.py:279 apps/finance/admin.py:123
+#: apps/finance/admin.py:186 apps/finance/admin.py:237
+#: apps/finance/forms.py:166
+#: templates/admin/appointments/appointment/penalty_form.html:105
+#: templates/admin/clients/clientprofile/change_form.html:235
+#: templates/admin/clients/clientprofile/penalty_action_form.html:85
+#: templates/finance/report.html:345 templates/finance/report.html:351
+msgid "Amount"
+msgstr "Сумма"
+
+#: apps/audit/presentation.py:281 apps/bot/forms.py:429
+#: apps/finance/forms.py:107
+msgid "Late-cancellation penalty"
+msgstr "Штраф за позднюю отмену"
+
+#: apps/audit/presentation.py:282 apps/bot/forms.py:437
+#: apps/finance/forms.py:114
+msgid "No-show penalty"
+msgstr "Штраф за неявку"
+
+#: apps/audit/presentation.py:283 apps/bot/forms.py:451
+#: apps/finance/forms.py:121
+msgid "Late-arrival penalty"
+msgstr "Штраф за опоздание"
+
+#: apps/audit/presentation.py:284
+msgid "Penalty reason"
+msgstr "Причина штрафа"
+
+#: apps/audit/presentation.py:288 apps/bot/models.py:22
+#: apps/finance/models.py:177 apps/partners/models.py:19
+#: templates/schedule/conflicts.html:302
+msgid "Active"
+msgstr "Активен"
+
+#: apps/audit/presentation.py:290 apps/finance/models.py:81
+msgid "Applied to appointment"
+msgstr "Применен к записи"
+
+#: apps/audit/presentation.py:291 apps/bot/forms.py:360
+msgid "Auto-confirm"
+msgstr "Автоподтверждение"
+
+#: apps/audit/presentation.py:296 apps/messaging/models.py:15
+msgid "Client to master"
+msgstr "От клиента мастеру"
+
+#: apps/audit/presentation.py:299 apps/clients/forms.py:18
+#: apps/partners/models.py:9
+msgid "English"
+msgstr "английский"
+
+#: apps/audit/presentation.py:302 apps/finance/admin.py:50
+#: apps/finance/models.py:77
+msgid "Late arrival"
+msgstr "Опоздание"
+
+#: apps/audit/presentation.py:303 apps/finance/admin.py:42
+#: apps/finance/models.py:75
+msgid "Late cancellation"
+msgstr "Поздняя отмена"
+
+#: apps/audit/presentation.py:304 apps/bot/forms.py:361
+msgid "Manual confirmation"
+msgstr "Ручное подтверждение"
+
+#: apps/audit/presentation.py:305
+msgid "Manual admin"
+msgstr "Ручное администрирование"
+
+#: apps/audit/presentation.py:306 apps/messaging/models.py:16
+msgid "Master to client"
+msgstr "От мастера клиенту"
+
+#: apps/audit/presentation.py:308 apps/finance/models.py:82
+msgid "Paid"
+msgstr "Оплачено"
+
+#: apps/audit/presentation.py:309 apps/bot/models.py:23
+msgid "Paused"
+msgstr "Приостановлен"
+
+#: apps/audit/presentation.py:310 apps/broadcasts/models.py:21
+#: apps/broadcasts/models.py:81 apps/messaging/models.py:19
+#: apps/notifications/models.py:197
+msgid "Queued"
+msgstr "В очереди"
+
+#: apps/audit/presentation.py:313
+msgid "Confirmed appointment reschedule"
+msgstr "Подтвержденный перенос записи"
+
+#: apps/audit/presentation.py:314 apps/clients/forms.py:17
+#: apps/partners/models.py:8
+msgid "Russian"
+msgstr "русский"
+
+#: apps/audit/presentation.py:315 apps/broadcasts/models.py:22
+#: apps/broadcasts/models.py:82 apps/integrations/models.py:12
+#: apps/messaging/models.py:20 apps/notifications/models.py:198
+msgid "Sending"
+msgstr "Отправка"
+
+#: apps/audit/presentation.py:317 apps/partners/models.py:18
+msgid "Setup required"
+msgstr "Требуется настройка"
+
+#: apps/audit/presentation.py:319 apps/bot/models.py:24
+#: apps/partners/models.py:20
+msgid "Suspended"
+msgstr "Заблокирован"
+
+#: apps/audit/presentation.py:320 apps/clients/forms.py:16
+#: apps/partners/models.py:7
+msgid "Ukrainian"
+msgstr "Украинский"
+
+#: apps/audit/presentation.py:321 apps/finance/models.py:80
+msgid "Unpaid"
+msgstr "Не оплачено"
+
+#: apps/audit/presentation.py:322 apps/finance/models.py:83
+msgid "Waived"
+msgstr "Прощено"
+
+#: apps/audit/presentation.py:330
+msgid "Activity recorded"
+msgstr "Записано действие"
+
+#: apps/audit/presentation.py:367 apps/clients/admin.py:172
+msgid "System"
+msgstr "Система"
+
+#: apps/audit/presentation.py:411
+msgid "Yes"
+msgstr "Да"
+
+#: apps/audit/presentation.py:411
+msgid "No"
+msgstr "Нет"
+
+#: apps/audit/presentation.py:429
+#, python-format
+msgid "%(count)s min"
+msgstr "%(count)s мин."
+
+#: apps/audit/selectors.py:27
+msgid "Default / maintenance worker"
+msgstr "Дефолтный/работник по техническому обслуживанию"
+
+#: apps/audit/selectors.py:167
+msgid "This authenticated dashboard request completed successfully."
+msgstr "Этот аутентифицированный запрос информационной панели выполнен успешно."
+
+#: apps/audit/selectors.py:173
+msgid "Health dashboard queries completed successfully."
+msgstr "Запросы панели мониторинга работоспособности завершены успешно."
+
+#: apps/audit/selectors.py:177
+msgid "Redis / Celery broker"
+msgstr "Redis / Брокер сельдерея"
+
+#: apps/audit/selectors.py:180
+msgid "Scheduled heartbeat tasks are flowing through the broker."
+msgstr "Запланированные задачи пульса проходят через брокера."
+
+#: apps/audit/selectors.py:184
+msgid "Inferred from stale or missing Celery heartbeat tasks; inspect Redis and workers."
+msgstr "Выведено из устаревших или отсутствующих задач Heartbeat Celery; проверьте Redis и рабочих."
+
+#: apps/audit/selectors.py:223
+msgid "No heartbeat has been recorded."
+msgstr "Сердцебиение не зафиксировано."
+
+#: apps/audit/selectors.py:228
+#, python-format
+msgid "Last heartbeat %(age)s."
+msgstr "Последний пульс %(age)s."
+
+#: apps/audit/selectors.py:230
+#, python-format
+msgid "Last heartbeat %(age)s; error: %(error)s."
+msgstr "Последний контрольный сигнал %(age)s; ошибка: %(error)s."
+
+#: apps/audit/selectors.py:252 apps/audit/selectors.py:265
+msgid "Due notifications"
+msgstr "Уведомления о сроках"
+
+#: apps/audit/selectors.py:254
+msgid "No overdue queued notifications."
+msgstr "Никаких просроченных уведомлений в очереди."
+
+#: apps/audit/selectors.py:268
+#, python-format
+msgid "%(count)s queued notification; oldest is %(age)s late."
+msgid_plural "%(count)s queued notifications; oldest is %(age)s late."
+msgstr[0] "%(count)s уведомление в очереди; самое старое просрочено на %(age)s."
+msgstr[1] "%(count)s уведомления в очереди; самое старое просрочено на %(age)s."
+msgstr[2] "%(count)s уведомлений в очереди; самое старое просрочено на %(age)s."
+msgstr[3] "%(count)s уведомления в очереди; самое старое просрочено на %(age)s."
+
+#: apps/audit/selectors.py:316 apps/audit/selectors.py:338
+msgid "Broadcast progress"
+msgstr "Ход рассылки"
+
+#: apps/audit/selectors.py:318
+msgid "No active broadcasts."
+msgstr "Нет активных рассылок."
+
+#: apps/audit/selectors.py:326
+#, python-format
+msgid "%(count)s active campaign."
+msgid_plural "%(count)s active campaigns."
+msgstr[0] "%(count)s активная кампания."
+msgstr[1] "%(count)s активные кампании."
+msgstr[2] "%(count)s активных кампаний."
+msgstr[3] "%(count)s активной кампании."
+
+#: apps/audit/selectors.py:331
+#, python-format
+msgid "%(active)s active; %(stalled)s without recent progress."
+msgstr "%(active)s активен; %(stalled)s без недавнего прогресса."
+
+#: apps/audit/selectors.py:364
+msgid "No unresolved warning, error, or critical diagnostics."
+msgstr "Никаких неразрешенных предупреждений, ошибок или критических диагностических сообщений."
+
+#: apps/audit/selectors.py:367
+#, python-format
+msgid "%(total)s unresolved: %(critical)s critical, %(error)s error, %(warning)s warning."
+msgstr "%(total)s не решен: %(critical)s критичен, ошибка %(error)s, предупреждение %(warning)s."
+
+#: apps/audit/selectors.py:379
+msgid "Platform diagnostics"
+msgstr "Диагностика платформы"
+
+#: apps/audit/selectors.py:401
+msgid "never"
+msgstr "никогда"
+
+#: apps/audit/selectors.py:402
+#, python-format
+msgid "%(duration)s ago"
+msgstr "%(duration)s назад"
+
+#: apps/audit/selectors.py:408
+#, python-format
+msgid "%(count)ss"
+msgstr "%(count)ss"
+
+#: apps/audit/selectors.py:411
+#, python-format
+msgid "%(count)sm"
+msgstr "%(count)sm"
+
+#: apps/audit/selectors.py:415
+#, python-format
+msgid "%(hours)sh %(minutes)sm"
+msgstr "%(hours)sh %(minutes)sm"
+
+#: apps/audit/selectors.py:419
+#, python-format
+msgid "%(count)sh"
+msgstr "%(count)sh"
+
+#: apps/audit/selectors.py:422
+#, python-format
+msgid "%(days)sd %(hours)sh"
+msgstr "%(days)sd %(hours)sh"
+
+#: apps/audit/selectors.py:426
+#, python-format
+msgid "%(count)sd"
+msgstr "%(count)sd"
+
+#: apps/bot/admin.py:116
+msgid "Check Telegram connection"
+msgstr "Проверьте подключение к Телеграму"
+
+#: apps/bot/admin.py:130
+#, python-format
+msgid "Checked %(checked)s bot(s), %(failed)s need attention."
+msgstr "Проверены боты %(checked)s, %(failed)s требуют внимания."
+
+#: apps/bot/admin.py:138
+#, python-format
+msgid "Checked %(count)s bot(s)."
+msgstr "Проверены боты %(count)s."
+
+#: apps/bot/admin.py:141
+msgid "Launch selected bots after setup checks"
+msgstr "Запустите выбранных ботов после проверки настройки."
+
+#: apps/bot/admin.py:156
+#, python-format
+msgid "Launched %(count)s bot(s)."
+msgstr "Запущен бот %(count)s."
+
+#: apps/bot/admin.py:161
+msgid "Pause selected bots"
+msgstr "Приостановить выбранных ботов"
+
+#: apps/bot/admin.py:180
+#, python-format
+msgid "Paused %(count)s bot(s)."
+msgstr "Приостановлены боты %(count)s."
+
+#: apps/bot/admin.py:185
+msgid "Create my master Telegram link"
+msgstr "Создать мою мастер-ссылку в Telegram"
+
+#: apps/bot/admin.py:203
+#, python-brace-format
+msgid "<li><a href=\"{}\" target=\"_blank\" rel=\"noopener\">{}</a> (expires {})</li>"
+msgstr "<li><a href=\"{}\" target=\"_blank\" rel=\"noopener\">{}</a> (срок действия истекает {})</li>"
+
+#: apps/bot/admin.py:209
+#, python-brace-format
+msgid "Open the signed link in the master's Telegram:<ul>{}</ul>"
+msgstr "Откройте подписанную ссылку в Telegram мастера: <ul>{}</ul>"
+
+#: apps/bot/admin.py:277
+msgid "Sync system templates from registry"
+msgstr "Синхронизировать системные шаблоны из реестра"
+
+#: apps/bot/admin.py:282
+#, python-format
+msgid "Synchronized %(count)s system template rows."
+msgstr "Синхронизированы строки системного шаблона %(count)s."
+
+#: apps/bot/forms.py:51 apps/bot/forms.py:246 apps/bot/forms.py:381
+#: apps/bot/forms.py:448
+msgid "Minutes"
+msgstr "Минуты"
+
+#: apps/bot/forms.py:52
+msgid "Hours"
+msgstr "Часы"
+
+#: apps/bot/forms.py:53 apps/bot/forms.py:374
+msgid "Days"
+msgstr "Дни"
+
+#: apps/bot/forms.py:66 apps/bot/forms.py:106
+msgid "New bot token"
+msgstr "Новый токен бота"
+
+#: apps/bot/forms.py:74
+msgid "Enter a token from BotFather. The saved token is encrypted and cannot be shown again. Leave blank to keep the current token."
+msgstr "Введите токен от BotFather. Сохраненный токен зашифрован и не может быть показан снова. Оставьте пустым, чтобы сохранить текущий токен."
+
+#: apps/bot/forms.py:87
+msgid "A Telegram bot token is required."
+msgstr "Требуется токен бота Telegram."
+
+#: apps/bot/forms.py:112
+msgid "The saved token remains encrypted and is never shown again."
+msgstr "Сохраненный токен остается зашифрованным и никогда больше не отображается."
+
+#: apps/bot/forms.py:136 apps/partners/views.py:132
+#: templates/bot/workspace.html:578
+msgid "Check connection"
+msgstr "Проверьте соединение"
+
+#: apps/bot/forms.py:137
+msgid "Launch bot"
+msgstr "Запустить бота"
+
+#: apps/bot/forms.py:138
+msgid "Pause bot"
+msgstr "Пауза бота"
+
+#: apps/bot/forms.py:139 apps/partners/views.py:133
+msgid "Connect master Telegram"
+msgstr "Подключить мастер Telegram"
+
+#: apps/bot/forms.py:148
+msgid "Default bot language"
+msgstr "Язык бота по умолчанию"
+
+#: apps/bot/forms.py:152 apps/partners/setup.py:16
+msgid "Timezone"
+msgstr "Часовой пояс"
+
+#: apps/bot/forms.py:163
+msgid "Save content"
+msgstr "Сохранить контент"
+
+#: apps/bot/forms.py:164
+msgid "Preview content"
+msgstr "Предварительный просмотр контента"
+
+#: apps/bot/forms.py:165
+msgid "Reset content"
+msgstr "Сбросить содержимое"
+
+#: apps/bot/forms.py:174
+msgid "Custom text"
+msgstr "Пользовательский текст"
+
+#: apps/bot/forms.py:181
+msgid "Leave empty to use the system default."
+msgstr "Оставьте пустым, чтобы использовать системные значения по умолчанию."
+
+#: apps/bot/forms.py:184
+msgid "Leave empty and save to restore the system default for this language."
+msgstr "Оставьте пустым и сохраните, чтобы восстановить системные настройки по умолчанию для этого языка."
+
+#: apps/bot/forms.py:213
+msgid "Quiet hours enabled"
+msgstr "Тихие часы включены"
+
+#: apps/bot/forms.py:217
+msgid "Quiet hours start"
+msgstr "Начинаются тихие часы"
+
+#: apps/bot/forms.py:222
+msgid "Quiet hours end"
+msgstr "Тихие часы заканчиваются"
+
+#: apps/bot/forms.py:227
+msgid "Morning digest enabled"
+msgstr "Утренний дайджест включен"
+
+#: apps/bot/forms.py:231
+msgid "Morning digest time"
+msgstr "Утреннее время дайджеста"
+
+#: apps/bot/forms.py:236
+msgid "First pending-request reminder after"
+msgstr "Первое напоминание об ожидающем запросе после"
+
+#: apps/bot/forms.py:254
+msgid "Master reminder enabled"
+msgstr "Главное напоминание включено"
+
+#: apps/bot/forms.py:258
+msgid "Master reminder"
+msgstr "Главное напоминание"
+
+#: apps/bot/forms.py:261
+msgid "Master reminder amount"
+msgstr "Сумма основного напоминания"
+
+#: apps/bot/forms.py:264 apps/bot/forms.py:267
+msgid "Master reminder unit"
+msgstr "Главный блок напоминаний"
+
+#: apps/bot/forms.py:274
+#, python-format
+msgid "Client reminder %(number)s"
+msgstr "Напоминание клиенту %(number)s"
+
+#: apps/bot/forms.py:280
+#, python-format
+msgid "Client reminder %(number)s amount"
+msgstr "Сумма напоминания клиенту %(number)s"
+
+#: apps/bot/forms.py:285 apps/bot/forms.py:289
+#, python-format
+msgid "Client reminder %(number)s unit"
+msgstr "Устройство напоминания клиенту %(number)s"
+
+#: apps/bot/forms.py:322
+msgid "Client reminders must be between 15 minutes and 30 days."
+msgstr "Напоминания клиенту должны длиться от 15 минут до 30 дней."
+
+#: apps/bot/forms.py:328
+msgid "Client reminder times must be unique."
+msgstr "Время напоминания клиенту должно быть уникальным."
+
+#: apps/bot/forms.py:335
+msgid "Enter a master reminder time."
+msgstr "Введите время основного напоминания."
+
+#: apps/bot/forms.py:345
+msgid "Master reminder must be between 5 minutes and 7 days."
+msgstr "Главное напоминание должно длиться от 5 минут до 7 дней."
+
+#: apps/bot/forms.py:357
+msgid "Booking confirmation"
+msgstr "Подтверждение бронирования"
+
+#: apps/bot/forms.py:359
+msgid "Select confirmation mode"
+msgstr "Выберите режим подтверждения"
+
+#: apps/bot/forms.py:365
+msgid "Slot step"
+msgstr "Шаг слота"
+
+#: apps/bot/forms.py:370
+msgid "Booking horizon"
+msgstr "Горизонт бронирования"
+
+#: apps/bot/forms.py:377
+msgid "Near-fit tolerance"
+msgstr "Почти подходящий допуск"
+
+#: apps/bot/forms.py:384
+msgid "Cancellation deadline"
+msgstr "Срок отмены"
+
+#: apps/bot/forms.py:388
+msgid "Hours before appointment"
+msgstr "За несколько часов до встречи"
+
+#: apps/bot/forms.py:391
+msgid "Require phone for booking"
+msgstr "Для бронирования нужен телефон"
+
+#: apps/bot/forms.py:425
+msgid "Enable penalties"
+msgstr "Включить штрафы"
+
+#: apps/bot/models.py:28
+msgid "Polling"
+msgstr "Опрос"
+
+#: apps/bot/models.py:40
+msgid "delivery mode"
+msgstr "режим доставки"
+
+#: apps/bot/models.py:45
+msgid "encrypted token"
+msgstr "зашифрованный токен"
+
+#: apps/bot/models.py:46
+msgid "token key ID"
+msgstr "ID ключа токена"
+
+#: apps/bot/models.py:48
+msgid "token fingerprint"
+msgstr "отпечаток токена"
+
+#: apps/bot/models.py:55
+msgid "masked token"
+msgstr "замаскированный токен"
+
+#: apps/bot/models.py:56
+msgid "Telegram bot ID"
+msgstr "ID бота в Telegram"
+
+#: apps/bot/models.py:57
+msgid "Telegram username"
+msgstr "имя пользователя в Telegram"
+
+#: apps/bot/models.py:59 apps/integrations/models.py:29
+msgid "masked last error message"
+msgstr "замаскированное последнее сообщение об ошибке"
+
+#: apps/bot/models.py:60
+msgid "last checked at"
+msgstr "последняя проверка"
+
+#: apps/bot/models.py:61
+msgid "last started at"
+msgstr "последний запуск"
+
+#: apps/bot/models.py:62
+msgid "last activity at"
+msgstr "последняя активность"
+
+#: apps/bot/models.py:65
+msgid "bot instance"
+msgstr "экземпляр бота"
+
+#: apps/bot/models.py:66
+msgid "bot instances"
+msgstr "экземпляры ботов"
+
+#: apps/bot/models.py:86
+msgid "Admin recipient"
+msgstr "Получатель админ-уведомлений"
+
+#: apps/bot/models.py:92 apps/clients/models.py:21 apps/clients/models.py:39
+msgid "Telegram identity"
+msgstr "профиль Telegram"
+
+#: apps/bot/models.py:105
+msgid "primary"
+msgstr "основной"
+
+#: apps/bot/models.py:107
+msgid "linked at"
+msgstr "привязано"
+
+#: apps/bot/models.py:109 apps/clients/models.py:49
+msgid "last delivery failure code"
+msgstr "код последней ошибки доставки"
+
+#: apps/bot/models.py:112 apps/clients/models.py:52
+msgid "last delivery failure at"
+msgstr "последняя ошибка доставки"
+
+#: apps/bot/models.py:116
+msgid "partner Telegram contact"
+msgstr "контакт партнера в Telegram"
+
+#: apps/bot/models.py:117
+msgid "partner Telegram contacts"
+msgstr "контакты партнера в Telegram"
+
+#: apps/bot/models.py:151
+msgid "nonce fingerprint"
+msgstr "отпечаток одноразового кода"
+
+#: apps/bot/models.py:154
+msgid "consumed at"
+msgstr "использовано"
+
+#: apps/bot/models.py:157
+msgid "partner Telegram contact link"
+msgstr "ссылка подключения Telegram-контакта"
+
+#: apps/bot/models.py:158
+msgid "partner Telegram contact links"
+msgstr "ссылки подключения Telegram-контактов"
+
+#: apps/bot/models.py:175 apps/bot/views.py:982
+msgid "Button"
+msgstr "Кнопка"
+
+#: apps/bot/models.py:181 apps/bot/models.py:229
+msgid "key"
+msgstr "ключ"
+
+#: apps/bot/models.py:182 apps/bot/models.py:230 apps/clients/models.py:43
+msgid "language"
+msgstr "язык"
+
+#: apps/bot/models.py:183 apps/bot/models.py:231
+msgid "body"
+msgstr "текст шаблона"
+
+#: apps/bot/models.py:185
+msgid "content type"
+msgstr "тип контента"
+
+#: apps/bot/models.py:190
+msgid "editable"
+msgstr "редактируемый"
+
+#: apps/bot/models.py:191
+msgid "required"
+msgstr "обязательный"
+
+#: apps/bot/models.py:192
+msgid "allowed placeholders"
+msgstr "разрешённые плейсхолдеры"
+
+#: apps/bot/models.py:193
+msgid "sample context"
+msgstr "пример контекста"
+
+#: apps/bot/models.py:196
+msgid "system template"
+msgstr "системный шаблон"
+
+#: apps/bot/models.py:197
+msgid "system templates"
+msgstr "системные шаблоны"
+
+#: apps/bot/models.py:233
+msgid "last validated at"
+msgstr "последняя проверка"
+
+#: apps/bot/models.py:236
+msgid "partner template override"
+msgstr "переопределение шаблона партнера"
+
+#: apps/bot/models.py:237
+msgid "partner template overrides"
+msgstr "переопределения шаблона партнера"
+
+#: apps/bot/views.py:102
+msgid "Instance"
+msgstr "Экземпляр"
+
+#: apps/bot/views.py:103
+msgid "Settings"
+msgstr "Настройки"
+
+#: apps/bot/views.py:106 apps/bot/views.py:111
+msgid "Booking"
+msgstr "Бронирование"
+
+#: apps/bot/views.py:110
+msgid "Start and welcome"
+msgstr "Старт и добро пожаловать"
+
+#: apps/bot/views.py:113
+msgid "Master notifications"
+msgstr "Основные уведомления"
+
+#: apps/bot/views.py:114
+msgid "Reminders"
+msgstr "Напоминания"
+
+#: apps/bot/views.py:115
+msgid "Client profile"
+msgstr "Профиль клиента"
+
+#: apps/bot/views.py:117 apps/messaging/apps.py:9
+msgid "Messaging"
+msgstr "Сообщения"
+
+#: apps/bot/views.py:118
+msgid "Broadcast buttons"
+msgstr "Кнопки рассылки"
+
+#: apps/bot/views.py:121
+msgid "Welcome"
+msgstr "Добро пожаловать"
+
+#: apps/bot/views.py:122
+msgid "Language selection"
+msgstr "Выбор языка"
+
+#: apps/bot/views.py:123
+msgid "Incomplete profile"
+msgstr "Неполный профиль"
+
+#: apps/bot/views.py:124
+msgid "Category selection"
+msgstr "Выбор категории"
+
+#: apps/bot/views.py:125
+msgid "Service selection"
+msgstr "Выбор услуги"
+
+#: apps/bot/views.py:126
+msgid "Booking summary"
+msgstr "Сводка бронирования"
+
+#: apps/bot/views.py:127
+msgid "Date selection"
+msgstr "Выбор даты"
+
+#: apps/bot/views.py:128
+msgid "Time selection"
+msgstr "Выбор времени"
+
+#: apps/bot/views.py:129
+msgid "Near-fit notice"
+msgstr "Уведомление о близком соответствии"
+
+#: apps/bot/views.py:130
+msgid "Booking comment prompt"
+msgstr "Подсказка для комментария к бронированию"
+
+#: apps/bot/views.py:131
+msgid "Final booking confirmation"
+msgstr "Окончательное подтверждение бронирования"
+
+#: apps/bot/views.py:132
+msgid "Booking request created"
+msgstr "Запрос на бронирование создан."
+
+#: apps/bot/views.py:133
+msgid "Booking confirmed"
+msgstr "Бронирование подтверждено"
+
+#: apps/bot/views.py:134
+msgid "Request cancelled by client"
+msgstr "Запрос отменен клиентом"
+
+#: apps/bot/views.py:135
+msgid "Request confirmed by master"
+msgstr "Запрос подтвержден мастером"
+
+#: apps/bot/views.py:136
+msgid "Request declined by master"
+msgstr "Запрос отклонен мастером"
+
+#: apps/bot/views.py:137
+msgid "Cancellation confirmation"
+msgstr "Подтверждение отмены"
+
+#: apps/bot/views.py:140
+msgid "Appointment completed"
+msgstr "Запись завершена"
+
+#: apps/bot/views.py:141
+msgid "Appointment no-show"
+msgstr "Неявка на запись"
+
+#: apps/bot/views.py:142
+msgid "Late cancellation warning"
+msgstr "Предупреждение о поздней отмене"
+
+#: apps/bot/views.py:143
+msgid "Late cancellation with penalty"
+msgstr "Поздняя отмена со штрафом"
+
+#: apps/bot/views.py:144
+msgid "Reschedule start"
+msgstr "Перенести начало"
+
+#: apps/bot/views.py:146
+msgid "Schedule conflict reschedule requested"
+msgstr "Запрошен перенос расписания из-за конфликта расписаний"
+
+#: apps/bot/views.py:148
+msgid "Reschedule requested"
+msgstr "Запрошен перенос даты"
+
+#: apps/bot/views.py:149
+msgid "Reschedule auto-confirmed"
+msgstr "Перенос подтвержден автоматически"
+
+#: apps/bot/views.py:150
+msgid "Reschedule proposed"
+msgstr "Предлагается перенести дату"
+
+#: apps/bot/views.py:151
+msgid "Reschedule proposal accepted"
+msgstr "Предложение о переносе принято"
+
+#: apps/bot/views.py:152
+msgid "Reschedule proposal declined"
+msgstr "Предложение о переносе даты отклонено"
+
+#: apps/bot/views.py:153
+msgid "Reschedule proposal expired"
+msgstr "Срок действия предложения о переносе истек"
+
+#: apps/bot/views.py:154
+msgid "New booking request"
+msgstr "Новый запрос на бронирование"
+
+#: apps/bot/views.py:155
+msgid "Client booked appointment"
+msgstr "Клиент записался на прием"
+
+#: apps/bot/views.py:156
+msgid "Client cancelled appointment"
+msgstr "Клиент отменил встречу"
+
+#: apps/bot/views.py:157
+msgid "Client requested reschedule"
+msgstr "Клиент запросил перенос даты"
+
+#: apps/bot/views.py:158
+msgid "Client accepted reschedule"
+msgstr "Клиент принял перенос графика"
+
+#: apps/bot/views.py:159
+msgid "Client declined reschedule"
+msgstr "Клиент отказался от переноса"
+
+#: apps/bot/views.py:160
+msgid "Appointment proposal expired"
+msgstr "Срок действия предложения о встрече истек"
+
+#: apps/bot/views.py:161 apps/notifications/models.py:141
+msgid "Client appointment reminder"
+msgstr "Напоминание клиенту о записи"
+
+#: apps/bot/views.py:162 apps/notifications/models.py:154
+msgid "Master appointment reminder"
+msgstr "Напоминание мастеру о записи"
+
+#: apps/bot/views.py:163
+msgid "Empty morning digest"
+msgstr "Пустой утренний дайджест"
+
+#: apps/bot/views.py:164
+msgid "Morning digest"
+msgstr "Утренний дайджест"
+
+#: apps/bot/views.py:165
+msgid "Pending request reminder"
+msgstr "Напоминание об ожидающем запросе"
+
+#: apps/bot/views.py:166 apps/notifications/models.py:194
+msgid "Failed delivery to master"
+msgstr "Не удалось доставить мастеру"
+
+#: apps/bot/views.py:167
+msgid "Profile main screen"
+msgstr "Главный экран профиля"
+
+#: apps/bot/views.py:168
+msgid "Missing profile fields"
+msgstr "Отсутствуют поля профиля"
+
+#: apps/bot/views.py:169
+msgid "No future appointments"
+msgstr "Нет будущих записей"
+
+#: apps/bot/views.py:170
+msgid "Future appointments list"
+msgstr "Список будущих записей"
+
+#: apps/bot/views.py:171
+msgid "Empty appointment history"
+msgstr "История записей пуста"
+
+#: apps/bot/views.py:172
+msgid "Appointment history list"
+msgstr "История записей"
+
+#: apps/bot/views.py:173
+msgid "Appointment details"
+msgstr "Детали записи"
+
+#: apps/bot/views.py:174
+msgid "No active penalties"
+msgstr "Нет активных штрафов"
+
+#: apps/bot/views.py:175
+msgid "Active penalties list"
+msgstr "Список активных штрафов"
+
+#: apps/bot/views.py:176 apps/bot/views.py:186
+msgid "Contact master prompt"
+msgstr "Предложение написать мастеру"
+
+#: apps/bot/views.py:177
+msgid "Late-cancellation penalty created"
+msgstr "Создан штраф за позднее аннулирование"
+
+#: apps/bot/views.py:178
+msgid "No-show penalty created"
+msgstr "Создан штраф за неявку"
+
+#: apps/bot/views.py:179
+msgid "Late-arrival penalty created"
+msgstr "Установлен штраф за опоздание"
+
+#: apps/bot/views.py:181
+msgid "Penalty paid"
+msgstr "Штраф уплачен"
+
+#: apps/bot/views.py:183
+msgid "Penalty created for client"
+msgstr "Штраф установлен для клиента"
+
+#: apps/bot/views.py:184 apps/notifications/models.py:137
+msgid "Client penalty paid"
+msgstr "Клиенту: штраф оплачен"
+
+#: apps/bot/views.py:185 apps/notifications/models.py:138
+msgid "Client penalty waived"
+msgstr "Клиенту: штраф прощён"
+
+#: apps/bot/views.py:187
+msgid "Client message for master"
+msgstr "Клиентское сообщение для мастера"
+
+#: apps/bot/views.py:188
+msgid "Master reply for client"
+msgstr "Ответ мастера клиенту"
+
+#: apps/bot/views.py:189
+msgid "Default Book button"
+msgstr "Кнопка книги по умолчанию"
+
+#: apps/bot/views.py:190
+msgid "Default My appointments button"
+msgstr "Стандартная кнопка «Мои записи»"
+
+#: apps/bot/views.py:191
+msgid "Default external link button"
+msgstr "Кнопка внешней ссылки по умолчанию"
+
+#: apps/bot/views.py:255 apps/bot/views.py:936 apps/bot/views.py:940
+#: apps/finance/views.py:124 apps/finance/views.py:128
+#: apps/partners/views.py:99 apps/partners/views.py:104
+#: apps/schedule/views.py:443 apps/schedule/views.py:447
+msgid "Partner not found."
+msgstr "Партнер не найден."
+
+#: apps/bot/views.py:268
+msgid "Bot token saved securely. Check the connection next."
+msgstr "Токен бота надежно сохранен. Далее проверьте соединение."
+
+#: apps/bot/views.py:276 apps/bot/views.py:577
+msgid "Unknown bot action."
+msgstr "Неизвестное действие бота."
+
+#: apps/bot/views.py:294
+msgid "Unknown partner settings action."
+msgstr "Действие в настройках неизвестного партнера."
+
+#: apps/bot/views.py:308
+msgid "Partner defaults saved."
+msgstr "Настройки партнера по умолчанию сохранены."
+
+#: apps/bot/views.py:318
+msgid "Unknown content action."
+msgstr "Неизвестное действие с контентом."
+
+#: apps/bot/views.py:330
+msgid "Content reset to the system default."
+msgstr "Содержимое сбрасывается до системных значений по умолчанию."
+
+#: apps/bot/views.py:372
+msgid "Localized bot content saved."
+msgstr "Локализованный контент бота сохранен."
+
+#: apps/bot/views.py:413
+msgid "Notification schedule saved."
+msgstr "Расписание уведомлений сохранено."
+
+#: apps/bot/views.py:437
+msgid "Appointment reminder rules saved."
+msgstr "Правила напоминания о встречах сохранены."
+
+#: apps/bot/views.py:445
+msgid "Unknown notification settings action."
+msgstr "Неизвестное действие настроек уведомлений."
+
+#: apps/bot/views.py:448
+msgid "Unknown booking settings action."
+msgstr "Неизвестное действие в настройках бронирования."
+
+#: apps/bot/views.py:478
+msgid "Booking settings saved."
+msgstr "Настройки бронирования сохранены."
+
+#: apps/bot/views.py:487
+msgid "Unknown penalty settings action."
+msgstr "Неизвестное действие по настройкам штрафа."
+
+#: apps/bot/views.py:514
+msgid "Penalty settings saved."
+msgstr "Настройки штрафа сохранены."
+
+#: apps/bot/views.py:522
+msgid "This bot workspace tab is read-only for now."
+msgstr "Эта вкладка рабочей области бота на данный момент доступна только для чтения."
+
+#: apps/bot/views.py:555
+msgid "Save a bot token before using this action."
+msgstr "Прежде чем использовать это действие, сохраните токен бота."
+
+#: apps/bot/views.py:562
+msgid "Telegram did not accept the current bot configuration."
+msgstr "Telegram не принял текущую конфигурацию бота."
+
+#: apps/bot/views.py:887
+msgid "Unsaved draft"
+msgstr "Несохраненный черновик"
+
+#: apps/bot/views.py:888
+msgid "Partner override"
+msgstr "Переопределение партнера"
+
+#: apps/bot/views.py:889 templates/bot/workspace.html:737
+msgid "System default"
+msgstr "Система по умолчанию"
+
+#: apps/bot/views.py:908
+msgid "Telegram connection checked."
+msgstr "Соединение с Telegram проверено."
+
+#: apps/bot/views.py:909
+msgid "Bot launched. Restart the polling runner if needed."
+msgstr "Бот запущен. При необходимости перезапустите средство опроса."
+
+#: apps/bot/views.py:910
+msgid "Bot paused."
+msgstr "Бот сделал паузу."
+
+#: apps/bot/views.py:946
+msgid "Bot workspace tab not found."
+msgstr "Вкладка рабочей области бота не найдена."
+
+#: apps/bot/views.py:959
+msgid "Editable content template not found."
+msgstr "Шаблон редактируемого контента не найден."
+
+#: apps/bot/views.py:968
+msgid "Content language not found."
+msgstr "Язык контента не найден."
+
+#: apps/broadcasts/admin.py:89
+#: templates/admin/audit/workerheartbeat/change_list.html:141
+msgid "Campaign"
+msgstr "Кампания"
+
+#: apps/broadcasts/admin.py:110 apps/broadcasts/admin.py:175
+msgid "Audience"
+msgstr "Аудитория"
+
+#: apps/broadcasts/admin.py:112 apps/broadcasts/admin.py:198
+#: apps/broadcasts/admin.py:402
+msgid "Buttons"
+msgstr "Кнопки"
+
+#: apps/broadcasts/admin.py:124 templates/bot/workspace.html:654
+msgid "Delivery"
+msgstr "Доставка"
+
+#: apps/broadcasts/admin.py:164 apps/broadcasts/admin.py:172
+#: apps/broadcasts/admin.py:400
+#, python-format
+msgid "Photo: %(photo)s"
+msgstr "Фото: %(photo)s"
+
+#: apps/broadcasts/admin.py:173
+msgid "No content"
+msgstr "Нет контента"
+
+#: apps/broadcasts/admin.py:187
+#, python-format
+msgid "Completed service: %(service)s"
+msgstr "Завершенное обслуживание: %(service)s"
+
+#: apps/broadcasts/admin.py:188
+msgid "removed service"
+msgstr "удалена услуга"
+
+#: apps/broadcasts/admin.py:191
+#, python-format
+msgid "Absent for %(days)s+ days"
+msgstr "Отсутствовал %(days)s+ дней"
+
+#: apps/broadcasts/admin.py:193
+msgid "Has future appointment"
+msgstr "Есть будущая запись"
+
+#: apps/broadcasts/admin.py:195
+msgid "Without future appointment"
+msgstr "Без будущей записи"
+
+#: apps/broadcasts/admin.py:196 apps/broadcasts/forms.py:79
+msgid "All reachable subscribed clients"
+msgstr "Все доступные подписанные клиенты"
+
+#: apps/broadcasts/admin.py:201 apps/broadcasts/admin.py:405
+msgid "None"
+msgstr "Нет"
+
+#: apps/broadcasts/admin.py:203
+#: templates/admin/audit/workerheartbeat/change_list.html:142
+msgid "Progress"
+msgstr "Прогресс"
+
+#: apps/broadcasts/admin.py:208
+msgid "0 recipients"
+msgstr "0 получателей"
+
+#: apps/broadcasts/admin.py:210
+msgid "Not started"
+msgstr "Не запущено"
+
+#: apps/broadcasts/admin.py:215
+#, python-format
+msgid "%(percent)s%% · %(sent)s sent · %(failed)s failed · %(skipped)s skipped · %(pending)s pending"
+msgstr "%(percent)s%% · %(sent)s отправлен · %(failed)s не удалось · %(skipped)s пропущен · %(pending)s в ожидании"
+
+#: apps/broadcasts/admin.py:238
+msgid "A started broadcast cannot be edited."
+msgstr "Запущенную рассылку нельзя редактировать."
+
+#: apps/broadcasts/admin.py:259
+msgid "Start selected campaigns now"
+msgstr "Запустить выбранные кампании сейчас"
+
+#: apps/broadcasts/admin.py:276
+#, python-format
+msgid "Started %(count)s broadcast campaign(s)."
+msgstr "Запущено рассылок: %(count)s."
+
+#: apps/broadcasts/admin.py:281
+#, python-format
+msgid "Could not start %(count)s campaign(s) from their current status."
+msgstr "Не удалось запустить кампании %(count)s с их текущим статусом."
+
+#: apps/broadcasts/admin.py:286
+msgid "Cancel selected campaigns"
+msgstr "Отменить выбранные кампании"
+
+#: apps/broadcasts/admin.py:307
+#, python-format
+msgid "Cancelled %(count)s broadcast campaign(s)."
+msgstr "Отменено рассылок: %(count)s."
+
+#: apps/broadcasts/admin.py:312
+#, python-format
+msgid "Could not cancel %(count)s finished campaign(s)."
+msgstr "Не удалось отменить завершенные кампании %(count)s."
+
+#: apps/broadcasts/admin.py:407
+msgid "Reuse"
+msgstr "повторное использование"
+
+#: apps/broadcasts/admin.py:411
+#, python-brace-format
+msgid "<a href=\"{}?{}\">Create campaign</a>"
+msgstr "<a href=\"{}?{}\">Создать кампанию</a>"
+
+#: apps/broadcasts/forms.py:34
+msgid "Add Book button"
+msgstr "Кнопка «Добавить книгу»"
+
+#: apps/broadcasts/forms.py:43
+msgid "Add My appointments button"
+msgstr "Добавить кнопку «Мои записи»"
+
+#: apps/broadcasts/forms.py:80
+msgid "Clients absent for a number of days"
+msgstr "Клиенты отсутствуют несколько дней"
+
+#: apps/broadcasts/forms.py:81
+msgid "Clients who completed a specific service"
+msgstr "Клиенты, выполнившие конкретную услугу"
+
+#: apps/broadcasts/forms.py:82
+msgid "Clients with a future appointment"
+msgstr "Клиенты с будущей записью"
+
+#: apps/broadcasts/forms.py:83
+msgid "Clients without a future appointment"
+msgstr "Клиенты без будущей записи"
+
+#: apps/broadcasts/forms.py:90
+msgid "Required only for the specific-service audience."
+msgstr "Требуется только для аудитории конкретных услуг."
+
+#: apps/broadcasts/forms.py:96
+msgid "Required only for the long-absent audience."
+msgstr "Требуется только для давно отсутствующей аудитории."
+
+#: apps/broadcasts/forms.py:100
+msgid "Save draft"
+msgstr "Сохранить черновик"
+
+#: apps/broadcasts/forms.py:101
+msgid "Start sending now"
+msgstr "Начни отправлять сейчас"
+
+#: apps/broadcasts/forms.py:102
+msgid "Schedule for later"
+msgstr "Запланируйте на потом"
+
+#: apps/broadcasts/forms.py:130 apps/broadcasts/forms.py:207
+msgid "Optional Telegram file ID or HTTPS image URL."
+msgstr "Необязательный идентификатор файла Telegram или URL-адрес изображения HTTPS."
+
+#: apps/broadcasts/forms.py:131
+msgid "Used only when delivery mode is Schedule for later."
+msgstr "Используется только в том случае, если режим доставки — «Запланировать на потом»."
+
+#: apps/broadcasts/forms.py:180
+msgid "Choose when this broadcast should start."
+msgstr "Выберите время запуска рассылки."
+
+#: apps/broadcasts/forms.py:182
+msgid "Scheduled time must be in the future."
+msgstr "Запланированное время должно быть в будущем."
+
+#: apps/broadcasts/forms.py:251
+msgid "Enter a label for the Book button."
+msgstr "Введите метку для кнопки «Забронировать»."
+
+#: apps/broadcasts/forms.py:259
+msgid "Enter a label for the My appointments button."
+msgstr "Введите название кнопки «Мои записи»."
+
+#: apps/broadcasts/forms.py:268
+msgid "Enter an external-link label."
+msgstr "Введите метку внешней ссылки."
+
+#: apps/broadcasts/forms.py:270
+msgid "Enter an external-link URL."
+msgstr "Введите URL-адрес внешней ссылки."
+
+#: apps/broadcasts/forms.py:291
+msgid "Enter the absence period in days."
+msgstr "Введите период отсутствия в днях."
+
+#: apps/broadcasts/forms.py:297
+msgid "Choose a service."
+msgstr "Выберите услугу."
+
+#: apps/broadcasts/models.py:19
+msgid "Draft"
+msgstr "Черновик"
+
+#: apps/broadcasts/models.py:20
+msgid "Scheduled"
+msgstr "Запланировано"
+
+#: apps/broadcasts/models.py:25
+msgid "Partially failed"
+msgstr "Частично не удалось"
+
+#: apps/broadcasts/models.py:27 apps/broadcasts/models.py:150
+#: apps/messaging/models.py:32
+msgid "text"
+msgstr "текст"
+
+#: apps/broadcasts/models.py:28 apps/broadcasts/models.py:151
+msgid "photo"
+msgstr "фото"
+
+#: apps/broadcasts/models.py:29 apps/broadcasts/models.py:152
+msgid "buttons"
+msgstr "кнопки"
+
+#: apps/broadcasts/models.py:30
+msgid "filters"
+msgstr "фильтры"
+
+#: apps/broadcasts/models.py:34
+msgid "scheduled at"
+msgstr "запланировано на"
+
+#: apps/broadcasts/models.py:35
+msgid "queued count"
+msgstr "количество в очереди"
+
+#: apps/broadcasts/models.py:36
+msgid "sent count"
+msgstr "отправлено"
+
+#: apps/broadcasts/models.py:37
+msgid "failed count"
+msgstr "ошибки"
+
+#: apps/broadcasts/models.py:38
+msgid "skipped count"
+msgstr "пропущено"
+
+#: apps/broadcasts/models.py:47
+msgid "started at"
+msgstr "начато"
+
+#: apps/broadcasts/models.py:48
+msgid "finished at"
+msgstr "завершено"
+
+#: apps/broadcasts/models.py:51
+msgid "broadcast campaign"
+msgstr "кампания рассылки"
+
+#: apps/broadcasts/models.py:52
+msgid "broadcast campaigns"
+msgstr "кампании рассылок"
+
+#: apps/broadcasts/models.py:91
+msgid "campaign"
+msgstr "кампания"
+
+#: apps/broadcasts/models.py:102 apps/notifications/models.py:259
+msgid "attempt count"
+msgstr "количество попыток"
+
+#: apps/broadcasts/models.py:104 apps/notifications/models.py:261
+msgid "maximum attempts"
+msgstr "максимальное количество попыток"
+
+#: apps/broadcasts/models.py:107
+msgid "next attempt at"
+msgstr "следующая попытка"
+
+#: apps/broadcasts/models.py:109 apps/notifications/models.py:267
+msgid "sent at"
+msgstr "отправлено"
+
+#: apps/broadcasts/models.py:110 apps/messaging/models.py:39
+#: apps/notifications/models.py:383
+msgid "failure code"
+msgstr "код ошибки"
+
+#: apps/broadcasts/models.py:111 apps/messaging/models.py:40
+#: apps/notifications/models.py:384
+msgid "masked failure message"
+msgstr "замаскированное сообщение об ошибке"
+
+#: apps/broadcasts/models.py:114 apps/notifications/models.py:366
+msgid "broadcast recipient"
+msgstr "получатель рассылки"
+
+#: apps/broadcasts/models.py:115
+msgid "broadcast recipients"
+msgstr "получатели рассылок"
+
+#: apps/broadcasts/models.py:149 apps/catalog/models.py:15
+#: apps/catalog/models.py:42 apps/clients/models.py:41
+#: apps/partners/models.py:23 apps/schedule/models.py:38
+#: apps/schedule/models.py:152
+msgid "name"
+msgstr "имя"
+
+#: apps/broadcasts/models.py:163
+msgid "broadcast template"
+msgstr "шаблон рассылки"
+
+#: apps/broadcasts/models.py:164
+msgid "broadcast templates"
+msgstr "шаблоны рассылок"
+
+#: apps/catalog/admin.py:33 apps/catalog/models.py:52
+msgid "services"
+msgstr "услуги"
+
+#: apps/catalog/admin.py:38
+msgid "Has services"
+msgstr "Имеет услуги"
+
+#: apps/catalog/admin.py:39
+msgid "Empty category"
+msgstr "Пустая категория"
+
+#: apps/catalog/admin.py:53
+msgid "booking visibility"
+msgstr "видимость бронирования"
+
+#: apps/catalog/admin.py:58 apps/catalog/admin.py:190
+msgid "Bookable"
+msgstr "Бронируемый"
+
+#: apps/catalog/admin.py:59 apps/catalog/admin.py:187
+msgid "Service inactive"
+msgstr "Сервис неактивен"
+
+#: apps/catalog/admin.py:60 apps/catalog/admin.py:189
+msgid "Hidden by category"
+msgstr "Скрыто по категории"
+
+#: apps/catalog/admin.py:108
+#, python-brace-format
+msgid "<a href=\"{}?{}\">{} active / {} total</a>"
+msgstr "<a href=\"{}?{}\">{} активно / всего {}</a>"
+
+#: apps/catalog/admin.py:175 apps/catalog/forms.py:62
+#: templates/schedule/calendar.html:670
+msgid "Price"
+msgstr "Цена"
+
+#: apps/catalog/admin.py:180 templates/schedule/calendar.html:669
+msgid "Duration"
+msgstr "Продолжительность"
+
+#: apps/catalog/admin.py:182
+#, python-format
+msgid "%(minutes)s min"
+msgstr "%(minutes)s мин."
+
+#: apps/catalog/admin.py:184
+msgid "Booking visibility"
+msgstr "Видимость бронирования"
+
+#: apps/catalog/apps.py:9 templates/bot/workspace.html:557
+#: templates/finance/report.html:289 templates/partners/dashboard.html:278
+#: templates/schedule/calendar.html:574 templates/schedule/conflicts.html:293
+msgid "Catalog"
+msgstr "Каталог"
+
+#: apps/catalog/forms.py:63
+msgid "Enter the client-facing amount, for example 500.00."
+msgstr "Введите сумму, выплачиваемую клиенту, например 500,00."
+
+#: apps/catalog/models.py:16 apps/catalog/models.py:43
+#: apps/finance/models.py:246
+msgid "description"
+msgstr "описание"
+
+#: apps/catalog/models.py:21
+msgid "service category"
+msgstr "категория услуг"
+
+#: apps/catalog/models.py:22
+msgid "service categories"
+msgstr "категории услуг"
+
+#: apps/catalog/models.py:40
+msgid "category"
+msgstr "категория"
+
+#: apps/clients/admin.py:55
+msgid "Telegram connection"
+msgstr "Подключение к Telegram"
+
+#: apps/clients/admin.py:60 apps/clients/admin.py:221
+#: templates/schedule/calendar.html:659
+msgid "Connected"
+msgstr "Подключено"
+
+#: apps/clients/admin.py:61 apps/clients/admin.py:218
+msgid "Unavailable"
+msgstr "Недоступно"
+
+#: apps/clients/admin.py:62
+#: templates/admin/clients/clientprofile/change_form.html:128
+#: templates/schedule/conflicts.html:439
+msgid "No Telegram connection"
+msgstr "Нет связи с Телеграмом"
+
+#: apps/clients/admin.py:84
+msgid "upcoming appointments"
+msgstr "будущие записи"
+
+#: apps/clients/admin.py:89
+msgid "Has an upcoming appointment"
+msgstr "Есть будущая запись"
+
+#: apps/clients/admin.py:90
+msgid "No upcoming appointments"
+msgstr "Нет будущих записей"
+
+#: apps/clients/admin.py:104
+msgid "outstanding penalties"
+msgstr "непогашенные штрафы"
+
+#: apps/clients/admin.py:110
+msgid "No outstanding penalties"
+msgstr "Отсутствие непогашенных штрафов"
+
+#: apps/clients/admin.py:152
+msgid "Client data"
+msgstr "Данные клиента"
+
+#: apps/clients/admin.py:156
+msgid "Partner notes"
+msgstr "Примечания партнера"
+
+#: apps/clients/admin.py:160
+msgid "Communication state"
+msgstr "Состояние связи"
+
+#: apps/clients/admin.py:209 templates/schedule/calendar.html:636
+msgid "Phone"
+msgstr "Телефон"
+
+#: apps/clients/admin.py:216
+msgid "No connection"
+msgstr "Нет связи"
+
+#: apps/clients/admin.py:223
+msgid "Next appointment"
+msgstr "Следующая запись"
+
+#: apps/clients/admin.py:230
+msgid "Visits"
+msgstr "Посещения"
+
+#: apps/clients/admin.py:235
+msgid "Unpaid penalties"
+msgstr "Неоплаченные штрафы"
+
+#: apps/clients/admin.py:308
+msgid "Client not found."
+msgstr "Клиент не найден."
+
+#: apps/clients/admin.py:314
+msgid "Outstanding penalty not found."
+msgstr "Невыплаченный штраф не найден."
+
+#: apps/clients/admin.py:322
+msgid "marked as paid"
+msgstr "помечено как оплаченное"
+
+#: apps/clients/admin.py:329
+msgid "waived"
+msgstr "отказался"
+
+#: apps/clients/admin.py:336
+#, python-format
+msgid "Penalty %(id)s %(action)s."
+msgstr "Штраф %(id)s %(action)s."
+
+#: apps/clients/admin.py:340
+#, python-format
+msgid "Penalty %(action)s."
+msgstr "Штраф %(action)s."
+
+#: apps/clients/admin.py:349
+#: templates/admin/clients/clientprofile/penalty_action_form.html:10
+msgid "Manage penalty"
+msgstr "Управлять штрафом"
+
+#: apps/clients/apps.py:9 templates/bot/workspace.html:556
+#: templates/finance/report.html:288 templates/partners/dashboard.html:277
+#: templates/schedule/calendar.html:573 templates/schedule/conflicts.html:292
+msgid "Clients"
+msgstr "Клиенты"
+
+#: apps/clients/models.py:12
+msgid "Telegram user ID"
+msgstr "Идентификатор пользователя Telegram"
+
+#: apps/clients/models.py:13
+msgid "username"
+msgstr "имя пользователя"
+
+#: apps/clients/models.py:14
+msgid "first name"
+msgstr "имя"
+
+#: apps/clients/models.py:15
+msgid "last name"
+msgstr "фамилия"
+
+#: apps/clients/models.py:16
+msgid "Telegram Premium"
+msgstr "Telegram Premium"
+
+#: apps/clients/models.py:17
+msgid "language code"
+msgstr "код языка"
+
+#: apps/clients/models.py:22
+msgid "Telegram identities"
+msgstr "профили Telegram"
+
+#: apps/clients/models.py:42
+msgid "client name"
+msgstr "имя клиента"
+
+#: apps/clients/models.py:42
+msgid "phone"
+msgstr "телефон"
+
+#: apps/clients/models.py:45
+msgid "extra client text"
+msgstr "дополнительная информация о клиенте"
+
+#: apps/clients/models.py:46
+msgid "marketing opt-out"
+msgstr "отказ от рекламных рассылок"
+
+#: apps/clients/models.py:47
+msgid "bot unreachable"
+msgstr "недоступен в Telegram"
+
+#: apps/clients/models.py:57
+msgid "client profiles"
+msgstr "профили клиентов"
+
+#: apps/clients/models.py:85
+msgid "Manual client"
+msgstr "Ручной клиент"
+
+#: apps/finance/apps.py:9 apps/finance/views.py:100
+#: templates/bot/workspace.html:559 templates/finance/report.html:264
+#: templates/finance/report.html:291 templates/finance/report.html:364
+#: templates/partners/dashboard.html:280 templates/schedule/calendar.html:576
+#: templates/schedule/conflicts.html:295
+msgid "Finance"
+msgstr "Финансы"
+
+#: apps/finance/forms.py:34
+msgid "Only unpaid penalties for this appointment client are available."
+msgstr "Доступны только неоплаченные штрафы для этого клиента."
+
+#: apps/finance/forms.py:53
+msgid "Mark as paid"
+msgstr "Отметить как оплаченное"
+
+#: apps/finance/forms.py:54
+msgid "Waive penalty"
+msgstr "Простить штраф"
+
+#: apps/finance/forms.py:60
+msgid "Optional note. It is saved when the penalty is waived."
+msgstr "Необязательное примечание. Он сохраняется при отмене штрафа."
+
+#: apps/finance/forms.py:73
+msgid "Optional note visible in the partner penalty record."
+msgstr "Необязательное примечание, видимое в протоколе партнерских штрафов."
+
+#: apps/finance/forms.py:85
+msgid "Late by (minutes)"
+msgstr "Опоздал на (минут)"
+
+#: apps/finance/forms.py:94
+#, python-format
+msgid "The configured late-arrival threshold is %(count)s minutes."
+msgstr "Настроенный порог позднего прибытия составляет %(count)s минут."
+
+#: apps/finance/models.py:26
+msgid "penalties enabled"
+msgstr "штрафы включены"
+
+#: apps/finance/models.py:28
+msgid "late-cancellation penalty amount"
+msgstr "штраф за позднюю отмену"
+
+#: apps/finance/models.py:32
+msgid "no-show penalty amount"
+msgstr "сумма штрафа за неявку"
+
+#: apps/finance/models.py:35
+msgid "late-arrival threshold in minutes"
+msgstr "порог опоздания в минутах"
+
+#: apps/finance/models.py:39
+msgid "late-arrival penalty amount"
+msgstr "штраф за опоздание"
+
+#: apps/finance/models.py:45 apps/finance/models.py:46
+msgid "partner penalty settings"
+msgstr "настройки партнерских штрафов"
+
+#: apps/finance/models.py:97
+msgid "source appointment"
+msgstr "запись, за которую создан штраф"
+
+#: apps/finance/models.py:103 apps/finance/models.py:244
+msgid "amount"
+msgstr "сумма"
+
+#: apps/finance/models.py:105
+msgid "late by minutes"
+msgstr "опоздание, минуты"
+
+#: apps/finance/models.py:106
+msgid "note"
+msgstr "примечание"
+
+#: apps/finance/models.py:115
+msgid "paid at"
+msgstr "оплачено"
+
+#: apps/finance/models.py:116
+msgid "waived at"
+msgstr "прощено"
+
+#: apps/finance/models.py:119 apps/finance/models.py:185
+#: apps/notifications/models.py:235
+msgid "penalty"
+msgstr "штраф"
+
+#: apps/finance/models.py:178
+msgid "Released"
+msgstr "Отвязано"
+
+#: apps/finance/models.py:179
+msgid "Settled"
+msgstr "Оплата учтена"
+
+#: apps/finance/models.py:193
+msgid "amount snapshot"
+msgstr "сумма на момент применения"
+
+#: apps/finance/models.py:198
+msgid "released at"
+msgstr "отвязано от записи"
+
+#: apps/finance/models.py:199
+msgid "settled at"
+msgstr "оплата учтена"
+
+#: apps/finance/models.py:202
+msgid "penalty application"
+msgstr "применение штрафа"
+
+#: apps/finance/models.py:203
+msgid "penalty applications"
+msgstr "применения штрафов"
+
+#: apps/finance/models.py:243
+msgid "date"
+msgstr "дата"
+
+#: apps/finance/models.py:257
+msgid "expense"
+msgstr "расход"
+
+#: apps/finance/models.py:258
+msgid "expenses"
+msgstr "расходы"
+
+#: apps/finance/views.py:134
+msgid "Finance period not found."
+msgstr "Финансовый период не найден."
+
+#: apps/finance/views.py:144
+msgid "Finance report date not found."
+msgstr "Дата финансового отчета не найдена."
+
+#: apps/integrations/apps.py:9
+msgid "Integrations"
+msgstr "Интеграции"
+
+#: apps/integrations/models.py:14
+msgid "Retry"
+msgstr "Повторная попытка"
+
+#: apps/integrations/models.py:17
+msgid "event ID"
+msgstr "идентификатор события"
+
+#: apps/integrations/models.py:19
+msgid "source product"
+msgstr "продукт-источник"
+
+#: apps/integrations/models.py:21
+msgid "source business ID"
+msgstr "ID бизнеса-источника"
+
+#: apps/integrations/models.py:23
+msgid "payload"
+msgstr "данные"
+
+#: apps/integrations/models.py:27
+msgid "attempts"
+msgstr "попытки"
+
+#: apps/integrations/models.py:30
+msgid "next retry at"
+msgstr "следующая попытка"
+
+#: apps/integrations/models.py:31
+msgid "processed at"
+msgstr "обработано"
+
+#: apps/integrations/models.py:34
+msgid "integration event"
+msgstr "интеграционное событие"
+
+#: apps/integrations/models.py:35
+msgid "integration events"
+msgstr "интеграционные события"
+
+#: apps/messaging/admin.py:96
+msgid "Telegram-connected client not found."
+msgstr "Клиент, подключенный к Telegram, не найден."
+
+#: apps/messaging/admin.py:109
+msgid "Queued Telegram reply to client."
+msgstr "Ответ Telegram в очереди клиенту."
+
+#: apps/messaging/admin.py:112
+msgid "Message queued for Telegram delivery."
+msgstr "Сообщение поставлено в очередь для доставки Telegram."
+
+#: apps/messaging/admin.py:124
+#: templates/admin/clients/clientprofile/change_form.html:7
+#: templates/admin/messaging/conversationmessage/reply_form.html:9
+#: templates/schedule/calendar.html:729
+msgid "Message client"
+msgstr "Клиент сообщений"
+
+#: apps/messaging/forms.py:18
+msgid "Write a message to the client"
+msgstr "Напишите сообщение клиенту"
+
+#: apps/messaging/forms.py:21
+#, python-format
+msgid "Maximum %(count)s characters."
+msgstr "Максимальное количество символов %(count)s."
+
+#: apps/messaging/models.py:31
+msgid "direction"
+msgstr "направление"
+
+#: apps/messaging/models.py:34
+msgid "delivery status"
+msgstr "статус доставки"
+
+#: apps/messaging/models.py:41
+msgid "delivered at"
+msgstr "доставлено"
+
+#: apps/messaging/models.py:52 apps/notifications/models.py:374
+msgid "conversation message"
+msgstr "сообщение диалога"
+
+#: apps/messaging/models.py:53
+msgid "conversation messages"
+msgstr "сообщения диалога"
+
+#: apps/notifications/models.py:39
+msgid "quiet hours enabled"
+msgstr "тихие часы включены"
+
+#: apps/notifications/models.py:41
+msgid "quiet hours start"
+msgstr "начало тихих часов"
+
+#: apps/notifications/models.py:44
+msgid "quiet hours end"
+msgstr "конец тихих часов"
+
+#: apps/notifications/models.py:46
+msgid "morning digest enabled"
+msgstr "утренний дайджест включен"
+
+#: apps/notifications/models.py:48
+msgid "morning digest time"
+msgstr "время утреннего дайджеста"
+
+#: apps/notifications/models.py:51
+msgid "stale request reminder interval in minutes"
+msgstr "интервал напоминания о необработанной заявке, минуты"
+
+#: apps/notifications/models.py:56 apps/notifications/models.py:57
+msgid "partner notification settings"
+msgstr "настройки уведомлений партнера"
+
+#: apps/notifications/models.py:80 templates/partners/dashboard.html:440
+msgid "Master"
+msgstr "Мастер"
+
+#: apps/notifications/models.py:82
+msgid "target"
+msgstr "получатель"
+
+#: apps/notifications/models.py:83
+msgid "offset in minutes"
+msgstr "за сколько минут напомнить"
+
+#: apps/notifications/models.py:87 apps/notifications/models.py:243
+msgid "reminder rule"
+msgstr "правило напоминания"
+
+#: apps/notifications/models.py:88
+msgid "reminder rules"
+msgstr "правила напоминания"
+
+#: apps/notifications/models.py:114
+msgid "Client appointment created"
+msgstr "Клиенту: запись создана"
+
+#: apps/notifications/models.py:118
+msgid "Client booking request confirmed"
+msgstr "Клиенту: заявка подтверждена"
+
+#: apps/notifications/models.py:122
+msgid "Client booking request declined"
+msgstr "Клиенту: заявка отклонена"
+
+#: apps/notifications/models.py:126
+msgid "Client appointment cancelled by master"
+msgstr "Клиенту: запись отменена мастером"
+
+#: apps/notifications/models.py:130
+msgid "Client appointment completed"
+msgstr "Клиенту: запись завершена"
+
+#: apps/notifications/models.py:134
+msgid "Client appointment no-show"
+msgstr "Клиенту: отмечена неявка"
+
+#: apps/notifications/models.py:136
+msgid "Client penalty created"
+msgstr "Клиенту: создан штраф"
+
+#: apps/notifications/models.py:145
+msgid "Client schedule-conflict reschedule request"
+msgstr "Клиенту: предложен перенос из-за конфликта"
+
+#: apps/notifications/models.py:147
+msgid "Master booking request"
+msgstr "Мастеру: новая заявка на запись"
+
+#: apps/notifications/models.py:150
+msgid "Master client-booked appointment"
+msgstr "Мастеру: клиент создал запись"
+
+#: apps/notifications/models.py:158
+msgid "Master client-cancelled appointment"
+msgstr "Мастеру: клиент отменил запись"
+
+#: apps/notifications/models.py:162
+msgid "Master client-requested reschedule"
+msgstr "Мастеру: клиент просит перенести запись"
+
+#: apps/notifications/models.py:166
+msgid "Client appointment proposal"
+msgstr "Клиенту: предложение изменения записи"
+
+#: apps/notifications/models.py:170
+msgid "Client appointment proposal accepted"
+msgstr "Клиент принял предложение изменения записи"
+
+#: apps/notifications/models.py:174
+msgid "Client appointment proposal declined"
+msgstr "Клиент отклонил предложение изменения записи"
+
+#: apps/notifications/models.py:178
+msgid "Client appointment proposal expired"
+msgstr "Срок предложения изменения записи клиенту истёк"
+
+#: apps/notifications/models.py:182
+msgid "Master client-accepted proposal"
+msgstr "Мастеру: клиент принял предложение"
+
+#: apps/notifications/models.py:186
+msgid "Master client-declined proposal"
+msgstr "Мастеру: клиент отклонил предложение"
+
+#: apps/notifications/models.py:190
+msgid "Master appointment proposal expired"
+msgstr "Срок предложения изменения записи от мастера истёк"
+
+#: apps/notifications/models.py:192
+msgid "Master morning digest"
+msgstr "Утренний отчет мастера"
+
+#: apps/notifications/models.py:193
+msgid "Stale requested appointment"
+msgstr "Необработанная заявка на запись"
+
+#: apps/notifications/models.py:203
+msgid "Stale"
+msgstr "Устарело"
+
+#: apps/notifications/models.py:251
+msgid "source notification"
+msgstr "предыдущее уведомление"
+
+#: apps/notifications/models.py:254
+msgid "due at"
+msgstr "запланировано на"
+
+#: apps/notifications/models.py:258
+msgid "idempotency key"
+msgstr "ключ идемпотентности"
+
+#: apps/notifications/models.py:263
+msgid "stale sequence"
+msgstr "номер повторного напоминания"
+
+#: apps/notifications/models.py:264
+msgid "last failure code"
+msgstr "код последнего сбоя"
+
+#: apps/notifications/models.py:265
+msgid "masked last failure message"
+msgstr "замаскированное последнее сообщение об ошибке"
+
+#: apps/notifications/models.py:266
+msgid "failure visible to partner"
+msgstr "ошибка видна партнёру"
+
+#: apps/notifications/models.py:270
+msgid "scheduled notification"
+msgstr "запланированное уведомление"
+
+#: apps/notifications/models.py:271
+msgid "scheduled notifications"
+msgstr "запланированные уведомления"
+
+#: apps/notifications/models.py:358
+msgid "notification"
+msgstr "уведомление"
+
+#: apps/notifications/models.py:377
+msgid "channel"
+msgstr "канал"
+
+#: apps/notifications/models.py:385
+msgid "masked message preview"
+msgstr "предварительный просмотр замаскированного сообщения"
+
+#: apps/notifications/models.py:386
+msgid "attempted at"
+msgstr "время попытки"
+
+#: apps/notifications/models.py:389
+msgid "delivery attempt"
+msgstr "попытка доставки"
+
+#: apps/notifications/models.py:390
+msgid "delivery attempts"
+msgstr "попытки доставки"
+
+#: apps/partners/admin.py:22
+msgid "Owner account"
+msgstr "Аккаунт владельца"
+
+#: apps/partners/admin.py:68
+msgid "Setup complete"
+msgstr "Настройка завершена"
+
+#: apps/partners/admin.py:72
+msgid "Missing setup"
+msgstr "Отсутствует настройка"
+
+#: apps/partners/admin.py:75
+msgid "Ready"
+msgstr "Готово"
+
+#: apps/partners/admin.py:77
+msgid "Onboarding checklist"
+msgstr "Контрольный список для адаптации"
+
+#: apps/partners/admin.py:84 templates/bot/workspace.html:634
+#: templates/partners/setup.html:210 templates/partners/setup.html:228
+msgid "Done"
+msgstr "Готово"
+
+#: apps/partners/admin.py:90
+#, python-brace-format
+msgid "{}<p><a class=\"button\" href=\"{}\">Open setup guide</a></p>"
+msgstr "{} <p><a class=\"button\" href=\"{}\">Открытоеруководство по установке</a></p>"
+
+#: apps/partners/apps.py:9
+msgid "Partners"
+msgstr "Партнеры"
+
+#: apps/partners/forms.py:17
+msgid "Owner username"
+msgstr "Имя пользователя владельца"
+
+#: apps/partners/forms.py:18
+msgid "Owner email"
+msgstr "Адрес эл. почты владельца"
+
+#: apps/partners/forms.py:19
+msgid "Owner first name"
+msgstr "Имя владельца"
+
+#: apps/partners/forms.py:20
+msgid "Owner last name"
+msgstr "Фамилия владельца"
+
+#: apps/partners/forms.py:22
+msgid "Owner password"
+msgstr "Пароль владельца"
+
+#: apps/partners/forms.py:26
+msgid "Confirm owner password"
+msgstr "Подтвердите пароль владельца"
+
+#: apps/partners/forms.py:39
+msgid "Unknown timezone."
+msgstr "Неизвестный часовой пояс."
+
+#: apps/partners/forms.py:45
+msgid "A user with this username already exists."
+msgstr "Пользователь с таким именем пользователя уже существует."
+
+#: apps/partners/forms.py:53
+msgid "Passwords do not match."
+msgstr "Пароли не совпадают."
+
+#: apps/partners/models.py:21
+msgid "Archived"
+msgstr "Архивировано"
+
+#: apps/partners/models.py:30
+msgid "timezone"
+msgstr "часовой пояс"
+
+#: apps/partners/models.py:31
+msgid "default language"
+msgstr "язык по умолчанию"
+
+#: apps/partners/models.py:35
+msgid "partners"
+msgstr "партнеры"
+
+#: apps/partners/selectors.py:219
+msgid "Telegram connection checked"
+msgstr "Подключение к Telegram проверено"
+
+#: apps/partners/selectors.py:225
+msgid "Master Telegram contact"
+msgstr "Контактное лицо Master Telegram"
+
+#: apps/partners/selectors.py:231
+msgid "Bot launched"
+msgstr "Запущен бот"
+
+#: apps/partners/setup.py:14
+msgid "Bot token"
+msgstr "Токен бота"
+
+#: apps/partners/setup.py:18
+msgid "Availability window"
+msgstr "Окно доступности"
+
+#: apps/partners/setup.py:19
+msgid "Booking confirmation mode"
+msgstr "Режим подтверждения бронирования"
+
+#: apps/partners/views.py:44 templates/bot/workspace.html:553
+#: templates/finance/report.html:285 templates/partners/dashboard.html:274
+#: templates/schedule/calendar.html:570 templates/schedule/conflicts.html:289
+msgid "Dashboard"
+msgstr "Панель управления"
+
+#: apps/partners/views.py:68 templates/partners/setup.html:155
+#: templates/partners/setup.html:237
+msgid "Partner setup"
+msgstr "Настройка партнера"
+
+#: apps/partners/views.py:126
+msgid "Configure bot"
+msgstr "Настроить бота"
+
+#: apps/partners/views.py:127 apps/partners/views.py:128
+msgid "Open partner settings"
+msgstr "Открыть настройки партнера"
+
+#: apps/partners/views.py:129
+msgid "Open catalog"
+msgstr "Открыть каталог"
+
+#: apps/partners/views.py:130 templates/partners/dashboard.html:389
+msgid "Open calendar"
+msgstr "Открыть календарь"
+
+#: apps/partners/views.py:131
+msgid "Open booking settings"
+msgstr "Открыть настройки бронирования"
+
+#: apps/partners/views.py:134
+msgid "Open launch controls"
+msgstr "Открыть элементы управления запуском"
+
+#: apps/schedule/admin.py:226
+msgid "Apply selected template to a date range"
+msgstr "Применить выбранный шаблон к диапазону дат"
+
+#: apps/schedule/admin.py:231
+msgid "Select exactly one availability template to apply."
+msgstr "Выберите ровно один шаблон свободных дат для применения."
+
+#: apps/schedule/admin.py:259
+#, python-format
+msgid "Applied %(template)s; created %(count)s availability window(s)."
+msgstr "Применено %(template)s; создано окно (окна) доступности %(count)s."
+
+#: apps/schedule/admin.py:278
+msgid "Apply availability template"
+msgstr "Применить шаблон свободных дат"
+
+#: apps/schedule/apps.py:9
+msgid "Schedule"
+msgstr "Расписание"
+
+#: apps/schedule/forms.py:39 templates/bot/workspace.html:732
+msgid "Type"
+msgstr "Тип"
+
+#: apps/schedule/forms.py:41
+msgid "Availability"
+msgstr "Доступность"
+
+#: apps/schedule/forms.py:42
+msgid "Blocked time"
+msgstr "Время блокировки"
+
+#: apps/schedule/forms.py:56
+msgid "End time"
+msgstr "Время окончания"
+
+#: apps/schedule/forms.py:59
+msgid "Required for availability and blocked time."
+msgstr "Требуется для доступности и заблокированного времени."
+
+#: apps/schedule/forms.py:66
+msgid "Optional; used only for blocked time."
+msgstr "Необязательно; используется только в течение заблокированного времени."
+
+#: apps/schedule/forms.py:84
+msgid "New calendar items cannot start in the past."
+msgstr "Новые элементы календаря не могут запускаться в прошлом."
+
+#: apps/schedule/forms.py:93
+msgid "End time is required for this type."
+msgstr "Для этого типа требуется время окончания."
+
+#: apps/schedule/forms.py:97
+msgid "End time must be after start time."
+msgstr "Время окончания должно быть позже времени начала."
+
+#: apps/schedule/forms.py:111
+msgid "Target date"
+msgstr "Целевая дата"
+
+#: apps/schedule/forms.py:122
+msgid "Target day"
+msgstr "Целевой день"
+
+#: apps/schedule/forms.py:122
+msgid "Date in target week"
+msgstr "Дата в целевую неделю"
+
+#: apps/schedule/forms.py:132
+msgid "Choose a different target period."
+msgstr "Выберите другой целевой период."
+
+#: apps/schedule/forms.py:150 templates/schedule/conflicts.html:428
+msgid "Keep as is"
+msgstr "Сохранить как есть"
+
+#: apps/schedule/forms.py:151
+msgid "Request reschedule"
+msgstr "Запросить перенос"
+
+#: apps/schedule/forms.py:152 templates/schedule/conflicts.html:428
+msgid "Reopen"
+msgstr "Открыть заново"
+
+#: apps/schedule/forms.py:158
+msgid "Select at least one schedule conflict."
+msgstr "Выберите хотя бы один конфликт расписания."
+
+#: apps/schedule/forms.py:319
+msgid "Template must belong to the same partner."
+msgstr "Шаблон должен принадлежать одному и тому же партнеру."
+
+#: apps/schedule/models.py:36
+msgid "Solo master"
+msgstr "Самостоятельный мастер"
+
+#: apps/schedule/models.py:45
+msgid "default"
+msgstr "по умолчанию"
+
+#: apps/schedule/models.py:49
+msgid "advisory lock key"
+msgstr "ключ блокировки ресурса"
+
+#: apps/schedule/models.py:57
+msgid "booking resources"
+msgstr "ресурсы календаря"
+
+#: apps/schedule/models.py:86
+msgid "Auto"
+msgstr "Авто"
+
+#: apps/schedule/models.py:87
+msgid "Manual"
+msgstr "Вручную"
+
+#: apps/schedule/models.py:96
+msgid "confirmation mode"
+msgstr "режим подтверждения"
+
+#: apps/schedule/models.py:102
+msgid "slot step in minutes"
+msgstr "шаг слота в минутах"
+
+#: apps/schedule/models.py:105
+msgid "booking horizon in days"
+msgstr "горизонт бронирования в днях"
+
+#: apps/schedule/models.py:108
+msgid "near-fit tolerance in minutes"
+msgstr "допуск выхода за окно, минуты"
+
+#: apps/schedule/models.py:112
+msgid "cancellation deadline in hours"
+msgstr "срок отмены в часах"
+
+#: apps/schedule/models.py:115
+msgid "require phone for booking"
+msgstr "требуется телефон для бронирования"
+
+#: apps/schedule/models.py:118 apps/schedule/models.py:119
+msgid "partner schedule settings"
+msgstr "настройки партнерского расписания"
+
+#: apps/schedule/models.py:157
+msgid "availability template"
+msgstr "шаблон доступности"
+
+#: apps/schedule/models.py:158
+msgid "availability templates"
+msgstr "шаблоны доступности"
+
+#: apps/schedule/models.py:175
+msgid "template"
+msgstr "шаблон"
+
+#: apps/schedule/models.py:177
+msgid "weekday"
+msgstr "день недели"
+
+#: apps/schedule/models.py:178
+msgid "start time"
+msgstr "время начала"
+
+#: apps/schedule/models.py:179
+msgid "end time"
+msgstr "время окончания"
+
+#: apps/schedule/models.py:182
+msgid "availability template window"
+msgstr "окно шаблона доступности"
+
+#: apps/schedule/models.py:183
+msgid "availability template windows"
+msgstr "окна шаблонов доступности"
+
+#: apps/schedule/models.py:220
+msgid "source template"
+msgstr "применённый шаблон"
+
+#: apps/schedule/models.py:232
+msgid "availability window"
+msgstr "окно доступности"
+
+#: apps/schedule/models.py:233
+msgid "availability windows"
+msgstr "окна доступности"
+
+#: apps/schedule/models.py:273
+msgid "blocked time"
+msgstr "заблокированный период"
+
+#: apps/schedule/models.py:274
+msgid "blocked times"
+msgstr "заблокированные периоды"
+
+#: apps/schedule/models.py:301
+msgid "fingerprint"
+msgstr "отпечаток"
+
+#: apps/schedule/models.py:308
+msgid "acknowledged by"
+msgstr "подтвердил"
+
+#: apps/schedule/models.py:312
+msgid "schedule conflict acknowledgement"
+msgstr "подтверждение конфликта расписания"
+
+#: apps/schedule/models.py:313
+msgid "schedule conflict acknowledgements"
+msgstr "подтверждения конфликтов расписания"
+
+#: apps/schedule/views.py:117 apps/schedule/views.py:612
+msgid "Calendar copy scope not found."
+msgstr "Область копирования календаря не найдена."
+
+#: apps/schedule/views.py:231
+#, python-format
+msgid "Kept %(count)s schedule conflict as is."
+msgid_plural "Kept %(count)s schedule conflicts as is."
+msgstr[0] "%(count)s конфликт расписания оставлен без изменений."
+msgstr[1] "%(count)s конфликта расписания оставлены без изменений."
+msgstr[2] "%(count)s конфликтов расписания оставлены без изменений."
+msgstr[3] "%(count)s конфликта расписания оставлены без изменений."
+
+#: apps/schedule/views.py:243
+#, python-format
+msgid "Reopened %(count)s schedule conflict."
+msgid_plural "Reopened %(count)s schedule conflicts."
+msgstr[0] "Повторно открыт %(count)s конфликт расписания."
+msgstr[1] "Повторно открыты %(count)s конфликта расписания."
+msgstr[2] "Повторно открыто %(count)s конфликтов расписания."
+msgstr[3] "Повторно открыто %(count)s конфликта расписания."
+
+#: apps/schedule/views.py:255
+#, python-format
+msgid "Queued a reschedule request for %(count)s client."
+msgid_plural "Queued reschedule requests for %(count)s clients."
+msgstr[0] "Добавлен в очередь запрос на перенос для %(count)s клиента."
+msgstr[1] "Добавлены в очередь запросы на перенос для %(count)s клиентов."
+msgstr[2] "Добавлены в очередь запросы на перенос для %(count)s клиентов."
+msgstr[3] "Добавлены в очередь запросы на перенос для %(count)s клиента."
+
+#: apps/schedule/views.py:261
+#, python-format
+msgid "Skipped %(count)s client without a Telegram connection."
+msgid_plural "Skipped %(count)s clients without a Telegram connection."
+msgstr[0] "Пропущен %(count)s клиент без связи с Telegram."
+msgstr[1] "Пропущены %(count)s клиента без связи с Telegram."
+msgstr[2] "Пропущено %(count)s клиентов без связи с Telegram."
+msgstr[3] "Пропущено %(count)s клиента без связи с Telegram."
+
+#: apps/schedule/views.py:301 templates/partners/dashboard.html:303
+#: templates/schedule/conflicts.html:255
+msgid "Schedule conflicts"
+msgstr "Конфликты расписаний"
+
+#: apps/schedule/views.py:353
+msgid "Availability window created."
+msgstr "Окно доступности создано."
+
+#: apps/schedule/views.py:363
+msgid "Blocked time created."
+msgstr "Создано заблокированное время."
+
+#: apps/schedule/views.py:408
+#, python-format
+msgid "Copied %(availability)s availability windows and %(blocked)s blocked intervals. Skipped %(skipped)s existing items."
+msgstr "Скопированы окна доступности %(availability)s и заблокированные интервалы %(blocked)s. Пропущенные существующие элементы %(skipped)s."
+
+#: apps/schedule/views.py:420
+msgid "All matching schedule items already exist in the target period."
+msgstr "Все совпадающие элементы расписания уже существуют в целевом периоде."
+
+#: apps/schedule/views.py:425
+msgid "No availability or blocked time starts in the source period."
+msgstr "Нет доступности или заблокированное время начинается в исходном периоде."
+
+#: apps/schedule/views.py:458 apps/schedule/views.py:462
+#: apps/schedule/views.py:470 apps/schedule/views.py:474
+msgid "Calendar resource not found."
+msgstr "Ресурс календаря не найден."
+
+#: apps/schedule/views.py:480
+msgid "Schedule conflict view not found."
+msgstr "Представление конфликта расписания не найдено."
+
+#: apps/schedule/views.py:574
+msgid "Calendar view not found."
+msgstr "Представление календаря не найдено."
+
+#: apps/schedule/views.py:588 apps/schedule/views.py:593
+#: apps/schedule/views.py:604
+msgid "Calendar date not found."
+msgstr "Дата календаря не найдена."
+
+#: apps/schedule/views.py:622 apps/schedule/views.py:626
+msgid "Calendar copy source not found."
+msgstr "Источник копии календаря не найден."
+
+#: core/database/models.py:10
+msgid "ID"
+msgstr "ID"
+
+#: core/database/models.py:19
+msgid "created at"
+msgstr "создано"
+
+#: core/database/models.py:20
+msgid "updated at"
+msgstr "обновлено"
+
+#: core/database/models.py:29
+msgid "retain until"
+msgstr "хранить до"
+
+#: core/urls.py:7 templates/admin/base_site.html:12
+msgid "BoteraMaster administration"
+msgstr "Администрирование BoteraMaster"
+
+#: core/urls.py:8 templates/admin/base_site.html:4
+msgid "BoteraMaster admin"
+msgstr "Администратор BoteraMaster"
+
+#: core/urls.py:9
+msgid "Partner operations"
+msgstr "Партнерские операции"
+
+#: templates/admin/appointments/appointment/change_form.html:17
+#: templates/admin/appointments/appointment/penalty_form.html:10
+msgid "Manage penalties"
+msgstr "Управление штрафами"
+
+#: templates/admin/appointments/appointment/change_form.html:27
+#: templates/admin/appointments/appointment/status_form.html:10
+msgid "Change status"
+msgstr "Изменить статус"
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:6
+#: templates/admin/appointments/appointment/penalty_form.html:6
+#: templates/admin/appointments/appointment/proposal_form.html:39
+#: templates/admin/appointments/appointment/status_form.html:6
+#: templates/admin/appointments/manual_appointment_add.html:65
+#: templates/admin/clients/clientprofile/penalty_action_form.html:6
+#: templates/admin/messaging/conversationmessage/reply_form.html:6
+msgid "Home"
+msgstr "Главная"
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:65
+#: templates/admin/appointments/appointment/penalty_form.html:83
+#: templates/admin/appointments/appointment/status_form.html:86
+msgid "Starts"
+msgstr "Начинается"
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:73
+msgid "Configured penalty"
+msgstr "Настроенный штраф"
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:79
+msgid "minutes"
+msgstr "минуты"
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:84
+msgid "Creating this penalty adds it to the client's outstanding debt. A client notification is queued when the client has a Telegram connection."
+msgstr "Создание этого штрафа добавляет его к непогашенной задолженности клиента. Уведомление клиента ставится в очередь, когда у клиента есть подключение к Telegram."
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:104
+msgid "Create penalty"
+msgstr "Создать штраф"
+
+#: templates/admin/appointments/appointment/create_penalty_form.html:105
+#: templates/admin/appointments/appointment/penalty_form.html:142
+#: templates/admin/appointments/appointment/proposal_form.html:104
+#: templates/admin/appointments/appointment/status_form.html:122
+#: templates/admin/clients/clientprofile/penalty_action_form.html:129
+#: templates/admin/messaging/conversationmessage/reply_form.html:91
+#: templates/admin/schedule/apply_availability_template.html:19
+#: templates/schedule/calendar.html:780 templates/schedule/calendar.html:813
+#: templates/schedule/conflicts.html:442
+msgid "Cancel"
+msgstr "Отмена"
+
+#: templates/admin/appointments/appointment/penalty_form.html:91
+msgid "Current total"
+msgstr "Текущая итоговая сумма"
+
+#: templates/admin/appointments/appointment/penalty_form.html:99
+msgid "Application history"
+msgstr "История применения"
+
+#: templates/admin/appointments/appointment/penalty_form.html:107
+#: templates/admin/audit/workerheartbeat/change_list.html:192
+#: templates/admin/clients/clientprofile/change_form.html:232
+#: templates/admin/clients/clientprofile/penalty_action_form.html:93
+msgid "Created"
+msgstr "Создано"
+
+#: templates/admin/appointments/appointment/penalty_form.html:122
+msgid "No penalties have been applied."
+msgstr "Штрафные санкции не применялись."
+
+#: templates/admin/appointments/appointment/penalty_form.html:130
+msgid "Apply unpaid penalties"
+msgstr "Применить неуплаченные штрафы"
+
+#: templates/admin/appointments/appointment/penalty_form.html:141
+msgid "Apply selected penalties"
+msgstr "Применить выбранные штрафы"
+
+#: templates/admin/appointments/appointment/proposal_form.html:53
+#: templates/admin/appointments/manual_appointment_add.html:78
+msgid "Please correct the errors below."
+msgstr "Пожалуйста, исправьте ошибки ниже."
+
+#: templates/admin/appointments/appointment/proposal_form.html:59
+msgid "Client message"
+msgstr "Сообщение клиента"
+
+#: templates/admin/appointments/appointment/proposal_form.html:70
+msgid "Alternative times"
+msgstr "Альтернативное время"
+
+#: templates/admin/appointments/appointment/proposal_form.html:72
+msgid "The current appointment remains unchanged until the client accepts one option. Availability is checked again at acceptance. The proposal expires after 48 hours."
+msgstr "Текущая встреча остается неизменной до тех пор, пока клиент не примет один из вариантов. Доступность снова проверяется при приемке. Срок действия предложения истекает через 48 часов."
+
+#: templates/admin/appointments/appointment/proposal_form.html:78
+#, python-format
+msgid "Option %(number)s"
+msgstr "Опция %(number)s"
+
+#: templates/admin/appointments/appointment/proposal_form.html:98
+msgid "Add another time"
+msgstr "Добавить другое время"
+
+#: templates/admin/appointments/appointment/proposal_form.html:103
+msgid "Create proposal"
+msgstr "Создать предложение"
+
+#: templates/admin/appointments/appointment/proposal_form.html:111
+msgid "Option"
+msgstr "Опция"
+
+#: templates/admin/appointments/appointment/status_form.html:95
+#: templates/admin/clients/clientprofile/change_form.html:168
+#: templates/admin/clients/clientprofile/change_form.html:209
+#: templates/partners/includes/appointment_table.html:32
+#: templates/schedule/calendar.html:684 templates/schedule/calendar.html:917
+#: templates/schedule/conflicts.html:391
+msgid "No service lines"
+msgstr "Нет линий обслуживания"
+
+#: templates/admin/appointments/appointment/status_form.html:105
+msgid "This is a correction of a final appointment status. A reason is required and will be recorded in the activity log."
+msgstr "Это исправление статуса окончательной записи на прием. Причина является обязательной и будет записана в журнале действий."
+
+#: templates/admin/appointments/appointment/status_form.html:121
+msgid "Save status"
+msgstr "Сохранить статус"
+
+#: templates/admin/appointments/manual_appointment_add.html:83
+msgid "Time and calendar"
+msgstr "Время и календарь"
+
+#: templates/admin/appointments/manual_appointment_add.html:94
+msgid "The appointment is confirmed immediately. It may be outside availability, but cannot overlap another confirmed appointment for this resource."
+msgstr "Назначение подтверждается немедленно. Это может быть вне доступности, но не может перекрывать другую подтвержденную встречу для этого ресурса."
+
+#: templates/admin/appointments/manual_appointment_add.html:120
+#, python-format
+msgid "Service line %(number)s"
+msgstr "Сервисная линия %(number)s"
+
+#: templates/admin/appointments/manual_appointment_add.html:145
+msgid "Add service line"
+msgstr "Добавить строку обслуживания"
+
+#: templates/admin/appointments/manual_appointment_add.html:150
+msgid "Notes"
+msgstr "Примечания"
+
+#: templates/admin/appointments/manual_appointment_add.html:162
+msgid "Save"
+msgstr "Сохранить"
+
+#: templates/admin/appointments/manual_appointment_add.html:163
+msgid "Save and add another"
+msgstr "Сохранить и добавить еще"
+
+#: templates/admin/appointments/manual_appointment_add.html:164
+msgid "Save and continue editing"
+msgstr "Сохранить и продолжить редактирование"
+
+#: templates/admin/appointments/manual_appointment_add.html:171
+msgid "Service line"
+msgstr "Сервисная линия"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:101
+msgid "Platform health summary"
+msgstr "Сводка состояния платформы"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:104
+msgid "Current operational status"
+msgstr "Текущее рабочее состояние"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:106
+#, python-format
+msgid ""
+"\n"
+"            Generated from durable platform state at %(generated)s.\n"
+"          "
+msgstr "\n            Создано из прочного состояния платформы на %(generated)s.\n          "
+
+#: templates/admin/audit/workerheartbeat/change_list.html:130
+msgid "Active broadcasts"
+msgstr "Активные рассылки"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:132
+msgid "Open broadcasts"
+msgstr "Незавершённые рассылки"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:143
+msgid "Last progress"
+msgstr "Последний прогресс"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:160
+msgid "ago"
+msgstr "назад"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:172
+msgid "No broadcasts are currently dispatching."
+msgstr "Трансляции в настоящее время не отправляются."
+
+#: templates/admin/audit/workerheartbeat/change_list.html:178
+msgid "Unresolved platform problems"
+msgstr "Нерешенные проблемы платформы"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:180
+msgid "Open all unresolved diagnostics"
+msgstr "Открыть все нерешенные диагностические сообщения"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:188
+msgid "Severity"
+msgstr "Серьезность"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:189
+msgid "Component"
+msgstr "Компонент"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:190
+msgid "Code"
+msgstr "Код"
+
+#: templates/admin/audit/workerheartbeat/change_list.html:213
+msgid "No unresolved platform problems."
+msgstr "Нет нерешенных проблем платформы."
+
+#: templates/admin/base_site.html:25 templates/admin/base_site.html:26
+msgid "Interface language"
+msgstr "Язык интерфейса"
+
+#: templates/admin/base_site.html:31
+msgid "Apply language"
+msgstr "Применить язык"
+
+#: templates/admin/broadcasts/broadcastcampaign/change_list.html:6
+msgid "Saved templates"
+msgstr "Сохраненные шаблоны"
+
+#: templates/admin/clients/clientprofile/change_form.html:88
+msgid "Client overview"
+msgstr "Обзор клиента"
+
+#: templates/admin/clients/clientprofile/change_form.html:91
+msgid "Completed visits"
+msgstr "Завершенные визиты"
+
+#: templates/admin/clients/clientprofile/change_form.html:95
+#: templates/admin/clients/clientprofile/change_form.html:144
+msgid "Future appointments"
+msgstr "Будущие записи"
+
+#: templates/admin/clients/clientprofile/change_form.html:99
+msgid "Total spent"
+msgstr "Всего потрачено"
+
+#: templates/admin/clients/clientprofile/change_form.html:109
+#: templates/admin/clients/clientprofile/change_form.html:226
+msgid "Outstanding penalties"
+msgstr "Невыплаченные штрафы"
+
+#: templates/admin/clients/clientprofile/change_form.html:123
+msgid "delivery unavailable"
+msgstr "доставка недоступна"
+
+#: templates/admin/clients/clientprofile/change_form.html:125
+msgid "connected"
+msgstr "подключено"
+
+#: templates/admin/clients/clientprofile/change_form.html:150
+#: templates/admin/clients/clientprofile/change_form.html:191
+#: templates/schedule/conflicts.html:360 templates/schedule/conflicts.html:373
+msgid "Date and time"
+msgstr "Дата и время"
+
+#: templates/admin/clients/clientprofile/change_form.html:180
+msgid "No future appointments."
+msgstr "Нет будущих записей."
+
+#: templates/admin/clients/clientprofile/change_form.html:185
+msgid "Appointment history"
+msgstr "История записей"
+
+#: templates/admin/clients/clientprofile/change_form.html:221
+msgid "No appointment history."
+msgstr "История записей пуста."
+
+#: templates/admin/clients/clientprofile/change_form.html:236
+msgid "Action"
+msgstr "Действие"
+
+#: templates/admin/clients/clientprofile/change_form.html:249
+msgid "Manage"
+msgstr "Управление"
+
+#: templates/admin/clients/clientprofile/change_form.html:260
+msgid "No outstanding penalties."
+msgstr "Неуплаченных штрафов нет."
+
+#: templates/admin/clients/clientprofile/includes/pagination.html:3
+msgid "Pagination"
+msgstr "Нумерация страниц"
+
+#: templates/admin/clients/clientprofile/includes/pagination.html:6
+#: templates/schedule/conflicts.html:455
+msgid "Previous"
+msgstr "Предыдущий"
+
+#: templates/admin/clients/clientprofile/includes/pagination.html:10
+#: templates/schedule/conflicts.html:456
+#, python-format
+msgid "Page %(current)s of %(total)s"
+msgstr "Страница %(current)s из %(total)s"
+
+#: templates/admin/clients/clientprofile/includes/pagination.html:14
+#: templates/schedule/conflicts.html:457
+msgid "Next"
+msgstr "Далее"
+
+#: templates/admin/clients/clientprofile/penalty_action_form.html:97
+msgid "Source appointment"
+msgstr "Назначение источника"
+
+#: templates/admin/clients/clientprofile/penalty_action_form.html:104
+#: templates/schedule/calendar.html:655
+msgid "Not linked"
+msgstr "Не связано"
+
+#: templates/admin/clients/clientprofile/penalty_action_form.html:113
+msgid "This changes the client's active debt. Marking an applied penalty as paid settles it on the appointment; waiving it removes it from the appointment total."
+msgstr "Это действие изменяет активную задолженность клиента. Оплаченный штраф учитывается в записи, а прощённый исключается из её итоговой суммы."
+
+#: templates/admin/clients/clientprofile/penalty_action_form.html:128
+msgid "Confirm action"
+msgstr "Подтвердить действие"
+
+#: templates/admin/messaging/conversationmessage/change_form.html:7
+msgid "Reply to client"
+msgstr "Ответить клиенту"
+
+#: templates/admin/messaging/conversationmessage/reply_form.html:68
+msgid "Name"
+msgstr "Имя"
+
+#: templates/admin/messaging/conversationmessage/reply_form.html:90
+msgid "Send through bot"
+msgstr "Отправить через бота"
+
+#: templates/admin/schedule/apply_availability_template.html:6
+#, python-format
+msgid ""
+"Apply <strong>%(template)s</strong> to concrete availability windows.\n"
+"    Existing identical windows from this template are kept and are not duplicated."
+msgstr "Применить <strong>%(template)s</strong> к бетонным окнам.\n    Существующие идентичные окна из этого шаблона сохраняются и не дублируются."
+
+#: templates/admin/schedule/apply_availability_template.html:18
+msgid "Apply template"
+msgstr "Применить шаблон"
+
+#: templates/bot/workspace.html:547 templates/finance/report.html:277
+#: templates/finance/report.html:312 templates/partners/dashboard.html:259
+#: templates/partners/setup.html:171 templates/schedule/calendar.html:594
+#: templates/schedule/calendar.html:610 templates/schedule/conflicts.html:268
+msgid "Open"
+msgstr "Открыть"
+
+#: templates/bot/workspace.html:552 templates/finance/report.html:284
+#: templates/partners/dashboard.html:273 templates/schedule/calendar.html:569
+#: templates/schedule/conflicts.html:288
+msgid "Partner workspace"
+msgstr "Рабочее пространство партнера"
+
+#: templates/bot/workspace.html:564
+msgid "Bot settings"
+msgstr "Настройки бота"
+
+#: templates/bot/workspace.html:573
+msgid "Runtime status"
+msgstr "Состояние выполнения"
+
+#: templates/bot/workspace.html:580
+msgid "Launch this bot after setup checks?"
+msgstr "Запустить этого бота после проверки настроек?"
+
+#: templates/bot/workspace.html:583
+msgid "Launch"
+msgstr "Запуск"
+
+#: templates/bot/workspace.html:585
+msgid "Pause client bot flows?"
+msgstr "Приостановить потоки клиентских ботов?"
+
+#: templates/bot/workspace.html:588
+msgid "Pause"
+msgstr "Пауза"
+
+#: templates/bot/workspace.html:596
+msgid "Bot status"
+msgstr "Статус бота"
+
+#: templates/bot/workspace.html:597
+msgid "Not configured"
+msgstr "Не настроено"
+
+#: templates/bot/workspace.html:599
+msgid "Token"
+msgstr "Токен"
+
+#: templates/bot/workspace.html:599
+msgid "Missing"
+msgstr "Отсутствует"
+
+#: templates/bot/workspace.html:600
+msgid "Telegram bot"
+msgstr "Telegram-бот"
+
+#: templates/bot/workspace.html:602
+msgid "Last checked"
+msgstr "Последняя проверка"
+
+#: templates/bot/workspace.html:603
+msgid "Last activity"
+msgstr "Последняя активность"
+
+#: templates/bot/workspace.html:613
+msgid "Secure token"
+msgstr "Безопасный токен"
+
+#: templates/bot/workspace.html:615
+msgid "Replace the current bot token?"
+msgstr "Заменить текущий токен бота?"
+
+#: templates/bot/workspace.html:624
+msgid "Save token"
+msgstr "Сохранить токен"
+
+#: templates/bot/workspace.html:630
+msgid "Launch checklist"
+msgstr "Контрольный список запуска"
+
+#: templates/bot/workspace.html:642
+msgid "Master Telegram"
+msgstr "Master Telegram"
+
+#: templates/bot/workspace.html:646
+msgid "Create connection link"
+msgstr "Создать ссылку для подключения"
+
+#: templates/bot/workspace.html:653
+msgid "Account"
+msgstr "Аккаунт"
+
+#: templates/bot/workspace.html:654
+msgid "Reachable"
+msgstr "Достижимый"
+
+#: templates/bot/workspace.html:657
+msgid "Not connected"
+msgstr "Не подключено"
+
+#: templates/bot/workspace.html:660
+msgid "Open Telegram connection"
+msgstr "Открыть подключение к Telegram"
+
+#: templates/bot/workspace.html:667
+msgid "Partner defaults"
+msgstr "Дефолты партнера"
+
+#: templates/bot/workspace.html:670
+msgid "Partner status"
+msgstr "Статус партнера"
+
+#: templates/bot/workspace.html:672
+msgid "Apply language and timezone changes? Existing local-time views will use the selected timezone."
+msgstr "Применить изменения языка и часового пояса? Существующие представления по местному времени будут использовать выбранный часовой пояс."
+
+#: templates/bot/workspace.html:688
+msgid "Save partner defaults"
+msgstr "Сохранить настройки партнера по умолчанию"
+
+#: templates/bot/workspace.html:697
+msgid "Editable content keys"
+msgstr "Редактируемые ключи контента"
+
+#: templates/bot/workspace.html:707
+msgid "languages customized"
+msgstr "языки настроены"
+
+#: templates/bot/workspace.html:725
+msgid "Content language"
+msgstr "Язык контента"
+
+#: templates/bot/workspace.html:742
+msgid "Allowed placeholders"
+msgstr "Разрешённые плейсхолдеры"
+
+#: templates/bot/workspace.html:748
+msgid "This text has no placeholders."
+msgstr "В этом тексте нет плейсхолдеров."
+
+#: templates/bot/workspace.html:761
+msgid "Save override"
+msgstr "Сохранить переопределение"
+
+#: templates/bot/workspace.html:762
+msgid "Preview draft"
+msgstr "Предварительный просмотр черновика"
+
+#: templates/bot/workspace.html:765
+msgid "Reset this language to the system default?"
+msgstr "Сбросить этот язык на системный по умолчанию?"
+
+#: templates/bot/workspace.html:767
+msgid "Reset to default"
+msgstr "Сбросить до значения по умолчанию"
+
+#: templates/bot/workspace.html:773
+msgid "Draft preview"
+msgstr "Предварительный просмотр черновика"
+
+#: templates/bot/workspace.html:773
+msgid "Effective preview"
+msgstr "Эффективный предварительный просмотр"
+
+#: templates/bot/workspace.html:784
+msgid "Notification schedule"
+msgstr "График уведомлений"
+
+#: templates/bot/workspace.html:786
+msgid "Apply these notification settings?"
+msgstr "Применить эти настройки уведомлений?"
+
+#: templates/bot/workspace.html:821
+msgid "Save schedule"
+msgstr "Сохранить расписание"
+
+#: templates/bot/workspace.html:826
+msgid "Appointment reminders"
+msgstr "Напоминания о встрече"
+
+#: templates/bot/workspace.html:828
+msgid "Replace the active appointment reminder rules?"
+msgstr "Заменить правила напоминания об активной встрече?"
+
+#: templates/bot/workspace.html:833
+msgid "Client reminders"
+msgstr "Напоминания для клиентов"
+
+#: templates/bot/workspace.html:865
+msgid "Save reminders"
+msgstr "Сохранить напоминания"
+
+#: templates/bot/workspace.html:872
+msgid "Booking rules"
+msgstr "Правила бронирования"
+
+#: templates/bot/workspace.html:874
+msgid "Apply these booking rules?"
+msgstr "Применить эти правила бронирования?"
+
+#: templates/bot/workspace.html:912
+msgid "Save booking rules"
+msgstr "Сохранить правила бронирования"
+
+#: templates/bot/workspace.html:919
+msgid "Penalty rules"
+msgstr "Правила взыскания"
+
+#: templates/bot/workspace.html:921
+msgid "Apply these penalty rules?"
+msgstr "Применить эти правила штрафов?"
+
+#: templates/bot/workspace.html:955
+msgid "Save penalty rules"
+msgstr "Сохранить правила штрафов"
+
+#: templates/bot/workspace.html:962 templates/finance/report.html:365
+#: templates/partners/setup.html:238
+msgid "No partner workspace is available for this account."
+msgstr "Для этой учетной записи недоступно рабочее пространство партнера."
+
+#: templates/finance/report.html:280
+msgid "Add expense"
+msgstr "Добавить расход"
+
+#: templates/finance/report.html:296
+msgid "Report period"
+msgstr "Период отчета"
+
+#: templates/finance/report.html:299 templates/schedule/calendar.html:840
+msgid "Day"
+msgstr "День"
+
+#: templates/finance/report.html:300 templates/schedule/calendar.html:841
+msgid "Week"
+msgstr "Неделя"
+
+#: templates/finance/report.html:301 templates/schedule/calendar.html:842
+msgid "Month"
+msgstr "Месяц"
+
+#: templates/finance/report.html:303
+msgid "Previous period"
+msgstr "Предыдущий период"
+
+#: templates/finance/report.html:304
+msgid "Next period"
+msgstr "Следующий период"
+
+#: templates/finance/report.html:318
+msgid "Actual"
+msgstr "Факт"
+
+#: templates/finance/report.html:321
+msgid "Paid penalties"
+msgstr "Уплаченные штрафы"
+
+#: templates/finance/report.html:322 templates/finance/report.html:332
+msgid "Revenue"
+msgstr "Выручка"
+
+#: templates/finance/report.html:324
+msgid "Net actual"
+msgstr "Чистый факт"
+
+#: templates/finance/report.html:328
+msgid "Expected"
+msgstr "Ожидается"
+
+#: templates/finance/report.html:331
+msgid "Applied penalties"
+msgstr "Примененные штрафы"
+
+#: templates/finance/report.html:339
+msgid "Expenses in period"
+msgstr "Расходы за период"
+
+#: templates/finance/report.html:340
+msgid "Manage expenses"
+msgstr "Управление расходами"
+
+#: templates/finance/report.html:345 templates/finance/report.html:350
+msgid "Description"
+msgstr "Описание"
+
+#: templates/finance/report.html:357
+msgid "Showing the latest expenses in this period."
+msgstr "Отображение последних расходов за этот период."
+
+#: templates/finance/report.html:359
+msgid "No expenses in this period."
+msgstr "Никаких расходов в этот период."
+
+#: templates/partners/dashboard.html:244
+msgid "Operational dashboard"
+msgstr "Оперативная приборная панель"
+
+#: templates/partners/dashboard.html:264
+msgid "Setup guide"
+msgstr "Руководство по настройке"
+
+#: templates/partners/dashboard.html:268 templates/schedule/calendar.html:563
+msgid "Create appointment"
+msgstr "Создать запись"
+
+#: templates/partners/dashboard.html:287
+msgid "Appointments today"
+msgstr "Записи сегодня"
+
+#: templates/partners/dashboard.html:291
+msgid "Appointments tomorrow"
+msgstr "Записи завтра"
+
+#: templates/partners/dashboard.html:295 templates/partners/dashboard.html:399
+msgid "Pending requests"
+msgstr "Запросы на рассмотрении"
+
+#: templates/partners/dashboard.html:299 templates/partners/dashboard.html:409
+msgid "Failed notifications"
+msgstr "Неудачные уведомления"
+
+#: templates/partners/dashboard.html:309
+msgid "Actual revenue today"
+msgstr "Фактический доход на сегодня"
+
+#: templates/partners/dashboard.html:313
+msgid "Expected revenue today"
+msgstr "Ожидаемый доход сегодня"
+
+#: templates/partners/dashboard.html:320
+msgid "Needs attention"
+msgstr "Требует внимания"
+
+#: templates/partners/dashboard.html:325
+msgid "Setup is incomplete:"
+msgstr "Установка не завершена:"
+
+#: templates/partners/dashboard.html:331
+msgid "Telegram bot is not configured yet."
+msgstr "Telegram-бот еще не настроен."
+
+#: templates/partners/dashboard.html:334
+msgid "Telegram bot has an error."
+msgstr "В Telegram-боте произошла ошибка."
+
+#: templates/partners/dashboard.html:336
+msgid "Code:"
+msgstr "Код:"
+
+#: templates/partners/dashboard.html:340
+msgid "Telegram bot is suspended by the platform."
+msgstr "Telegram-бот приостановлен платформой."
+
+#: templates/partners/dashboard.html:342
+msgid "Telegram bot is paused; client flows are unavailable."
+msgstr "Telegram-бот приостановлен, потоки клиентов недоступны."
+
+#: templates/partners/dashboard.html:346
+#, python-format
+msgid ""
+"\n"
+"                  One notification needs delivery review.\n"
+"                "
+msgid_plural ""
+"\n"
+"                  %(counter)s notifications need delivery review.\n"
+"                "
+msgstr[0] "\n                  %(counter)s уведомление требует проверки доставки.\n                "
+msgstr[1] "\n                  %(counter)s уведомления требуют проверки доставки.\n                "
+msgstr[2] "\n                  %(counter)s уведомлений требуют проверки доставки.\n                "
+msgstr[3] "\n                  %(counter)s уведомления требует проверки доставки.\n                "
+
+#: templates/partners/dashboard.html:356
+#, python-format
+msgid ""
+"\n"
+"                    One confirmed appointment needs schedule review.\n"
+"                  "
+msgid_plural ""
+"\n"
+"                    %(counter)s confirmed appointments need schedule review.\n"
+"                  "
+msgstr[0] "\n                    %(counter)s подтвержденная запись требует проверки расписания.\n                  "
+msgstr[1] "\n                    %(counter)s подтвержденные записи требуют проверки расписания.\n                  "
+msgstr[2] "\n                    %(counter)s подтвержденных записей требуют проверки расписания.\n                  "
+msgstr[3] "\n                    %(counter)s подтвержденной записи требует проверки расписания.\n                  "
+
+#: templates/partners/dashboard.html:368
+msgid "Operational state"
+msgstr "Рабочее состояние"
+
+#: templates/partners/dashboard.html:369
+msgid "No setup or delivery problems need attention."
+msgstr "Проблемы с настройкой или доставкой не требуют внимания."
+
+#: templates/partners/dashboard.html:379
+msgid "View appointments"
+msgstr "Посмотреть записи"
+
+#: templates/partners/dashboard.html:401 templates/partners/dashboard.html:411
+msgid "View all"
+msgstr "Посмотреть все"
+
+#: templates/partners/dashboard.html:419 templates/partners/dashboard.html:428
+msgid "Updated"
+msgstr "Обновлено"
+
+#: templates/partners/dashboard.html:420 templates/partners/dashboard.html:433
+msgid "Notification"
+msgstr "Уведомление"
+
+#: templates/partners/dashboard.html:421 templates/partners/dashboard.html:434
+msgid "Target"
+msgstr "Цель"
+
+#: templates/partners/dashboard.html:422 templates/partners/dashboard.html:443
+msgid "Failure"
+msgstr "Неисправность"
+
+#: templates/partners/dashboard.html:447
+msgid "Delivery failed"
+msgstr "Сбой доставки"
+
+#: templates/partners/dashboard.html:456
+msgid "No failed notifications."
+msgstr "Нет неудачных уведомлений."
+
+#: templates/partners/dashboard.html:463 templates/schedule/calendar.html:944
+#: templates/schedule/conflicts.html:474
+msgid "No partner access"
+msgstr "Нет доступа к партнеру"
+
+#: templates/partners/dashboard.html:464 templates/schedule/calendar.html:945
+#: templates/schedule/conflicts.html:475
+msgid "This account does not have an active partner membership."
+msgstr "У этого аккаунта нет активной партнерской подписки."
+
+#: templates/partners/includes/appointment_table.html:8
+#: templates/partners/includes/appointment_table.html:18
+msgid "Time"
+msgstr "Время"
+
+#: templates/partners/includes/appointment_table.html:43
+msgid "Nothing scheduled."
+msgstr "Ничего не запланировано."
+
+#: templates/partners/setup.html:175
+msgid "Back to dashboard"
+msgstr "Назад к панели управления"
+
+#: templates/partners/setup.html:182
+#, python-format
+msgid ""
+"\n"
+"            %(complete)s of %(total)s required steps complete\n"
+"          "
+msgstr "\n            %(complete)s из %(total)s необходимые шаги завершены\n          "
+
+#: templates/partners/setup.html:187
+msgid "Minimum setup is complete. The bot can be launched from Bot controls."
+msgstr "Минимальная настройка завершена. Бот может быть запущен из элементов управления бота."
+
+#: templates/partners/setup.html:189
+msgid "Complete every required step before launching the client bot."
+msgstr "Выполните все необходимые действия перед запуском клиентского бота."
+
+#: templates/partners/setup.html:202
+msgid "Required setup"
+msgstr "Требуемая настройка"
+
+#: templates/partners/setup.html:203
+msgid "Required before launch"
+msgstr "Требуется перед запуском"
+
+#: templates/partners/setup.html:220
+msgid "Connection and launch"
+msgstr "Подключение и запуск"
+
+#: templates/partners/setup.html:221
+msgid "Operational finish"
+msgstr "Эксплуатационная отделка"
+
+#: templates/schedule/calendar.html:554
+msgid "Quick add"
+msgstr "Быстрое добавление"
+
+#: templates/schedule/calendar.html:557
+msgid "Open availability"
+msgstr "Открыть доступность"
+
+#: templates/schedule/calendar.html:560
+msgid "Block time"
+msgstr "Время блока"
+
+#: templates/schedule/calendar.html:627
+msgid "Close details"
+msgstr "Закрыть подробности"
+
+#: templates/schedule/calendar.html:657
+msgid "Currently unreachable"
+msgstr "В настоящее время недоступно"
+
+#: templates/schedule/calendar.html:678
+msgid "Changed by master"
+msgstr "Изменено мастером"
+
+#: templates/schedule/calendar.html:680
+msgid "min"
+msgstr "мин"
+
+#: templates/schedule/calendar.html:706
+msgid "Client comment"
+msgstr "Комментарий клиента"
+
+#: templates/schedule/calendar.html:712
+msgid "Client-visible reason"
+msgstr "Видимая клиентом причина"
+
+#: templates/schedule/calendar.html:718
+msgid "Private master note"
+msgstr "Частная мастер-нота"
+
+#: templates/schedule/calendar.html:723
+msgid "Appointment actions"
+msgstr "Действия с записью"
+
+#: templates/schedule/calendar.html:724
+msgid "Confirm"
+msgstr "Подтвердить"
+
+#: templates/schedule/calendar.html:727
+msgid "Cancel appointment"
+msgstr "Отменить запись"
+
+#: templates/schedule/calendar.html:730
+msgid "Open client"
+msgstr "Открыть клиента"
+
+#: templates/schedule/calendar.html:731
+msgid "Open full record"
+msgstr "Открыть полную запись"
+
+#: templates/schedule/calendar.html:734
+msgid "This client has no Telegram connection, so proposals and bot messages are unavailable."
+msgstr "У этого клиента нет подключения к Telegram, поэтому предложения и сообщения бота недоступны."
+
+#: templates/schedule/calendar.html:736
+msgid "Telegram delivery is currently marked unreachable; a new incoming client message will restore the channel."
+msgstr "Доставка Telegram в настоящее время помечена как недоступная; новое входящее сообщение клиента восстановит канал."
+
+#: templates/schedule/calendar.html:744
+msgid "Add calendar item"
+msgstr "Добавить элемент календаря"
+
+#: templates/schedule/calendar.html:779
+msgid "Continue"
+msgstr "Продолжить"
+
+#: templates/schedule/calendar.html:790
+msgid "Copy day"
+msgstr "День копирования"
+
+#: templates/schedule/calendar.html:792 templates/schedule/calendar.html:851
+msgid "Copy week"
+msgstr "Неделя копирования"
+
+#: templates/schedule/calendar.html:797
+msgid "Availability and blocked time are added to the selected resource. Existing items stay in place, and appointments are never copied."
+msgstr "Доступность и заблокированное время добавляются к выбранному ресурсу. Существующие элементы остаются на месте, и встречи никогда не копируются."
+
+#: templates/schedule/calendar.html:812
+msgid "Copy schedule"
+msgstr "Копировать расписание"
+
+#: templates/schedule/calendar.html:830
+msgid "Calendar legend"
+msgstr "Легенда календаря"
+
+#: templates/schedule/calendar.html:831 templates/schedule/calendar.html:895
+msgid "Available"
+msgstr "Доступно"
+
+#: templates/schedule/calendar.html:832 templates/schedule/calendar.html:905
+msgid "Blocked"
+msgstr "Заблокировано"
+
+#: templates/schedule/calendar.html:835
+msgid "Conflict"
+msgstr "Конфликт"
+
+#: templates/schedule/calendar.html:839
+msgid "Calendar view"
+msgstr "Представление календаря"
+
+#: templates/schedule/calendar.html:847
+#, python-format
+msgid "One conflict"
+msgid_plural "%(counter)s conflicts"
+msgstr[0] "%(counter)s конфликт"
+msgstr[1] "%(counter)s конфликта"
+msgstr[2] "%(counter)s конфликтов"
+msgstr[3] "%(counter)s конфликта"
+
+#: templates/schedule/calendar.html:854
+msgid "Previous day"
+msgstr "Предыдущий день"
+
+#: templates/schedule/calendar.html:854
+msgid "Previous month"
+msgstr "Предыдущий месяц"
+
+#: templates/schedule/calendar.html:854
+msgid "Previous week"
+msgstr "Предыдущая неделя"
+
+#: templates/schedule/calendar.html:858
+msgid "Next day"
+msgstr "Следующий день"
+
+#: templates/schedule/calendar.html:858
+msgid "Next month"
+msgstr "Следующий месяц"
+
+#: templates/schedule/calendar.html:858
+msgid "Next week"
+msgstr "Следующая неделя"
+
+#: templates/schedule/calendar.html:866
+msgid "Calendar period"
+msgstr "Календарный период"
+
+#: templates/schedule/calendar.html:881
+msgid "Add"
+msgstr "Добавить"
+
+#: templates/schedule/calendar.html:882
+msgid "Copy"
+msgstr "Копия"
+
+#: templates/schedule/calendar.html:921
+msgid "Near-fit"
+msgstr "Почти прилегает"
+
+#: templates/schedule/calendar.html:922
+msgid "Schedule conflict"
+msgstr "Конфликт расписаний"
+
+#: templates/schedule/calendar.html:929
+msgid "No calendar entries."
+msgstr "Нет записей в календаре."
+
+#: templates/schedule/calendar.html:938
+msgid "No active calendar resource"
+msgstr "Нет активного календарного ресурса"
+
+#: templates/schedule/calendar.html:939
+msgid "Activate a calendar resource before planning availability or appointments."
+msgstr "Активируйте календарный ресурс, прежде чем планировать доступность или записи."
+
+#: templates/schedule/conflicts.html:256
+msgid "Confirmed appointments that no longer fit the current schedule"
+msgstr "Подтвержденные записи, которые больше не соответствуют текущему расписанию"
+
+#: templates/schedule/conflicts.html:274 templates/schedule/conflicts.html:362
+#: templates/schedule/conflicts.html:395
+msgid "Resource"
+msgstr "Ресурс"
+
+#: templates/schedule/conflicts.html:276
+msgid "All resources"
+msgstr "Все ресурсы"
+
+#: templates/schedule/conflicts.html:279
+msgid "Inactive"
+msgstr "Неактивен"
+
+#: templates/schedule/conflicts.html:283
+msgid "Filter"
+msgstr "Фильтр"
+
+#: templates/schedule/conflicts.html:300
+msgid "Conflict state"
+msgstr "Состояние конфликта"
+
+#: templates/schedule/conflicts.html:305
+msgid "Kept as is"
+msgstr "Оставлено без изменений"
+
+#: templates/schedule/conflicts.html:321
+#, python-format
+msgid ""
+"\n"
+"                One appointment is kept as is\n"
+"              "
+msgid_plural ""
+"\n"
+"                %(counter)s appointments are kept as is\n"
+"              "
+msgstr[0] "\n                %(counter)s запись оставлена без изменений\n              "
+msgstr[1] "\n                %(counter)s записи оставлены без изменений\n              "
+msgstr[2] "\n                %(counter)s записей оставлены без изменений\n              "
+msgstr[3] "\n                %(counter)s записи оставлены без изменений\n              "
+
+#: templates/schedule/conflicts.html:327
+#, python-format
+msgid ""
+"\n"
+"                One appointment needs schedule review\n"
+"              "
+msgid_plural ""
+"\n"
+"                %(counter)s appointments need schedule review\n"
+"              "
+msgstr[0] "\n                %(counter)s запись требует проверки расписания\n              "
+msgstr[1] "\n                %(counter)s записи требуют проверки расписания\n              "
+msgstr[2] "\n                %(counter)s записей требуют проверки расписания\n              "
+msgstr[3] "\n                %(counter)s записи требует проверки расписания\n              "
+
+#: templates/schedule/conflicts.html:335
+msgid "These appointments remain unchanged. Reopen a decision when the conflict should return to active review."
+msgstr "Эти записи остаются без изменений. Возобновите рассмотрение, если конфликт нужно снова проверить."
+
+#: templates/schedule/conflicts.html:337
+msgid "Appointments stay unchanged until you cancel them or the client accepts a proposed time. Keep as is removes the current conflict from active review."
+msgstr "Записи остаются без изменений, пока вы не отмените их или клиент не примет предложенное время. Действие «Оставить как есть» убирает текущий конфликт из активного рассмотрения."
+
+#: templates/schedule/conflicts.html:343
+msgid "Bulk action"
+msgstr "Массовое действие"
+
+#: templates/schedule/conflicts.html:345
+msgid "Reopen selected"
+msgstr "Возобновить выбранные"
+
+#: templates/schedule/conflicts.html:347
+msgid "Keep selected as is"
+msgstr "Оставить выбранные без изменений"
+
+#: templates/schedule/conflicts.html:348
+msgid "Ask selected clients to reschedule"
+msgstr "Попросить выбранных клиентов перенести запись"
+
+#: templates/schedule/conflicts.html:358
+msgid "Select all conflicts on this page"
+msgstr "Выбрать все конфликты на этой странице"
+
+#: templates/schedule/conflicts.html:361 templates/schedule/conflicts.html:383
+msgid "Client and services"
+msgstr "Клиент и услуги"
+
+#: templates/schedule/conflicts.html:363 templates/schedule/conflicts.html:401
+msgid "Problem"
+msgstr "Проблема"
+
+#: templates/schedule/conflicts.html:364 templates/schedule/conflicts.html:421
+msgid "Actions"
+msgstr "Действия"
+
+#: templates/schedule/conflicts.html:371
+#, python-format
+msgid "Select conflict for %(client)s"
+msgstr "Выбрать конфликт для клиента %(client)s"
+
+#: templates/schedule/conflicts.html:398
+msgid "Inactive resource"
+msgstr "Неактивный ресурс"
+
+#: templates/schedule/conflicts.html:407
+msgid "Resource is inactive"
+msgstr "Ресурс неактивен"
+
+#: templates/schedule/conflicts.html:409
+msgid "Overlaps blocked time"
+msgstr "Пересекается с заблокированным временем"
+
+#: templates/schedule/conflicts.html:411
+msgid "Outside availability"
+msgstr "Вне доступного времени"
+
+#: templates/schedule/conflicts.html:422
+msgid "Conflict actions"
+msgstr "Действия с конфликтом"
+
+#: templates/schedule/conflicts.html:436
+msgid "Ask client to reschedule"
+msgstr "Попросить клиента перенести запись"
+
+#: templates/schedule/conflicts.html:441
+msgid "Propose time"
+msgstr "Предложить время"
+
+#: templates/schedule/conflicts.html:444
+msgid "Open record"
+msgstr "Открыть запись"
+
+#: templates/schedule/conflicts.html:454
+msgid "Conflict pages"
+msgstr "Страницы конфликтов"
+
+#: templates/schedule/conflicts.html:464
+msgid "No appointments kept as is"
+msgstr "Нет записей, оставленных без изменений"
+
+#: templates/schedule/conflicts.html:465
+msgid "Keep an active conflict as is when the current appointment should remain unchanged."
+msgstr "Оставьте активный конфликт без изменений, если текущую запись не нужно менять."
+
+#: templates/schedule/conflicts.html:467
+msgid "No active schedule conflicts"
+msgstr "Нет активных конфликтов расписания"
+
+#: templates/schedule/conflicts.html:468
+msgid "Future confirmed appointments fit the current availability and blocked-time rules, or their current conflicts were already kept as is."
+msgstr "Будущие подтвержденные записи соответствуют текущей доступности и правилам заблокированного времени либо их конфликты уже оставлены без изменений."

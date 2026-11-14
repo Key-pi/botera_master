@@ -4,6 +4,13 @@ Status: discovery approved on 2026-08-07.
 
 ## CONFIRMED
 
+- 2026-11-09: Pilot Acceptance And Release Hardening started after explicit approval with `PILOT_ACCEPTANCE_APPROVED`. The milestone validates the existing MVP through traceable automated/manual acceptance evidence, clean Compose bootstrap, PostgreSQL behavior, restart/resume safety, production configuration, and backup/restore rehearsal; it does not implicitly approve new product features.
+- 2026-11-11: Pilot Acceptance And Release Hardening completed. Host and PostgreSQL suites, isolated clean bootstrap, restart/resume health, production configuration, backup/restore rehearsal, owner desktop/mobile UI smoke, and focused live Telegram notification/penalty/broadcast delivery all passed. Remaining local-pilot limitations are recorded in `PILOT_ACCEPTANCE.md` and do not block the first pilot.
+- 2026-11-09: Application images reinstall and validate the operating-system timezone database explicitly. Partner writes normalize the legacy input alias `Europe/Kiev` to canonical IANA `Europe/Kyiv`, and a data migration updates existing partner rows for modern Debian images where the legacy alias is no longer shipped.
+- 2026-11-06: The master Telegram appointment detail shows the combined applied-penalty amount and offers a separate confirmed action that atomically marks every still-active application on that appointment paid. Completing an appointment never implies payment; duplicate payment callbacks are idempotent, and existing per-penalty audit and client notification behavior remains authoritative.
+- 2026-11-05: The client Telegram profile exposes partner-scoped marketing preferences. Unsubscribing changes only `ClientProfile.marketing_opt_out`; appointment notifications and manual master messages remain enabled, and the client can subscribe again from the same screen.
+- 2026-11-05: The client Telegram profile exposes outstanding penalties separately from appointment history. The list includes unpaid and applied-but-unsettled debt, excludes paid/waived penalties, paginates at five rows, shows the full outstanding total, and offers the general contact-master action.
+- 2026-11-05: A client may edit their partner-scoped name, phone, and `extra_client_text` from the Telegram profile. These narrow runtime services cannot edit `private_master_note`; explicit clear actions are available for optional fields, and the same Telegram identity's profiles under other partners remain unchanged.
 - 2026-10-08: `IMPLEMENTATION_PLAN.md` is approved with `IMPLEMENTATION_PLAN_APPROVED`.
 - 2026-10-08: BoteraMaster implementation direction starts from a clean Django project and treats TableOS as a reference implementation, not a codebase to copy wholesale.
 - 2026-10-08: Even after implementation-plan approval, application code, migrations, AGENTS.md, and project skills remain gated by the next explicit implementation/project-rules approval step.
@@ -36,6 +43,14 @@ Status: discovery approved on 2026-08-07.
 - 2026-10-13: Audit, Diagnostics, and Cleanup milestone implementation started after explicit user approval.
 - 2026-10-13: Audit/Diagnostics/Cleanup foundation includes partner-visible audit events with six-month retention, platform diagnostics with component/severity taxonomy fields and redacted metadata, current worker heartbeat records with MVP stale thresholds, superuser-only diagnostic selectors/admin, cleanup allowlist for expired retained operational records, maintenance Celery task entrypoints, runbook management commands, and focused audit/diagnostics/cleanup tests.
 - 2026-10-13: Master-facing Telegram delivery should use an explicit partner-scoped owner/master Telegram contact binding. The binding is created by a signed deep link opened in the partner's own bot; the bot token itself does not reveal the owner's Telegram account. A normal client `/start` must not make someone a master contact. MVP UI can start with one primary contact, while the model should stay expandable to additional recipients later.
+- 2026-11-05: An already linked master opens a tenant-scoped Telegram workspace on `/start` rather than entering the client profile flow. The first operational workspace includes pending requests, today/tomorrow/upcoming appointment lists, appointment details, existing safe request actions, and language selection; business settings remain admin-only.
+- 2026-11-05: Confirmed appointment details in the master Telegram workspace provide explicit-confirmation actions for cancel, complete, and no-show through the existing appointment service. Complete/no-show appear only after start; final-status correction stays in admin. A no-show penalty is offered separately when enabled, and direct client messages are queued through durable bot messaging rather than sent inside the callback.
+- 2026-11-05: A linked master may propose up to five replacement times for a future confirmed appointment from Telegram when the client is reachable through that partner bot. Proposal creation revalidates every option, leaves the original appointment confirmed at its old time, and delegates acceptance/conflict safety to the existing proposal service. Manual/unreachable clients do not expose this bot action.
+- 2026-11-05: For a started confirmed or completed appointment, the master Telegram workspace exposes late-arrival recording only when partner penalties are enabled and no late-arrival penalty exists. One text input carries minutes plus an optional note and calls the existing finance service, preserving threshold validation, duplicate protection, audit, and durable client notification.
+- 2026-11-06: A verified master may view, add, replace, and explicitly clear an appointment-specific private note from the Telegram workspace. The note is never client-visible, does not require client confirmation or notification, and audit records only presence and character-count metadata rather than raw note text.
+- 2026-11-06: Client and master Telegram appointment details render snapshotted service prices and durations, explicitly mark partner overrides, and bound the service-lines block so unusually large multi-service appointments cannot exceed the Telegram message budget.
+- 2026-11-06: The Compose startup gate synchronizes and validates the complete code-owned multilingual system-template registry after migrations. The operation is transactional and idempotent, preserves partner overrides, and blocks long-running services if registry synchronization fails.
+- 2026-11-06: Full tests inside Compose use dedicated `core.settings.postgres_test` settings. They retain the Compose PostgreSQL database while fixing the test UI language to English and Celery to eager mode, avoiding environment-dependent failures from the normal Ukrainian local runtime settings.
 - 2026-10-13: Pilot Wiring milestone implementation started after explicit approval with `PILOT_WIRING_APPROVED`.
 - 2026-10-21: Pilot booking wiring collects an optional client-visible comment before final creation and supports a partner-controlled `require_phone_for_booking` gate. The gate is enforced by the client-booking domain service, while the Telegram FSM preserves the selected services, slot, and comment until a valid partner-scoped client phone is saved.
 - 2026-10-22: Manual-confirmation booking requests schedule an immediate durable master notification with safe confirm/decline/propose callbacks in addition to stale-request reminders. The Telegram proposal flow lets the verified partner contact select up to five freshly generated alternatives, review them, and create one durable `requested_alternatives` proposal. Pending alternatives pause stale-request reminders; client decline or partner cancellation resumes the next reminder sequence. Final acceptance still rechecks overlap under the booking-resource advisory lock.
@@ -44,6 +59,68 @@ Status: discovery approved on 2026-08-07.
 - 2026-10-22: Master cancellation of a confirmed appointment, completion, and no-show each queue an idempotent durable client notification after commit. Request rejection keeps its separate message, manual clients without Telegram do not receive delivery records, and final-status corrections stale the superseded notice before queuing the corrected status.
 - 2026-10-22: Exhausted client appointment reminders now create one durable master-facing failure marker linked to the source notification. The linked master receives business-safe Retry, Message client, and View client actions; callbacks re-resolve the source inside trusted partner scope, explicit retries reuse its delivery history, and obsolete markers become stale without duplicate delivery.
 - 2026-10-22: Internal broadcast buttons are wired to existing client flows: `book` starts a fresh partner-scoped booking selection, while `my_appointments` opens the client's future appointments. The router answers with a new message instead of editing the campaign message so the actions work for both text and photo broadcasts.
+- 2026-10-24: The partner appointment changelist is an operational view with partner-local
+  start/end times, service snapshots, major-unit totals, local-date presets, and filters for
+  service, category, and penalty state. Related filter choices remain constrained to the actor's
+  trusted appointment queryset.
+- 2026-10-24: The partner client changelist now shows masked contact data, Telegram connection
+  state, the next active appointment in partner time, completed visit count, and unpaid penalty
+  count. Operational filters and correlated annotations remain scoped by trusted partner access,
+  while the partner column is reserved for superusers.
+- 2026-10-24: Pilot catalog administration uses service-backed category/service writes, accepts
+  client-facing prices in major units while preserving integer minor-unit storage, and exposes
+  compact partner-scoped lists with category counts and explicit booking visibility reasons.
+  Partner owners do not see redundant partner columns or foreign filter choices; superusers retain
+  cross-partner context. Catalog records are archived through active/inactive state instead of
+  physical deletion in the partner admin.
+- 2026-10-25: Partner bot operations use one tenant-scoped Bot workspace with the approved
+  Instance, Settings, Content, Notifications, Booking, and Penalties tabs. Instance actions keep
+  token handling, connection checks, launch/pause rules, and signed master-contact links in bot
+  services; the other tabs initially compose owner-module summaries and safe edit destinations.
+- 2026-10-25: Bot token replacement, status changes, connection checks, and master Telegram link
+  creation emit business-safe audit events without storing or displaying the raw token or signed
+  link nonce.
+- 2026-10-25: The Bot Content workspace exposes only code-owned editable keys, keeps UK/RU/EN
+  overrides independent, validates placeholders before preview/save, and supports an explicit
+  per-language reset to the system fallback. Content audit events store key/language metadata but
+  never the partner-authored message or button text.
+- 2026-10-25: The Bot Notifications workspace owns partner-facing quiet hours, morning digest,
+  stale-request timing, and appointment reminder configuration. Reminder edits atomically
+  activate the desired client/master rules and deactivate superseded rows instead of deleting
+  delivery history; already scheduled notification records keep their existing due time.
+- 2026-10-28: The Bot Booking workspace owns partner-facing confirmation mode, slot step,
+  booking horizon, near-fit tolerance, cancellation deadline, and required-phone configuration.
+  Complete updates pass through the schedule owner service in one transaction and emit one
+  business-safe audit event describing the resulting booking rules.
+- 2026-10-28: The Bot Penalties workspace owns partner-facing penalty enablement, configured
+  late-cancellation/no-show/late-arrival amounts, and the late-arrival threshold. The workspace
+  accepts UAH major units, converts them to integer minor units at the form boundary, and delegates
+  the complete transactional update and audit event to the finance owner service.
+- 2026-10-28: The Bot Settings workspace lets the partner owner change only the default bot
+  language and partner timezone. Partner lifecycle status remains read-only there and continues to
+  be controlled by setup/launch/superuser suspension workflows. Both the workspace and Partner
+  admin delegate mutable defaults to one tenant-checked, locked, audited partner owner service.
+- 2026-10-29: Partner onboarding uses one composed setup snapshot shared by the owner setup guide,
+  Bot launch checklist, dashboard, and superuser Partner record. The guide links each required and
+  operational step to its tenant-scoped configuration surface; partner selection is always derived
+  from trusted memberships, while the existing superuser-only add form atomically creates the
+  partner, owner account, membership, and module defaults.
+- 2026-10-29: The single-host pilot Compose file publishes web, PostgreSQL, and Redis host ports on
+  loopback only by default. Inter-container traffic stays on the Compose network; PostgreSQL and
+  Redis must not be exposed publicly, and final public web ingress remains a separate reviewed TLS
+  reverse-proxy/application-server decision.
+- 2026-10-29: Pilot PostgreSQL backups use custom-format `pg_dump` archives with an immediate
+  `pg_restore --list` verification and off-host storage. Restore rehearsals target a disposable
+  database; restoring the active database remains an explicit incident operation with services
+  stopped and a fresh pre-restore backup, not a one-click repository script.
+- 2026-10-29: Production ingress dependencies are approved with
+  `PRODUCTION_INGRESS_DEPENDENCIES_APPROVED`. The single-host production overlay uses Gunicorn for
+  Django and pinned Caddy 2.11.7 for automatic TLS/static delivery. Only Caddy publishes public
+  ports; Django, PostgreSQL, and Redis stay internal, and production containers run immutable image
+  code without the local source bind mount.
+- 2026-10-29: Production Django settings fail fast on development/short secrets, wildcard hosts, or
+  missing HTTPS CSRF origins. Caddy/Gunicorn request access logs remain disabled by default because
+  partner admin query strings can contain sensitive business data.
 - 2026-08-06: Discovery mode started with no application code, Django project, dependencies, models, migrations, final architecture, final AGENTS.md, or project skill allowed before explicit approval.
 - 2026-08-06: BoteraMaster is initially explored as a Telegram-first CRM/scheduling assistant for masters and small service businesses.
 - 2026-08-06: Initial product focus is beauty masters working by appointment.
@@ -127,6 +204,12 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-06: Bulk actions for conflict appointments are included in MVP.
 - 2026-10-23: `Leave as is` persists a partner-scoped acknowledgement for the current schedule-conflict fingerprint rather than changing the appointment. Matching acknowledgements hide active markers/counts, explicit reopen removes the decision, and relevant schedule/appointment changes make a stale decision visible again.
 - 2026-10-23: Schedule conflict keep/reopen actions support bounded bulk selection in MVP and create partner-visible audit events.
+- 2026-10-23: Active schedule conflicts support a bounded bulk action that asks Telegram-linked
+  clients to choose another time through the existing client reschedule flow. The current
+  appointment remains `confirmed`; manual clients without Telegram are reported and skipped.
+- 2026-10-23: Schedule-conflict reschedule requests are durable and idempotent per conflict
+  fingerprint. Queued requests become stale when the conflict resolves, changes, is kept as is,
+  or the appointment is no longer future and confirmed.
 - 2026-08-06: Client reminder intervals are configurable by the partner in MVP.
 - 2026-08-06: Master reminders before appointments are configurable by the partner in MVP; the partner may enable/disable them and choose timing.
 - 2026-08-06: If a client reminder is not delivered, the master should see/know about it so they can act.
@@ -155,6 +238,16 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-19: Superuser-visible system/audit logs include technical errors from bot runner and background jobs, with sensitive data masked.
 - 2026-09-22: Sensitive/destructive partner actions must be audited, including appointment cancellation, no-show marking, penalty changes/payment/waiver, expense changes/deletion, bot token/settings changes, and corrections after final status.
 - 2026-09-22: Partner-visible Activity Log entries should be business-friendly and should not expose raw technical payloads.
+- 2026-10-24: The partner Activity Log is a read-only, partner-scoped journal
+  with business-area filters, curated event labels, partner-local timestamps,
+  safe whitelisted details, and links to known surviving business records.
+- 2026-10-24: Raw event keys, target identifiers, and masked payload JSON are
+  hidden from partner users. Superusers may inspect the already-redacted
+  technical context in a collapsed support-only section; audit history cannot
+  be edited or deleted through admin.
+- 2026-10-24: Appointment creation emits `appointment.created` in the same
+  transaction as the appointment and its service snapshots, so the activity
+  history begins with the source business action.
 - 2026-09-22: Audit reason is required for correction-flow actions after a final appointment status.
 - 2026-09-22: For master cancellation, penalty waiver, and expense deletion, reason is optional in MVP unless a later policy makes it required.
 - 2026-09-22: Appointment service item/line records are used for every appointment, including one-service appointments.
@@ -228,6 +321,17 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-10: Temporary Telegram errors and `429` should not fail the whole broadcast. The system should back off and continue later.
 - 2026-08-10: Detailed per-recipient broadcast delivery records should not be stored indefinitely; default cleanup retention is 90 days.
 - 2026-08-10: Manual retry of failed broadcast recipients is outside MVP unless real usage shows it is needed earlier.
+- 2026-10-24: The partner broadcast admin uses explicit content, audience,
+  button, and delivery-mode fields rather than exposing JSON configuration;
+  started campaigns are read-only and show durable recipient progress.
+- 2026-10-24: Saved broadcast templates can prefill a new campaign, while
+  template and campaign mutations remain partner-scoped and service-backed.
+- 2026-10-24: Celery Beat queues due scheduled campaigns through the isolated
+  `broadcasts` queue; repeated scheduler passes must not duplicate recipients or
+  lifecycle events.
+- 2026-10-24: Campaign creation, scheduling, start, cancellation, completion,
+  and partial failure are recorded as partner-visible audit events without
+  storing campaign message content in audit payloads.
 - 2026-08-10: Cleanup-eligible noisy technical records should use `retain_until`, not `expires_at`, to mark when the system may delete them.
 - 2026-08-10: Candidate cleanup-eligible records include detailed per-recipient broadcast delivery records, delivery attempt records, partner-visible technical logs, and platform/system logs.
 - 2026-08-10: Default retention for cleanup-eligible records is 90 days, using `retain_until = created_at + 90 days` unless a specific record type later receives a different approved policy.
@@ -492,6 +596,15 @@ Status: discovery approved on 2026-08-07.
 - 2026-08-13: Expense categories are not part of MVP.
 - 2026-08-13: Expenses are partner-only data and are not client-visible.
 - 2026-08-15: Partner can edit/delete expense records, and these changes are audit logged.
+- 2026-10-24: Partner finance uses a dedicated tenant-scoped workspace with day,
+  week, and month views calculated in the partner timezone; it shows actual
+  revenue, expected revenue, expenses, and actual net amount.
+- 2026-10-24: Partner-facing expense and penalty-setting forms accept and show
+  major currency units while persistent money values remain integer minor
+  units.
+- 2026-10-24: Expense create/update/delete operations go through finance owner
+  services and produce partner-visible audit events; partner-owner admin access
+  includes only the reviewed tenant-scoped expense surface.
 - 2026-08-13: Partner admin default landing screen should be an operational dashboard focused on today's/tomorrow's appointments/calendar, pending `requested` appointments, failed reminders/notifications, active conflicts/problems, and compact basic stats/revenue.
 - 2026-09-22: MVP partner admin main navigation is Dashboard, Calendar, Appointments, Clients, Catalog, Broadcasts, Finance, Bot, and Activity Log.
 - 2026-09-22: Calendar is the primary day-to-day working screen for the master; Appointments list is a secondary searchable/filterable operational view.

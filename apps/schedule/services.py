@@ -4,6 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from datetime import timezone as datetime_timezone
+from functools import partial
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -71,6 +72,14 @@ class ScheduleCopyResult:
         return self.availability_created + self.blocked_created
 
 
+@dataclass(frozen=True, slots=True)
+class ScheduleConflictRescheduleRequestResult:
+    """Outcome of asking selected conflict clients to choose another time."""
+
+    requested_count: int
+    skipped_without_telegram_count: int
+
+
 def initialize_partner_schedule(*, partner: Partner) -> BookingResource:
     """Create the invisible solo-master resource and schedule settings for a partner."""
 
@@ -114,26 +123,53 @@ def update_schedule_settings(
     """Update partner-owned schedule settings through explicit validation."""
 
     ensure_partner_access(actor, partner)
-    schedule_settings, _created = PartnerScheduleSettings.objects.get_or_create(partner=partner)
     if confirmation_mode is not None:
         validate_confirmation_mode(confirmation_mode)
-        schedule_settings.confirmation_mode = confirmation_mode
     if slot_step_minutes is not None:
         _validate_slot_step(slot_step_minutes)
-        schedule_settings.slot_step_minutes = slot_step_minutes
     if booking_horizon_days is not None:
         _validate_booking_horizon(booking_horizon_days)
-        schedule_settings.booking_horizon_days = booking_horizon_days
     if near_fit_tolerance_minutes is not None:
         _validate_near_fit_tolerance(near_fit_tolerance_minutes)
-        schedule_settings.near_fit_tolerance_minutes = near_fit_tolerance_minutes
     if cancellation_deadline_hours is not None:
         _validate_cancellation_deadline(cancellation_deadline_hours)
-        schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
     if require_phone_for_booking is not None:
         _validate_require_phone_for_booking(require_phone_for_booking)
-        schedule_settings.require_phone_for_booking = require_phone_for_booking
-    schedule_settings.save()
+
+    with transaction.atomic():
+        schedule_settings, _created = (
+            PartnerScheduleSettings.objects.select_for_update().get_or_create(partner=partner)
+        )
+        if confirmation_mode is not None:
+            schedule_settings.confirmation_mode = confirmation_mode
+        if slot_step_minutes is not None:
+            schedule_settings.slot_step_minutes = slot_step_minutes
+        if booking_horizon_days is not None:
+            schedule_settings.booking_horizon_days = booking_horizon_days
+        if near_fit_tolerance_minutes is not None:
+            schedule_settings.near_fit_tolerance_minutes = near_fit_tolerance_minutes
+        if cancellation_deadline_hours is not None:
+            schedule_settings.cancellation_deadline_hours = cancellation_deadline_hours
+        if require_phone_for_booking is not None:
+            schedule_settings.require_phone_for_booking = require_phone_for_booking
+        schedule_settings.save()
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="schedule.settings_updated",
+            target=schedule_settings,
+            message="Booking settings updated.",
+            payload={
+                "confirmation_mode": schedule_settings.confirmation_mode,
+                "slot_step_minutes": schedule_settings.slot_step_minutes,
+                "booking_horizon_days": schedule_settings.booking_horizon_days,
+                "near_fit_tolerance_minutes": schedule_settings.near_fit_tolerance_minutes,
+                "cancellation_deadline_hours": schedule_settings.cancellation_deadline_hours,
+                "required_booking_fields": (
+                    ["phone"] if schedule_settings.require_phone_for_booking else []
+                ),
+            },
+        )
     return schedule_settings
 
 
@@ -398,6 +434,95 @@ def reopen_schedule_conflicts(
     return len(acknowledgements)
 
 
+def request_schedule_conflict_reschedules(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment_ids: Sequence[UUID],
+    now: datetime | None = None,
+) -> ScheduleConflictRescheduleRequestResult:
+    """Queue idempotent client reschedule requests for selected active conflicts."""
+
+    ensure_partner_access(actor, partner)
+    normalized_ids = _normalize_conflict_appointment_ids(appointment_ids)
+    current_time = now or timezone.now()
+    with transaction.atomic():
+        appointments = tuple(
+            Appointment.objects.select_for_update(of=("self",))
+            .select_related(
+                "partner",
+                "booking_resource",
+                "client_profile",
+                "client_profile__telegram_identity",
+            )
+            .filter(
+                partner=partner,
+                id__in=normalized_ids,
+                status=Appointment.Status.CONFIRMED,
+                start_at__gt=current_time,
+            )
+            .order_by("start_at", "created_at")
+        )
+        if len(appointments) != len(normalized_ids):
+            raise ValidationError(
+                {"appointments": "Select current confirmed appointments from this partner."}
+            )
+
+        conflicts = schedule_conflicts_for_partner_period(
+            partner=partner,
+            start_at=min(current_time, min(appointment.start_at for appointment in appointments)),
+            end_at=max(appointment.end_at for appointment in appointments)
+            + timedelta(microseconds=1),
+        )
+        conflicts_by_appointment = {
+            conflict.appointment.id: conflict for conflict in conflicts
+        }
+        if any(appointment_id not in conflicts_by_appointment for appointment_id in normalized_ids):
+            raise ValidationError(
+                {"appointments": "One or more selected schedule conflicts are no longer active."}
+            )
+
+        requested: list[tuple[UUID, str]] = []
+        skipped_without_telegram = 0
+        for appointment in appointments:
+            if not appointment.client_profile.telegram_identity_id:
+                skipped_without_telegram += 1
+                continue
+            requested.append(
+                (
+                    appointment.id,
+                    conflicts_by_appointment[appointment.id].fingerprint,
+                )
+            )
+
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="schedule.conflict_reschedules_requested",
+            target_type="schedule_conflict",
+            message=f"Requested reschedule for {len(requested)} schedule conflict(s).",
+            payload={
+                "appointment_ids": [str(appointment_id) for appointment_id, _ in requested],
+                "requested_count": len(requested),
+                "skipped_without_telegram_count": skipped_without_telegram,
+            },
+        )
+        for appointment_id, fingerprint in requested:
+            transaction.on_commit(
+                partial(
+                    _schedule_conflict_reschedule_request_after_commit,
+                    appointment_id=appointment_id,
+                    conflict_fingerprint=fingerprint,
+                    now=current_time,
+                )
+            )
+
+    return ScheduleConflictRescheduleRequestResult(
+        requested_count=len(requested),
+        skipped_without_telegram_count=skipped_without_telegram,
+    )
+
+
 def _normalize_conflict_appointment_ids(
     appointment_ids: Sequence[UUID],
 ) -> tuple[UUID, ...]:
@@ -413,6 +538,34 @@ def _normalize_conflict_appointment_ids(
             }
         )
     return normalized_ids
+
+
+def _schedule_conflict_reschedule_request_after_commit(
+    *,
+    appointment_id: UUID,
+    conflict_fingerprint: str,
+    now: datetime,
+) -> None:
+    from apps.notifications.services import (
+        schedule_client_schedule_conflict_reschedule_request,
+    )
+
+    appointment = (
+        Appointment.objects.select_related(
+            "partner",
+            "client_profile",
+            "client_profile__telegram_identity",
+        )
+        .filter(id=appointment_id)
+        .first()
+    )
+    if appointment is None:
+        return
+    schedule_client_schedule_conflict_reschedule_request(
+        appointment=appointment,
+        conflict_fingerprint=conflict_fingerprint,
+        now=now,
+    )
 
 
 def validate_blocked_time_input(

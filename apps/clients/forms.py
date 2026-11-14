@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.translation import gettext_lazy as _
 
 from apps.clients.models import ClientProfile
 from apps.clients.services import validate_client_profile_details
@@ -12,9 +13,9 @@ class ClientProfileAdminForm(forms.ModelForm):
 
     language = forms.ChoiceField(
         choices=(
-            ("uk", "Ukrainian"),
-            ("ru", "Russian"),
-            ("en", "English"),
+            ("uk", _("Ukrainian")),
+            ("ru", _("Russian")),
+            ("en", _("English")),
         )
     )
 

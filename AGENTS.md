@@ -17,8 +17,12 @@ started on 2026-10-13 after explicit user approval. Content, Messaging, and
 Broadcasts milestone implementation started on 2026-10-13 after explicit user
 approval. Audit, Diagnostics, and Cleanup milestone implementation started on
 2026-10-13 after explicit user approval.
-Pilot Wiring milestone implementation started on 2026-10-13 after explicit
-user approval with `PILOT_WIRING_APPROVED`.
+Pilot Wiring milestone was implemented on 2026-11-01 after explicit user
+approval with `PILOT_WIRING_APPROVED`.
+Production ingress dependencies and the Pilot Wiring ingress slice were
+approved on 2026-10-29 with `PRODUCTION_INGRESS_DEPENDENCIES_APPROVED`.
+Pilot Acceptance And Release Hardening milestone implementation completed on
+2026-11-11 after explicit approval with `PILOT_ACCEPTANCE_APPROVED`.
 Application code is allowed only within the currently approved milestone scope.
 
 ## System summary
@@ -46,6 +50,7 @@ Read these before implementation work:
 - architecture decisions: `docs/spec/ARCHITECTURE_DECISIONS.md`
 - data map: `docs/spec/SCHEMA_DRAFT.md`
 - implementation sequence: `docs/spec/IMPLEMENTATION_PLAN.md`
+- pilot acceptance: `docs/spec/PILOT_ACCEPTANCE.md`
 - operational direction: `docs/spec/RUNBOOK_DRAFT.md`
 - diagnostics direction: `docs/spec/DIAGNOSTICS_TAXONOMY.md`
 - ecosystem guardrails: `docs/spec/ECOSYSTEM_GUARDRAILS_DRAFT.md`
@@ -126,6 +131,22 @@ Per-app conventions:
 - Suspended/paused/error/setup-incomplete partners must not process normal
   client booking/profile flows.
 - Telegram/network I/O must not happen inside source business transactions.
+
+## Docker workflow rules
+
+- `docker-compose.yml` is the complete local pilot runtime: PostgreSQL, Redis,
+  one-shot init, web, bot runner, beat, and isolated Celery workers.
+- Long-running application services start only after the init service has
+  validated security configuration and applied migrations successfully.
+- PostgreSQL and Redis are internal by default; host ports require the explicit
+  loopback-only development override.
+- Local demo bootstrap is idempotent and must never persist a raw Telegram token.
+- Public production uses `docker-compose.production.yml`, a separate ignored
+  `.env.production`, built image code, an unprivileged application user, and
+  Caddy as the only public ingress.
+- Use `scripts/compose.sh dev ...` and `scripts/compose.sh prod ...` as the
+  mode-safe entry points. Development and production must select explicit
+  settings, env files, and Compose project names.
 
 ## Scheduling and appointment rules
 

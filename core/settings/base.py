@@ -39,6 +39,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "core.middleware.CookieLocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -70,13 +71,20 @@ DATABASES = {"default": database_config()}
 AUTH_USER_MODEL = "accounts.User"
 
 LANGUAGE_CODE = "uk"
+LANGUAGES = [
+    ("uk", "Українська"),
+    ("ru", "Русский"),
+    ("en", "English"),
+]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "media/"
+STATICFILES_DIRS = [BASE_DIR / "static"]
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -103,6 +111,18 @@ CELERY_TASK_QUEUES = (
     Queue("broadcasts"),
     Queue("maintenance"),
 )
+CELERY_TASK_ROUTES = {
+    "appointments.expire_pending_proposals": {"queue": "maintenance"},
+    "audit.cleanup_expired_retained_records": {"queue": "maintenance"},
+    "audit.heartbeat": {"queue": "maintenance"},
+    "audit.refresh_worker_health": {"queue": "maintenance"},
+    "broadcasts.dispatch_due_recipients": {"queue": "broadcasts"},
+    "broadcasts.queue_due_campaigns": {"queue": "broadcasts"},
+    "integrations.deliver_pending_events": {"queue": "default"},
+    "messaging.dispatch_queued_conversation_messages": {"queue": "notifications"},
+    "notifications.dispatch_due_notifications": {"queue": "notifications"},
+    "notifications.schedule_morning_digests": {"queue": "notifications"},
+}
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BEAT_SCHEDULE = {
     "dispatch-due-notifications": {
@@ -124,6 +144,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "broadcasts.dispatch_due_recipients",
         "schedule": timedelta(seconds=1),
         "options": {"queue": "broadcasts", "expires": 5},
+    },
+    "queue-due-broadcast-campaigns": {
+        "task": "broadcasts.queue_due_campaigns",
+        "schedule": timedelta(minutes=1),
+        "options": {"queue": "broadcasts", "expires": 90},
     },
     "deliver-pending-integration-events": {
         "task": "integrations.deliver_pending_events",

@@ -13,6 +13,7 @@ from apps.broadcasts.tasks import dispatch_due_recipients_task
 from apps.catalog.models import Service, ServiceCategory
 from apps.clients.models import TelegramIdentity
 from apps.partners.models import Partner
+from apps.partners.selectors import partner_onboarding_snapshot
 from apps.partners.services import create_partner_with_owner
 from apps.schedule.models import AvailabilityWindow, PartnerScheduleSettings
 from apps.schedule.selectors import default_booking_resource_for_partner
@@ -89,6 +90,11 @@ def test_pilot_readiness_command_reports_configured_partner_without_token(
     assert "Partner is ready for the Telegram pilot." in rendered
     assert "[OK] primary master Telegram contact: bound" in rendered
     assert "encrypted-value" not in rendered
+
+    onboarding = partner_onboarding_snapshot(partner=pilot_ready_partner)
+    assert onboarding.setup_status.is_complete is True
+    assert onboarding.primary_contact is not None
+    assert onboarding.bot_instance is not None
 
 
 @pytest.mark.django_db

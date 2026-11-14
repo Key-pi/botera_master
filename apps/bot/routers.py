@@ -59,6 +59,35 @@ from apps.bot.master import (
     send_master_requested_alternative_proposal_reply,
     toggle_master_requested_alternative_slot_reply,
 )
+from apps.bot.master_reschedule import (
+    MASTER_RESCHEDULE_CALLBACK_PREFIX,
+    BotMasterRescheduleReply,
+    build_master_reschedule_action_failed_reply,
+    build_master_reschedule_dates_reply,
+    build_master_reschedule_review_reply,
+    build_master_reschedule_slots_reply,
+    send_master_reschedule_proposal_reply,
+    toggle_master_reschedule_slot_reply,
+)
+from apps.bot.master_workspace import (
+    MASTER_WORKSPACE_CALLBACK_PREFIX,
+    MASTER_WORKSPACE_INPUT_LATE_ARRIVAL,
+    MASTER_WORKSPACE_INPUT_PRIVATE_NOTE,
+    MASTER_WORKSPACE_PERIODS,
+    PERIOD_REQUESTS,
+    PERIOD_TODAY,
+    PERIOD_TOMORROW,
+    build_master_appointment_list_reply,
+    build_master_appointment_message_prompt_reply,
+    build_master_language_reply,
+    build_master_late_arrival_prompt_reply,
+    build_master_private_note_prompt_reply,
+    build_master_workspace_reply,
+    create_master_late_arrival_penalty_reply,
+    master_workspace_reply_from_callback_data,
+    queue_master_appointment_message_reply,
+    update_master_private_note_reply,
+)
 from apps.bot.messaging import (
     MASTER_MESSAGE_CALLBACK_PREFIX,
     BotConversationReply,
@@ -79,29 +108,40 @@ from apps.bot.notification_failures import (
 )
 from apps.bot.profile import (
     PROFILE_CALLBACK_PREFIX,
+    PROFILE_EDIT_FIELD_EXTRA,
+    PROFILE_EDIT_FIELD_NAME,
+    PROFILE_EDIT_FIELD_PHONE,
     BotProfileReply,
     accept_appointment_proposal_reply,
     build_appointment_details_reply,
     build_appointment_history_reply,
     build_appointment_proposal_reply,
     build_cancel_appointment_reply,
+    build_client_start_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
+    build_marketing_preferences_reply,
+    build_profile_edit_prompt_reply,
+    build_profile_edit_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_profile_penalties_reply,
     build_requested_alternative_dates_reply,
     build_requested_alternative_final_confirm_reply,
     build_requested_alternative_slots_reply,
     build_reschedule_dates_reply,
     build_reschedule_final_confirm_reply,
     build_reschedule_slots_reply,
+    clear_profile_field_reply,
     confirm_cancel_appointment_reply,
     confirm_requested_alternative_reply,
     confirm_reschedule_reply,
     decline_appointment_proposal_reply,
     parse_return_action_token,
     send_client_message_to_master_reply,
+    set_marketing_preference_reply,
     set_profile_language_reply,
+    update_profile_field_reply,
 )
 from apps.bot.profile import (
     parse_integer_token as parse_profile_integer_token,
@@ -114,7 +154,9 @@ from apps.bot.profile import (
 )
 from apps.bot.selectors import master_telegram_contact_for_user
 from apps.bot.services import (
+    MASTER_CONTACT_LINK_PREFIX,
     handle_start_command,
+    mark_master_contact_reachable,
     render_content_template,
     render_invalid_master_contact_link_message,
     resolve_client_profile_from_telegram_user,
@@ -128,6 +170,14 @@ class ClientMessageState(StatesGroup):
     """Ephemeral input state before a durable conversation message exists."""
 
     waiting_for_text = State()
+
+
+class ClientProfileEditState(StatesGroup):
+    """Ephemeral input state for one client-owned profile field."""
+
+    waiting_for_name = State()
+    waiting_for_phone = State()
+    waiting_for_extra = State()
 
 
 class BookingFlowState(StatesGroup):
@@ -146,6 +196,24 @@ class MasterProposalFlowState(StatesGroup):
 
 class MasterMessageFlowState(StatesGroup):
     """Ephemeral master input before a durable reply is queued."""
+
+    waiting_for_text = State()
+
+
+class MasterWorkspaceMessageFlowState(StatesGroup):
+    """Ephemeral input state for a direct client message from appointment details."""
+
+    waiting_for_text = State()
+
+
+class MasterWorkspaceLateArrivalFlowState(StatesGroup):
+    """Ephemeral input state for late-arrival minutes and an optional note."""
+
+    waiting_for_text = State()
+
+
+class MasterWorkspacePrivateNoteFlowState(StatesGroup):
+    """Ephemeral input state for one appointment-only private note."""
 
     waiting_for_text = State()
 
@@ -192,6 +260,16 @@ class MasterCallbackResult:
 
 
 @dataclass(frozen=True, slots=True)
+class MasterRescheduleCallbackResult:
+    """Master reschedule response plus its next ephemeral proposal state."""
+
+    reply: BotMasterRescheduleReply
+    appointment_id: UUID | None = None
+    selected_start_ats: tuple[datetime, ...] = ()
+    keep_proposal_state: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class MasterProposalStateValues:
     """Validated values restored from one master proposal conversation."""
 
@@ -228,6 +306,9 @@ BOOKING_INPUT_PHONE = "phone"
 MASTER_PROPOSAL_APPOINTMENT_STATE_KEY = "master_proposal_appointment_id"
 MASTER_PROPOSAL_STARTS_STATE_KEY = "master_proposal_start_ats"
 MASTER_MESSAGE_SOURCE_STATE_KEY = "master_message_source_id"
+MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY = "master_workspace_message_appointment_id"
+MASTER_WORKSPACE_MESSAGE_PERIOD_STATE_KEY = "master_workspace_message_period"
+MASTER_WORKSPACE_MESSAGE_PAGE_STATE_KEY = "master_workspace_message_page"
 FAILED_NOTIFICATION_SOURCE_STATE_KEY = "failed_notification_source_id"
 
 
@@ -249,6 +330,19 @@ def build_partner_router() -> Router:
 
         user = message.from_user
         payload = command.args or ""
+        if not payload.startswith(f"{MASTER_CONTACT_LINK_PREFIX}_"):
+            contact = await sync_to_async(master_telegram_contact_for_user)(
+                partner=partner,
+                telegram_user_id=user.id,
+            )
+            if contact is not None and contact.user is not None:
+                await sync_to_async(mark_master_contact_reachable)(contact=contact)
+                reply = await sync_to_async(build_master_workspace_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                )
+                await message.answer(reply.text, reply_markup=reply.reply_markup)
+                return
         try:
             result = await sync_to_async(handle_start_command)(
                 partner=partner,
@@ -260,10 +354,99 @@ def build_partner_router() -> Router:
                 language_code=user.language_code or "",
                 start_payload=payload,
             )
-            await message.answer(result.text)
+            if result.master_contact_bound:
+                contact = await sync_to_async(master_telegram_contact_for_user)(
+                    partner=partner,
+                    telegram_user_id=user.id,
+                )
+                if contact is None or contact.user is None:
+                    await message.answer(result.text)
+                    return
+                reply = await sync_to_async(build_master_workspace_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                )
+                await message.answer(
+                    f"{result.text}\n\n{reply.text}",
+                    reply_markup=reply.reply_markup,
+                )
+                return
+
+            reply = build_client_start_reply(
+                text=result.text,
+                language=result.client_language or partner.default_language,
+            )
+            await message.answer(reply.text, reply_markup=reply.reply_markup)
         except ValidationError:
             text = await sync_to_async(render_invalid_master_contact_link_message)(partner=partner)
             await message.answer(text)
+
+    @router.message(Command("master"))
+    async def master_workspace_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_workspace_reply)(
+            partner=partner,
+            actor=contact.user,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("today"))
+    async def master_today_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_appointment_list_reply)(
+            partner=partner,
+            actor=contact.user,
+            period=PERIOD_TODAY,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("tomorrow"))
+    async def master_tomorrow_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_appointment_list_reply)(
+            partner=partner,
+            actor=contact.user,
+            period=PERIOD_TOMORROW,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(Command("requests"))
+    async def master_requests_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is None or contact.user is None:
+            return
+        reply = await sync_to_async(build_master_appointment_list_reply)(
+            partner=partner,
+            actor=contact.user,
+            period=PERIOD_REQUESTS,
+        )
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
 
     @router.message(Command("book"))
     async def book_handler(message: Message, partner: Partner, state: FSMContext) -> None:
@@ -309,6 +492,14 @@ def build_partner_router() -> Router:
     @router.message(Command("language"))
     async def language_handler(message: Message, partner: Partner, state: FSMContext) -> None:
         await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is not None and contact.user is not None:
+            reply = await sync_to_async(build_master_language_reply)(
+                partner=partner,
+                actor=contact.user,
+            )
+            await message.answer(reply.text, reply_markup=reply.reply_markup)
+            return
         profile = await _client_profile_for_message(message=message, partner=partner)
         if profile is None:
             return
@@ -412,6 +603,45 @@ def build_partner_router() -> Router:
             )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(ClientProfileEditState.waiting_for_name)
+    async def client_profile_name_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await _handle_client_profile_edit_message(
+            message=message,
+            partner=partner,
+            state=state,
+            field=PROFILE_EDIT_FIELD_NAME,
+        )
+
+    @router.message(ClientProfileEditState.waiting_for_phone)
+    async def client_profile_phone_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await _handle_client_profile_edit_message(
+            message=message,
+            partner=partner,
+            state=state,
+            field=PROFILE_EDIT_FIELD_PHONE,
+        )
+
+    @router.message(ClientProfileEditState.waiting_for_extra)
+    async def client_profile_extra_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        await _handle_client_profile_edit_message(
+            message=message,
+            partner=partner,
+            state=state,
+            field=PROFILE_EDIT_FIELD_EXTRA,
+        )
+
     @router.message(ClientMessageState.waiting_for_text)
     async def contact_master_message_handler(
         message: Message,
@@ -489,6 +719,180 @@ def build_partner_router() -> Router:
                 await state.clear()
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
+    @router.message(MasterWorkspaceMessageFlowState.waiting_for_text)
+    async def master_workspace_message_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        message_context = _master_workspace_message_state_values(await state.get_data())
+        if contact is None or contact.user is None or message_context is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        appointment_id, return_period, return_page = message_context
+        try:
+            if message.text is None:
+                reply = await sync_to_async(build_master_appointment_message_prompt_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    appointment_id=appointment_id,
+                    return_period=return_period,
+                    return_page=return_page,
+                    invalid_message=True,
+                )
+            else:
+                try:
+                    reply = await sync_to_async(queue_master_appointment_message_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        text=message.text,
+                    )
+                except ValidationError:
+                    reply = await sync_to_async(build_master_appointment_message_prompt_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        invalid_message=True,
+                    )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+        else:
+            if not reply.wait_for_text:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(MasterWorkspaceLateArrivalFlowState.waiting_for_text)
+    async def master_workspace_late_arrival_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        message_context = _master_workspace_message_state_values(await state.get_data())
+        if contact is None or contact.user is None or message_context is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        appointment_id, return_period, return_page = message_context
+        try:
+            if message.text is None:
+                reply = await sync_to_async(build_master_late_arrival_prompt_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    appointment_id=appointment_id,
+                    return_period=return_period,
+                    return_page=return_page,
+                    invalid_input=True,
+                )
+            else:
+                try:
+                    reply = await sync_to_async(create_master_late_arrival_penalty_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        text=message.text,
+                    )
+                except ValidationError:
+                    reply = await sync_to_async(build_master_late_arrival_prompt_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        invalid_input=True,
+                    )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+        else:
+            if not reply.wait_for_text:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message(MasterWorkspacePrivateNoteFlowState.waiting_for_text)
+    async def master_workspace_private_note_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if message.from_user is None:
+            await state.clear()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=message.from_user.id,
+        )
+        message_context = _master_workspace_message_state_values(await state.get_data())
+        if contact is None or contact.user is None or message_context is None:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+            await message.answer(reply.text)
+            return
+
+        appointment_id, return_period, return_page = message_context
+        try:
+            if message.text is None or not message.text.strip():
+                reply = await sync_to_async(build_master_private_note_prompt_reply)(
+                    partner=partner,
+                    actor=contact.user,
+                    appointment_id=appointment_id,
+                    return_period=return_period,
+                    return_page=return_page,
+                    invalid_input=True,
+                )
+            else:
+                try:
+                    reply = await sync_to_async(update_master_private_note_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        private_master_note=message.text,
+                    )
+                except ValidationError:
+                    reply = await sync_to_async(build_master_private_note_prompt_reply)(
+                        partner=partner,
+                        actor=contact.user,
+                        appointment_id=appointment_id,
+                        return_period=return_period,
+                        return_page=return_page,
+                        invalid_input=True,
+                    )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(_invalid_master_message_action_reply)(partner=partner)
+        else:
+            if not reply.wait_for_text:
+                await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
     @router.message(FailedNotificationMessageFlowState.waiting_for_text)
     async def failed_notification_message_handler(
         message: Message,
@@ -530,6 +934,32 @@ def build_partner_router() -> Router:
         else:
             if message.text is not None or not reply.wait_for_text:
                 await state.clear()
+        await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+    @router.message()
+    async def fallback_client_menu_handler(
+        message: Message,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        """Keep unmatched client input from ending in a silent bot response."""
+
+        await state.clear()
+        contact = await _master_contact_for_message(message=message, partner=partner)
+        if contact is not None and contact.user is not None:
+            reply = await sync_to_async(build_master_workspace_reply)(
+                partner=partner,
+                actor=contact.user,
+            )
+            await message.answer(reply.text, reply_markup=reply.reply_markup)
+            return
+        profile = await _client_profile_for_message(message=message, partner=partner)
+        if profile is None:
+            return
+        reply = await sync_to_async(build_profile_main_reply)(
+            partner=partner,
+            client_profile=profile,
+        )
         await message.answer(reply.text, reply_markup=reply.reply_markup)
 
     @router.callback_query(F.data.startswith(f"{BROADCAST_CALLBACK_PREFIX}:"))
@@ -612,6 +1042,64 @@ def build_partner_router() -> Router:
         await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
 
+    @router.callback_query(F.data.startswith(f"{MASTER_WORKSPACE_CALLBACK_PREFIX}:"))
+    async def master_workspace_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if callback.data == f"{MASTER_WORKSPACE_CALLBACK_PREFIX}:noop":
+            await callback.answer()
+            return
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        try:
+            reply = await sync_to_async(master_workspace_reply_from_callback_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+            )
+        except ValidationError:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+
+        await state.clear()
+        if reply.wait_for_text and reply.appointment_id is not None:
+            if getattr(reply, "input_mode", "") == MASTER_WORKSPACE_INPUT_PRIVATE_NOTE:
+                await state.set_state(MasterWorkspacePrivateNoteFlowState.waiting_for_text)
+            elif getattr(reply, "input_mode", "") == MASTER_WORKSPACE_INPUT_LATE_ARRIVAL:
+                await state.set_state(MasterWorkspaceLateArrivalFlowState.waiting_for_text)
+            else:
+                await state.set_state(MasterWorkspaceMessageFlowState.waiting_for_text)
+            await state.set_data(
+                {
+                    MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY: reply.appointment_id.hex,
+                    MASTER_WORKSPACE_MESSAGE_PERIOD_STATE_KEY: reply.return_period,
+                    MASTER_WORKSPACE_MESSAGE_PAGE_STATE_KEY: reply.return_page,
+                }
+            )
+        await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
+        await callback.answer()
+
     @router.callback_query(F.data.startswith(f"{PROFILE_CALLBACK_PREFIX}:"))
     async def profile_callback_handler(
         callback: CallbackQuery,
@@ -641,6 +1129,8 @@ def build_partner_router() -> Router:
         else:
             if callback.data == f"{PROFILE_CALLBACK_PREFIX}:contact":
                 await state.set_state(ClientMessageState.waiting_for_text)
+            elif edit_state := _profile_edit_state_for_callback(callback.data):
+                await state.set_state(edit_state)
             else:
                 await state.clear()
 
@@ -762,6 +1252,59 @@ def build_partner_router() -> Router:
                 result.reply.text,
                 reply_markup=result.reply.reply_markup,
             )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith(f"{MASTER_RESCHEDULE_CALLBACK_PREFIX}:"))
+    async def master_reschedule_callback_handler(
+        callback: CallbackQuery,
+        partner: Partner,
+        state: FSMContext,
+    ) -> None:
+        if callback.data == f"{MASTER_RESCHEDULE_CALLBACK_PREFIX}:noop":
+            await callback.answer()
+            return
+
+        contact = await sync_to_async(master_telegram_contact_for_user)(
+            partner=partner,
+            telegram_user_id=callback.from_user.id,
+        )
+        if contact is None or contact.user is None:
+            rendered = await sync_to_async(render_content_template)(
+                partner=partner,
+                key="error.invalid_action",
+                language=partner.default_language,
+            )
+            await callback.answer(rendered.body[:200], show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer()
+            return
+
+        proposal_state = _master_proposal_state_values(await state.get_data())
+        try:
+            result = await sync_to_async(_master_reschedule_result_from_data)(
+                partner=partner,
+                actor=contact.user,
+                data=callback.data,
+                proposal_state=proposal_state,
+            )
+        except ValidationError:
+            await state.clear()
+            reply = await sync_to_async(build_master_reschedule_action_failed_reply)(
+                partner=partner,
+            )
+        else:
+            reply = result.reply
+            if result.keep_proposal_state and result.appointment_id is not None:
+                await _store_master_proposal_state(
+                    state=state,
+                    appointment_id=result.appointment_id,
+                    selected_start_ats=result.selected_start_ats,
+                )
+            else:
+                await state.clear()
+
+        await callback.message.edit_text(reply.text, reply_markup=reply.reply_markup)
         await callback.answer()
 
     @router.callback_query(F.data.startswith(f"{MASTER_REQUEST_CALLBACK_PREFIX}:"))
@@ -1227,6 +1770,42 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             partner=partner,
             client_profile=client_profile,
         )
+    if action == "edit" and len(parts) == 2:
+        return build_profile_edit_reply(
+            partner=partner,
+            client_profile=client_profile,
+        )
+    if action == "edit" and len(parts) == 3:
+        return build_profile_edit_prompt_reply(
+            partner=partner,
+            client_profile=client_profile,
+            field=parts[2],
+        )
+    if action == "editclear" and len(parts) == 3:
+        return clear_profile_field_reply(
+            partner=partner,
+            client_profile=client_profile,
+            field=parts[2],
+        )
+    if action == "marketing" and len(parts) == 2:
+        return build_marketing_preferences_reply(
+            partner=partner,
+            client_profile=client_profile,
+        )
+    if action == "marketing" and len(parts) == 3:
+        if parts[2] not in {"0", "1"}:
+            raise ValidationError({"callback": "Invalid marketing preference."})
+        return set_marketing_preference_reply(
+            partner=partner,
+            client_profile=client_profile,
+            opt_out=parts[2] == "1",
+        )
+    if action == "penalties" and len(parts) == 3:
+        return build_profile_penalties_reply(
+            partner=partner,
+            client_profile=client_profile,
+            page=parse_profile_page_token(parts[2]),
+        )
     if action == "future" and len(parts) == 3:
         return build_future_appointments_reply(
             partner=partner,
@@ -1381,6 +1960,90 @@ def _profile_reply_from_callback_data(*, partner: Partner, client_profile, data:
             language=parts[2],
         )
 
+    raise ValidationError({"callback": "Unsupported callback."})
+
+
+def _master_reschedule_result_from_data(
+    *,
+    partner: Partner,
+    actor,
+    data: str,
+    proposal_state: MasterProposalStateValues | None = None,
+) -> MasterRescheduleCallbackResult:
+    parts = data.split(":")
+    if len(parts) < 3 or parts[0] != MASTER_RESCHEDULE_CALLBACK_PREFIX:
+        raise ValidationError({"callback": "Unsupported callback."})
+
+    appointment_id = parse_master_request_appointment_id(parts[2])
+    proposal_state = proposal_state or MasterProposalStateValues()
+    selected_start_ats = (
+        proposal_state.selected_start_ats if proposal_state.appointment_id == appointment_id else ()
+    )
+    action = parts[1]
+    if action == "d" and len(parts) == 4:
+        return MasterRescheduleCallbackResult(
+            reply=build_master_reschedule_dates_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+                page=parse_master_proposal_page_token(parts[3]),
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "s" and len(parts) == 5:
+        return MasterRescheduleCallbackResult(
+            reply=build_master_reschedule_slots_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                local_date=parse_master_proposal_date_token(parts[3]),
+                selected_start_ats=selected_start_ats,
+                page=parse_master_proposal_page_token(parts[4]),
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "t" and len(parts) == 6:
+        selection = toggle_master_reschedule_slot_reply(
+            partner=partner,
+            actor=actor,
+            appointment_id=appointment_id,
+            start_at=parse_master_proposal_timestamp_token(parts[3]),
+            local_date=parse_master_proposal_date_token(parts[4]),
+            selected_start_ats=selected_start_ats,
+            page=parse_master_proposal_page_token(parts[5]),
+        )
+        return MasterRescheduleCallbackResult(
+            reply=selection.reply,
+            appointment_id=appointment_id,
+            selected_start_ats=selection.selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "v" and len(parts) == 3:
+        return MasterRescheduleCallbackResult(
+            reply=build_master_reschedule_review_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+            ),
+            appointment_id=appointment_id,
+            selected_start_ats=selected_start_ats,
+            keep_proposal_state=True,
+        )
+    if action == "g" and len(parts) == 3:
+        return MasterRescheduleCallbackResult(
+            reply=send_master_reschedule_proposal_reply(
+                partner=partner,
+                actor=actor,
+                appointment_id=appointment_id,
+                selected_start_ats=selected_start_ats,
+            )
+        )
     raise ValidationError({"callback": "Unsupported callback."})
 
 
@@ -1624,6 +2287,20 @@ def _invalid_profile_action_reply(*, partner: Partner, language: str):
     return BotProfileReply(text=rendered.body)
 
 
+def _profile_edit_state_for_callback(data: str) -> State | None:
+    return {
+        f"{PROFILE_CALLBACK_PREFIX}:edit:{PROFILE_EDIT_FIELD_NAME}": (
+            ClientProfileEditState.waiting_for_name
+        ),
+        f"{PROFILE_CALLBACK_PREFIX}:edit:{PROFILE_EDIT_FIELD_PHONE}": (
+            ClientProfileEditState.waiting_for_phone
+        ),
+        f"{PROFILE_CALLBACK_PREFIX}:edit:{PROFILE_EDIT_FIELD_EXTRA}": (
+            ClientProfileEditState.waiting_for_extra
+        ),
+    }.get(data)
+
+
 def _validate_profile_return_action(return_action: str) -> None:
     if return_action not in {"future", "history"}:
         raise ValidationError({"callback": "Unsupported return target."})
@@ -1765,6 +2442,24 @@ def _master_message_state_id(data: dict) -> UUID | None:
         return None
 
 
+def _master_workspace_message_state_values(
+    data: dict,
+) -> tuple[UUID, str, int] | None:
+    raw_appointment_id = data.get(MASTER_WORKSPACE_MESSAGE_APPOINTMENT_STATE_KEY)
+    period = data.get(MASTER_WORKSPACE_MESSAGE_PERIOD_STATE_KEY)
+    raw_page = data.get(MASTER_WORKSPACE_MESSAGE_PAGE_STATE_KEY)
+    if not raw_appointment_id or period not in MASTER_WORKSPACE_PERIODS:
+        return None
+    try:
+        appointment_id = UUID(str(raw_appointment_id))
+        page = int(raw_page)
+    except (TypeError, ValueError):
+        return None
+    if page < 1:
+        return None
+    return appointment_id, str(period), page
+
+
 def _failed_notification_state_id(data: dict) -> UUID | None:
     raw_notification_id = data.get(FAILED_NOTIFICATION_SOURCE_STATE_KEY)
     if not raw_notification_id:
@@ -1830,6 +2525,40 @@ def _phone_from_message(message: Message) -> str | None:
     return message.text
 
 
+async def _handle_client_profile_edit_message(
+    *,
+    message: Message,
+    partner: Partner,
+    state: FSMContext,
+    field: str,
+) -> None:
+    profile = await _client_profile_for_message(message=message, partner=partner)
+    if profile is None:
+        await state.clear()
+        return
+
+    value = _phone_from_message(message) if field == PROFILE_EDIT_FIELD_PHONE else message.text
+    try:
+        if value is None:
+            raise ValidationError({field: "Profile field must be sent as text."})
+        reply = await sync_to_async(update_profile_field_reply)(
+            partner=partner,
+            client_profile=profile,
+            field=field,
+            value=value,
+        )
+    except ValidationError:
+        reply = await sync_to_async(build_profile_edit_prompt_reply)(
+            partner=partner,
+            client_profile=profile,
+            field=field,
+            invalid_value=True,
+        )
+    else:
+        await state.clear()
+    await message.answer(reply.text, reply_markup=reply.reply_markup)
+
+
 async def _client_profile_for_message(*, message: Message, partner: Partner):
     if message.from_user is None:
         return None
@@ -1843,6 +2572,17 @@ async def _client_profile_for_message(*, message: Message, partner: Partner):
         language_code=message.from_user.language_code or "",
     )
     return profile
+
+
+async def _master_contact_for_message(*, message: Message, partner: Partner):
+    """Resolve a linked master before generic input can enter client flow."""
+
+    if message.from_user is None:
+        return None
+    return await sync_to_async(master_telegram_contact_for_user)(
+        partner=partner,
+        telegram_user_id=message.from_user.id,
+    )
 
 
 async def _client_profile_for_callback(*, callback: CallbackQuery, partner: Partner):

@@ -2,12 +2,13 @@ from datetime import timedelta
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.appointments.models import Appointment
 from apps.appointments.services import (
+    MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH,
     AppointmentServiceItemInput,
     confirm_requested_appointment,
     correct_final_appointment_status,
@@ -15,7 +16,9 @@ from apps.appointments.services import (
     create_manual_appointment,
     create_requested_appointment,
     transition_appointment_status,
+    update_appointment_private_master_note,
 )
+from apps.audit.models import AuditEvent
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import create_manual_client_profile
 from apps.partners.services import create_partner_with_owner
@@ -127,6 +130,33 @@ def test_requested_appointments_may_overlap_without_blocking_slot(
     assert first.status == Appointment.Status.REQUESTED
     assert second.status == Appointment.Status.REQUESTED
     assert first.start_at == second.start_at
+
+
+@pytest.mark.django_db
+def test_appointment_creation_records_business_audit_event(
+    appointment_context,
+    rounded_future_start,
+) -> None:
+    context = appointment_context
+
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[_service_input(context["service"])],
+    )
+
+    event = AuditEvent.objects.get(
+        partner=context["partner"],
+        target_id=str(appointment.id),
+        event_type="appointment.created",
+    )
+    assert event.actor == context["owner"]
+    assert event.payload_masked["status"] == Appointment.Status.CONFIRMED
+    assert event.payload_masked["service_count"] == 1
+    assert event.payload_masked["total_amount"] == 50000
 
 
 @pytest.mark.django_db
@@ -284,6 +314,75 @@ def test_manual_appointment_can_use_custom_one_off_service(
 
 
 @pytest.mark.django_db
+def test_private_appointment_note_update_is_scoped_and_never_audits_raw_text(
+    appointment_context,
+    rounded_future_start,
+):
+    context = appointment_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=rounded_future_start,
+        service_items=[_service_input(context["service"])],
+    )
+    raw_note = "  Sensitive internal preparation note.  "
+
+    updated = update_appointment_private_master_note(
+        actor=context["owner"],
+        appointment=appointment,
+        private_master_note=raw_note,
+    )
+
+    assert updated.private_master_note == raw_note.strip()
+    event = AuditEvent.objects.get(
+        partner=context["partner"],
+        event_type="appointment.private_note_updated",
+        target_id=str(appointment.id),
+    )
+    assert event.payload_masked == {
+        "was_present": False,
+        "is_present": True,
+        "character_count": len(raw_note.strip()),
+    }
+    assert raw_note.strip() not in event.message
+    assert raw_note.strip() not in str(event.payload_masked)
+
+    same = update_appointment_private_master_note(
+        actor=context["owner"],
+        appointment=updated,
+        private_master_note=raw_note,
+    )
+    assert same.private_master_note == raw_note.strip()
+    assert AuditEvent.objects.filter(
+        partner=context["partner"],
+        event_type="appointment.private_note_updated",
+        target_id=str(appointment.id),
+    ).count() == 1
+
+    with pytest.raises(ValidationError, match="2000 characters or shorter"):
+        update_appointment_private_master_note(
+            actor=context["owner"],
+            appointment=appointment,
+            private_master_note="x" * (MAX_APPOINTMENT_PRIVATE_NOTE_LENGTH + 1),
+        )
+
+    other = create_partner_with_owner(
+        actor=User.objects.get(username="root"),
+        partner_name="Other note tenant",
+        owner_username="other-note-owner",
+        owner_password="secret",
+    )
+    with pytest.raises(PermissionDenied):
+        update_appointment_private_master_note(
+            actor=other.owner,
+            appointment=appointment,
+            private_master_note="Cross-tenant note",
+        )
+
+
+@pytest.mark.django_db
 def test_confirmed_creation_uses_booking_resource_lock_wrapper(
     appointment_context,
     rounded_future_start,
@@ -313,7 +412,15 @@ def test_confirmed_creation_uses_booking_resource_lock_wrapper(
 
 
 @pytest.mark.django_db
-def test_strict_postgres_advisory_lock_helper_fails_on_sqlite():
+def test_strict_postgres_advisory_lock_helper_matches_database_backend():
+    if connection.vendor == "postgresql":
+        with transaction.atomic():
+            acquire_postgres_advisory_xact_lock(
+                namespace=BOOKING_RESOURCE_ADVISORY_LOCK_NAMESPACE,
+                lock_key=1,
+            )
+        return
+
     with transaction.atomic(), pytest.raises(RuntimeError, match="PostgreSQL"):
         acquire_postgres_advisory_xact_lock(
             namespace=BOOKING_RESOURCE_ADVISORY_LOCK_NAMESPACE,

@@ -1,11 +1,17 @@
 from datetime import timedelta
 
 import pytest
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.audit.models import AuditEvent, PlatformDiagnostic, WorkerHeartbeat
-from apps.audit.selectors import audit_events_visible_to_user, platform_diagnostics_visible_to_user
+from apps.audit.selectors import (
+    EXPECTED_RUNTIME_COMPONENTS,
+    audit_events_visible_to_user,
+    platform_diagnostics_visible_to_user,
+    platform_health_snapshot,
+)
 from apps.audit.services import (
     cleanup_expired_retained_records,
     evaluate_worker_heartbeat,
@@ -13,6 +19,8 @@ from apps.audit.services import (
     record_platform_diagnostic,
     record_worker_heartbeat,
 )
+from apps.broadcasts.models import BroadcastCampaign
+from apps.notifications.models import ScheduledNotification
 from apps.partners.models import Partner
 from apps.partners.services import create_partner_with_owner
 
@@ -146,3 +154,78 @@ def test_worker_health_thresholds_map_to_ok_warning_critical():
     assert evaluate_worker_heartbeat(ok, now=now) == WorkerHeartbeat.Status.OK
     assert evaluate_worker_heartbeat(warning, now=now) == WorkerHeartbeat.Status.WARNING
     assert evaluate_worker_heartbeat(critical, now=now) == WorkerHeartbeat.Status.CRITICAL
+
+
+@pytest.mark.django_db
+def test_platform_health_snapshot_combines_runtime_lag_broadcasts_and_diagnostics(
+    audit_context,
+):
+    now = timezone.now()
+    partner = audit_context["first"].partner
+    for component, _label in EXPECTED_RUNTIME_COMPONENTS:
+        record_worker_heartbeat(component=component, seen_at=now)
+
+    ScheduledNotification.objects.create(
+        partner=partner,
+        type=ScheduledNotification.Type.MASTER_MORNING_DIGEST,
+        due_at=now - timedelta(minutes=3),
+        status=ScheduledNotification.Status.QUEUED,
+        idempotency_key="health:due-notification",
+    )
+    campaign = BroadcastCampaign.objects.create(
+        partner=partner,
+        text="Pilot broadcast",
+        status=BroadcastCampaign.Status.SENDING,
+        queued_count=3,
+        sent_count=2,
+    )
+    BroadcastCampaign.objects.filter(id=campaign.id).update(
+        updated_at=now - timedelta(minutes=20),
+    )
+    record_platform_diagnostic(
+        component=PlatformDiagnostic.Component.QUEUE,
+        severity=PlatformDiagnostic.Severity.WARNING,
+        code="queue.backlog",
+        message="Queue backlog needs attention.",
+    )
+
+    snapshot = platform_health_snapshot(now=now)
+    checks = {check.key: check for check in snapshot.checks}
+
+    assert snapshot.overall_status == WorkerHeartbeat.Status.WARNING
+    assert checks["notification_lag"].status == WorkerHeartbeat.Status.WARNING
+    assert "1 queued" in checks["notification_lag"].summary
+    assert checks["broadcast_progress"].status == WorkerHeartbeat.Status.WARNING
+    assert checks["diagnostics"].status == WorkerHeartbeat.Status.WARNING
+    assert len(snapshot.active_broadcasts) == 1
+    assert snapshot.active_broadcasts[0].progress_percent == 40
+    assert snapshot.active_broadcasts[0].progress_age == "20m"
+    assert snapshot.recent_problems[0].code == "queue.backlog"
+
+    record_platform_diagnostic(
+        component=PlatformDiagnostic.Component.TELEGRAM,
+        severity=PlatformDiagnostic.Severity.ERROR,
+        code="telegram.unavailable",
+        message="Telegram delivery is unavailable.",
+    )
+
+    assert platform_health_snapshot(now=now).overall_status == WorkerHeartbeat.Status.CRITICAL
+
+
+@pytest.mark.django_db
+def test_platform_health_admin_is_composed_for_superuser_only(client, audit_context):
+    url = reverse("admin:audit_workerheartbeat_changelist")
+    client.force_login(audit_context["superuser"])
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert response.context["health_snapshot"].overall_status == WorkerHeartbeat.Status.CRITICAL
+    assert b"Platform health" in response.content
+    assert b"No heartbeat has been recorded" in response.content
+    assert reverse("admin:audit_workerheartbeat_add").encode() not in response.content
+    assert client.get(reverse("admin:audit_workerheartbeat_add")).status_code == 403
+
+    client.force_login(audit_context["first"].owner)
+
+    assert client.get(url).status_code == 403

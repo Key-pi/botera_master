@@ -23,23 +23,32 @@ from apps.bot.profile import (
     build_appointment_history_reply,
     build_appointment_proposal_reply,
     build_cancel_appointment_reply,
+    build_client_start_reply,
     build_contact_master_prompt_reply,
     build_future_appointments_reply,
+    build_marketing_preferences_reply,
+    build_profile_edit_prompt_reply,
+    build_profile_edit_reply,
     build_profile_language_reply,
     build_profile_main_reply,
+    build_profile_penalties_reply,
     build_requested_alternative_dates_reply,
     build_requested_alternative_final_confirm_reply,
     build_requested_alternative_slots_reply,
     build_reschedule_dates_reply,
     build_reschedule_final_confirm_reply,
     build_reschedule_slots_reply,
+    clear_profile_field_reply,
     confirm_cancel_appointment_reply,
     confirm_requested_alternative_reply,
     confirm_reschedule_reply,
     decline_appointment_proposal_reply,
     send_client_message_to_master_reply,
+    set_marketing_preference_reply,
     set_profile_language_reply,
+    update_profile_field_reply,
 )
+from apps.bot.routers import _profile_reply_from_callback_data
 from apps.catalog.services import create_service, create_service_category
 from apps.clients.services import (
     create_manual_client_profile,
@@ -47,7 +56,12 @@ from apps.clients.services import (
     upsert_telegram_identity,
 )
 from apps.finance.models import Penalty
-from apps.finance.services import update_penalty_settings
+from apps.finance.services import (
+    apply_penalties_to_appointment,
+    create_penalty,
+    mark_penalty_paid,
+    update_penalty_settings,
+)
 from apps.messaging.models import ConversationMessage
 from apps.notifications.models import ScheduledNotification
 from apps.partners.services import create_partner_with_owner
@@ -149,11 +163,258 @@ def test_profile_main_reply_shows_client_summary_and_actions(
     callbacks = _button_callbacks(reply)
     assert "Profile: Ira" in reply.text
     assert "Visits: 1" in reply.text
+    assert reply.reply_markup.inline_keyboard[0][0].callback_data == "bk:cat:1"
     assert "pf:future:1" in callbacks
     assert "pf:history:1" in callbacks
     assert "pf:lang" in callbacks
     assert "pf:contact" in callbacks
+    assert "pf:marketing" in callbacks
+    assert "pf:penalties:1" in callbacks
+    assert "pf:edit" in callbacks
     assert "bk:cat:1" in callbacks
+
+
+def test_client_start_reply_keeps_welcome_text_and_adds_navigation():
+    reply = build_client_start_reply(
+        text="Добро пожаловать в бот Preview Studio.",
+        language="ru",
+    )
+
+    callbacks = _button_callbacks(reply)
+    assert reply.text == "Добро пожаловать в бот Preview Studio."
+    assert reply.reply_markup.inline_keyboard[0][0].callback_data == "bk:cat:1"
+    assert "bk:cat:1" in callbacks
+    assert "pf:future:1" in callbacks
+    assert "pf:history:1" in callbacks
+    assert "pf:lang" in callbacks
+    assert "pf:contact" in callbacks
+    assert "pf:marketing" in callbacks
+    assert "pf:penalties:1" in callbacks
+    assert "pf:edit" in callbacks
+
+
+@pytest.mark.django_db
+def test_profile_edit_flow_updates_only_client_owned_fields(bot_profile_context):
+    context = bot_profile_context
+    client = context["client"]
+    client.private_master_note = "Master only"
+    client.save(update_fields=["private_master_note", "updated_at"])
+
+    edit = build_profile_edit_reply(
+        partner=context["partner"],
+        client_profile=client,
+    )
+    name_prompt = build_profile_edit_prompt_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="name",
+    )
+    update_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="name",
+        value="  Iryna Client  ",
+    )
+    update_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="phone",
+        value="+38 (050) 123-45-67",
+    )
+    updated = update_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="extra",
+        value="  Prefers evening appointments.  ",
+    )
+    cleared = clear_profile_field_reply(
+        partner=context["partner"],
+        client_profile=client,
+        field="phone",
+    )
+
+    client.refresh_from_db()
+    assert "Profile data" in edit.text
+    assert {"pf:edit:name", "pf:edit:phone", "pf:edit:extra"}.issubset(
+        _button_callbacks(edit)
+    )
+    assert "Current value: Ira" in name_prompt.text
+    assert "pf:editclear:name" in _button_callbacks(name_prompt)
+    assert client.name == "Iryna Client"
+    assert client.phone == ""
+    assert client.extra_client_text == "Prefers evening appointments."
+    assert client.private_master_note == "Master only"
+    assert "Profile updated" in updated.text
+    assert "Phone: not set" in cleared.text
+    with pytest.raises(ValidationError, match="Unsupported profile field"):
+        update_profile_field_reply(
+            partner=context["partner"],
+            client_profile=client,
+            field="private_master_note",
+            value="Must stay unreachable",
+        )
+
+
+@pytest.mark.django_db
+def test_profile_edit_flow_rejects_invalid_values_and_keeps_prompt(bot_profile_context):
+    context = bot_profile_context
+
+    with pytest.raises(ValidationError, match="Client name is too long"):
+        update_profile_field_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            field="name",
+            value="x" * 256,
+        )
+    with pytest.raises(ValidationError, match="Phone is too long"):
+        update_profile_field_reply(
+            partner=context["partner"],
+            client_profile=context["client"],
+            field="phone",
+            value="+" + "1" * 33,
+        )
+
+    invalid = build_profile_edit_prompt_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        field="phone",
+        invalid_value=True,
+    )
+    assert "Could not save" in invalid.text
+    assert "pf:edit" in _button_callbacks(invalid)
+
+
+@pytest.mark.django_db
+def test_profile_marketing_preferences_toggle_only_marketing_delivery(bot_profile_context):
+    context = bot_profile_context
+    client = context["client"]
+    telegram_identity_id = client.telegram_identity_id
+
+    preferences = build_marketing_preferences_reply(
+        partner=context["partner"],
+        client_profile=client,
+    )
+    opted_out = set_marketing_preference_reply(
+        partner=context["partner"],
+        client_profile=client,
+        opt_out=True,
+    )
+
+    client.refresh_from_db()
+    assert "Broadcasts: subscribed" in preferences.text
+    assert "pf:marketing:1" in _button_callbacks(preferences)
+    assert client.marketing_opt_out is True
+    assert client.telegram_identity_id == telegram_identity_id
+    assert client.bot_unreachable is False
+    assert "Service messages remain enabled" in opted_out.text
+    assert "pf:marketing:0" in _button_callbacks(opted_out)
+
+    subscribed = set_marketing_preference_reply(
+        partner=context["partner"],
+        client_profile=client,
+        opt_out=False,
+    )
+
+    client.refresh_from_db()
+    assert client.marketing_opt_out is False
+    assert "subscribed to broadcasts" in subscribed.text
+    assert "pf:marketing:1" in _button_callbacks(subscribed)
+
+
+@pytest.mark.django_db
+def test_profile_marketing_callbacks_dispatch_and_validate_value(bot_profile_context):
+    context = bot_profile_context
+
+    preferences = _profile_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="pf:marketing",
+    )
+    _profile_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="pf:marketing:1",
+    )
+
+    context["client"].refresh_from_db()
+    assert "pf:marketing:1" in _button_callbacks(preferences)
+    assert context["client"].marketing_opt_out is True
+    with pytest.raises(ValidationError, match="Invalid marketing preference"):
+        _profile_reply_from_callback_data(
+            partner=context["partner"],
+            client_profile=context["client"],
+            data="pf:marketing:yes",
+        )
+
+
+@pytest.mark.django_db
+def test_profile_penalties_show_outstanding_debt_with_pagination(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    penalties = [
+        create_penalty(
+            actor=context["owner"],
+            partner=context["partner"],
+            client_profile=context["client"],
+            reason=Penalty.Reason.LATE_ARRIVAL,
+            amount=2000,
+            late_by_minutes=20 + index,
+        )
+        for index in range(6)
+    ]
+    paid = create_penalty(
+        actor=context["owner"],
+        partner=context["partner"],
+        client_profile=context["client"],
+        reason=Penalty.Reason.NO_SHOW,
+        amount=5000,
+    )
+    mark_penalty_paid(actor=context["owner"], penalty=paid)
+    appointment = _create_confirmed(context, profile_start)
+    apply_penalties_to_appointment(
+        actor=context["owner"],
+        appointment=appointment,
+        penalties=[penalties[0]],
+    )
+
+    first_page = build_profile_penalties_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        page=1,
+    )
+    second_page = _profile_reply_from_callback_data(
+        partner=context["partner"],
+        client_profile=context["client"],
+        data="pf:penalties:2",
+    )
+
+    assert "Active penalties" in first_page.text
+    assert "Total: 120.00 UAH" in first_page.text
+    assert first_page.text.count("late arrival") == 5
+    assert "20.00 UAH (unpaid)" in first_page.text
+    assert "pf:penalties:2" in _button_callbacks(first_page)
+    assert "pf:contact" in _button_callbacks(first_page)
+    assert second_page.text.count("late arrival") == 1
+    assert "applied to booking" in second_page.text
+    assert "pf:penalties:1" in _button_callbacks(second_page)
+    assert "no-show" not in f"{first_page.text}\n{second_page.text}"
+    penalties[0].refresh_from_db()
+    assert penalties[0].status == Penalty.Status.APPLIED_TO_APPOINTMENT
+
+
+@pytest.mark.django_db
+def test_profile_penalties_empty_state_returns_to_profile(bot_profile_context):
+    context = bot_profile_context
+
+    reply = build_profile_penalties_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+    )
+
+    assert reply.text == "No active penalties."
+    assert _button_callbacks(reply) == ["pf:main"]
 
 
 @pytest.mark.django_db
@@ -244,6 +505,40 @@ def test_profile_future_history_and_details_are_paginated(
     assert "confirmed" in details_reply.text
     assert f"pf:cancel:{future.id.hex}:future:1" in _button_callbacks(details_reply)
     assert f"pf:rsd:{future.id.hex}:1:1" in _button_callbacks(details_reply)
+    assert "pf:contact" in _button_callbacks(details_reply)
+
+
+@pytest.mark.django_db
+def test_profile_details_show_service_snapshot_and_master_override(
+    bot_profile_context,
+    profile_start,
+):
+    context = bot_profile_context
+    appointment = create_confirmed_appointment(
+        actor=context["owner"],
+        partner=context["partner"],
+        booking_resource=context["resource"],
+        client_profile=context["client"],
+        start_at=profile_start,
+        service_items=[
+            AppointmentServiceItemInput(
+                service=context["service"],
+                price_amount=55_000,
+                duration_minutes=75,
+            )
+        ],
+    )
+
+    details = build_appointment_details_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        return_action="future",
+    )
+
+    assert "- Manicure: 550.00 UAH, 75 min (changed by master)" in details.text
+    assert "Services: 550.00" in details.text
+    assert "Penalties: 0.00" in details.text
 
 
 @pytest.mark.django_db
@@ -290,6 +585,14 @@ def test_profile_auto_reschedule_flow_moves_booking_and_notifies_master(
         start_at=new_start,
         now=current_time,
     )
+    stale_start = profile_start + timedelta(days=1)
+    stale = build_reschedule_final_confirm_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        appointment_id=appointment.id,
+        start_at=stale_start,
+        now=current_time,
+    )
     with django_capture_on_commit_callbacks(execute=True):
         confirmed = confirm_reschedule_reply(
             partner=context["partner"],
@@ -304,6 +607,9 @@ def test_profile_auto_reschedule_flow_moves_booking_and_notifies_master(
     )
     assert f"pf:rsf:{appointment.id.hex}:{int(new_start.timestamp())}:1" in _button_callbacks(slots)
     assert f"pf:rsg:{appointment.id.hex}:{int(new_start.timestamp())}:1" in _button_callbacks(final)
+    assert _button_callbacks(stale) == [
+        f"pf:rss:{appointment.id.hex}:{stale_start:%Y%m%d}:1:1"
+    ]
     assert "Booking moved" in confirmed.text
     appointment.refresh_from_db()
     assert appointment.start_at == new_start
@@ -502,6 +808,14 @@ def test_profile_client_can_choose_own_time_for_requested_alternatives(
         start_at=new_start,
         now=current_time,
     )
+    stale_start = profile_start + timedelta(days=1)
+    stale = build_requested_alternative_final_confirm_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        proposal_id=proposal.id,
+        start_at=stale_start,
+        now=current_time,
+    )
     with django_capture_on_commit_callbacks(execute=True):
         confirmed = confirm_requested_alternative_reply(
             partner=context["partner"],
@@ -521,6 +835,9 @@ def test_profile_client_can_choose_own_time_for_requested_alternatives(
     assert f"pf:pas:{proposal.id.hex}:{profile_start:%Y%m%d}:f:1:1" in callbacks
     assert f"pf:paf:{proposal.id.hex}:{int(new_start.timestamp())}:f:1" in callbacks
     assert f"pf:pag:{proposal.id.hex}:{int(new_start.timestamp())}:f:1" in callbacks
+    assert _button_callbacks(stale) == [
+        f"pf:pas:{proposal.id.hex}:{stale_start:%Y%m%d}:f:1:1"
+    ]
     assert max(len(callback.encode()) for callback in callbacks) <= 64
     assert "Booking moved" in confirmed.text
     appointment.refresh_from_db()

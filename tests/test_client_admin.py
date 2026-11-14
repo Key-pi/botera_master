@@ -21,6 +21,7 @@ from apps.clients.selectors import client_operational_summary
 from apps.clients.services import (
     create_manual_client_profile,
     mark_client_unreachable,
+    resolve_client_profile_for_telegram_identity,
     set_marketing_opt_out,
     update_client_profile,
     upsert_telegram_identity,
@@ -168,6 +169,10 @@ def test_partner_client_card_and_list_stay_tenant_scoped(client_admin_context) -
     )
 
     list_response = context["http_client"].get(reverse("admin:clients_clientprofile_changelist"))
+    forged_filter_response = context["http_client"].get(
+        reverse("admin:clients_clientprofile_changelist"),
+        {"partner__id__exact": str(other.partner.id)},
+    )
     foreign_response = context["http_client"].get(
         reverse("admin:clients_clientprofile_change", args=[other_client.id])
     )
@@ -178,7 +183,93 @@ def test_partner_client_card_and_list_stay_tenant_scoped(client_admin_context) -
     assert "***2233" in list_page
     assert "+380501112233" not in list_page
     assert "Other Tenant Client" not in list_page
+    assert "Other Partner" not in list_page
+    assert _admin_result_ids(forged_filter_response) == [context["client_profile"].id]
+    assert other_client.id not in _admin_result_ids(forged_filter_response)
     assert foreign_response.status_code == 302
+
+
+@pytest.mark.django_db
+def test_client_changelist_supports_operational_columns_and_filters(
+    client_admin_context,
+) -> None:
+    context = client_admin_context
+    completed = _create_appointment(
+        context,
+        start_at=timezone.now() - timedelta(days=3),
+    )
+    transition_appointment_status(
+        actor=context["created"].owner,
+        appointment=completed,
+        new_status=Appointment.Status.COMPLETED,
+    )
+    future = _create_appointment(
+        context,
+        start_at=timezone.now() + timedelta(days=3),
+    )
+    create_penalty(
+        actor=context["created"].owner,
+        partner=context["created"].partner,
+        client_profile=context["client_profile"],
+        reason=Penalty.Reason.LATE_CANCEL,
+        amount=5_000,
+    )
+    identity = upsert_telegram_identity(
+        telegram_user_id=9_999_002,
+        username="linked_client",
+        first_name="Linked",
+    )
+    linked_profile = resolve_client_profile_for_telegram_identity(
+        partner=context["created"].partner,
+        telegram_identity=identity,
+    )
+    changelist_url = reverse("admin:clients_clientprofile_changelist")
+
+    response = context["http_client"].get(changelist_url)
+    upcoming_response = context["http_client"].get(
+        changelist_url,
+        {"upcoming_state": "has"},
+    )
+    no_upcoming_response = context["http_client"].get(
+        changelist_url,
+        {"upcoming_state": "none"},
+    )
+    penalty_response = context["http_client"].get(
+        changelist_url,
+        {"penalty_state": "has"},
+    )
+    linked_response = context["http_client"].get(
+        changelist_url,
+        {"telegram_state": "linked"},
+    )
+    unlinked_response = context["http_client"].get(
+        changelist_url,
+        {"telegram_state": "unlinked"},
+    )
+    search_response = context["http_client"].get(
+        changelist_url,
+        {"q": "linked_client"},
+    )
+
+    assert response.status_code == 200
+    result_by_id = {profile.id: profile for profile in response.context["cl"].result_list}
+    operational_profile = result_by_id[context["client_profile"].id]
+    assert operational_profile.ops_completed_visit_count == 1
+    assert operational_profile.ops_future_appointment_count == 1
+    assert operational_profile.ops_next_appointment_at == future.start_at
+    assert operational_profile.ops_outstanding_penalty_count == 1
+    page = response.content.decode()
+    assert "Next appointment" in page
+    assert "Visits" in page
+    assert "Unpaid penalties" in page
+    assert "No connection" in page
+    assert "@linked_client" in page
+    assert _admin_result_ids(upcoming_response) == [context["client_profile"].id]
+    assert _admin_result_ids(no_upcoming_response) == [linked_profile.id]
+    assert _admin_result_ids(penalty_response) == [context["client_profile"].id]
+    assert _admin_result_ids(linked_response) == [linked_profile.id]
+    assert _admin_result_ids(unlinked_response) == [context["client_profile"].id]
+    assert _admin_result_ids(search_response) == [linked_profile.id]
 
 
 @pytest.mark.django_db
@@ -317,3 +408,8 @@ def _create_appointment(context, *, start_at):
         start_at=start_at,
         service_items=[AppointmentServiceItemInput(service=context["service"])],
     )
+
+
+def _admin_result_ids(response) -> list:
+    assert response.status_code == 200
+    return [client_profile.id for client_profile in response.context["cl"].result_list]

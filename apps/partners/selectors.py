@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from django.db.models import QuerySet
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import PartnerMembership
 from apps.appointments.models import Appointment
@@ -14,8 +15,8 @@ from apps.appointments.selectors import (
     appointments_for_partner_period,
     requested_appointments_for_partner,
 )
-from apps.bot.models import BotInstance
-from apps.bot.selectors import bot_instance_for_partner
+from apps.bot.models import BotInstance, PartnerTelegramContact
+from apps.bot.selectors import bot_instance_for_partner, primary_master_telegram_contact
 from apps.finance.selectors import FinanceReport, finance_report_for_partner
 from apps.notifications.models import ScheduledNotification
 from apps.notifications.selectors import failed_notifications_visible_to_partner
@@ -36,12 +37,51 @@ DASHBOARD_APPOINTMENT_STATUSES = (
     Appointment.Status.NO_SHOW,
 )
 
+SETUP_CONNECTION_CHECKED = "telegram_connection_checked"
+SETUP_MASTER_CONTACT = "master_telegram_contact"
+SETUP_BOT_LAUNCHED = "bot_launched"
+
+
+@dataclass(frozen=True, slots=True)
+class PartnerOnboardingStep:
+    """One stable setup fact shared by partner and superuser adapters."""
+
+    key: str
+    label: str
+    is_complete: bool
+    is_required: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PartnerOnboardingSnapshot:
+    """Current setup and launch state for one trusted partner scope."""
+
+    partner: Partner
+    setup_status: PartnerSetupStatus
+    bot_instance: BotInstance | None
+    primary_contact: PartnerTelegramContact | None
+    required_steps: tuple[PartnerOnboardingStep, ...]
+    operational_steps: tuple[PartnerOnboardingStep, ...]
+
+    @property
+    def required_completed_count(self) -> int:
+        return sum(step.is_complete for step in self.required_steps)
+
+    @property
+    def required_total_count(self) -> int:
+        return len(self.required_steps)
+
+    @property
+    def all_steps(self) -> tuple[PartnerOnboardingStep, ...]:
+        return self.required_steps + self.operational_steps
+
 
 @dataclass(frozen=True, slots=True)
 class PartnerDashboardSnapshot:
     """Tenant-scoped operational summary for the partner landing screen."""
 
     partner: Partner
+    onboarding: PartnerOnboardingSnapshot
     setup_status: PartnerSetupStatus
     missing_setup_labels: tuple[str, ...]
     bot_instance: BotInstance | None
@@ -115,13 +155,15 @@ def partner_dashboard_snapshot(
         partner=partner,
         now=current_time,
     )
-    setup_status = get_partner_setup_status(partner)
+    onboarding = partner_onboarding_snapshot(partner=partner)
+    setup_status = onboarding.setup_status
 
     return PartnerDashboardSnapshot(
         partner=partner,
+        onboarding=onboarding,
         setup_status=setup_status,
         missing_setup_labels=tuple(_setup_step_label(step) for step in setup_status.missing_steps),
-        bot_instance=bot_instance_for_partner(partner),
+        bot_instance=onboarding.bot_instance,
         today=local_today,
         tomorrow=local_tomorrow,
         today_appointments=today_appointments[:DASHBOARD_LIST_LIMIT],
@@ -140,6 +182,64 @@ def partner_dashboard_snapshot(
             end_date=local_today,
             now=current_time,
         ),
+    )
+
+
+def partner_onboarding_snapshot(*, partner: Partner) -> PartnerOnboardingSnapshot:
+    """Compose the launch checklist once for every setup-facing adapter."""
+
+    setup_status = get_partner_setup_status(partner)
+    missing_steps = set(setup_status.missing_steps)
+    bot_instance = bot_instance_for_partner(partner)
+    primary_contact = primary_master_telegram_contact(partner)
+    connection_checked = bool(
+        bot_instance
+        and bot_instance.last_checked_at
+        and bot_instance.telegram_bot_id
+        and bot_instance.telegram_username
+        and not bot_instance.last_error_code
+    )
+    bot_launched = bool(
+        bot_instance
+        and bot_instance.status == BotInstance.Status.ACTIVE
+        and partner.status == Partner.Status.ACTIVE
+    )
+    required_steps = tuple(
+        PartnerOnboardingStep(
+            key=step.value,
+            label=step.label,
+            is_complete=step not in missing_steps,
+            is_required=True,
+        )
+        for step in SetupStep
+    )
+    operational_steps = (
+        PartnerOnboardingStep(
+            key=SETUP_CONNECTION_CHECKED,
+            label=_("Telegram connection checked"),
+            is_complete=connection_checked,
+            is_required=False,
+        ),
+        PartnerOnboardingStep(
+            key=SETUP_MASTER_CONTACT,
+            label=_("Master Telegram contact"),
+            is_complete=primary_contact is not None,
+            is_required=False,
+        ),
+        PartnerOnboardingStep(
+            key=SETUP_BOT_LAUNCHED,
+            label=_("Bot launched"),
+            is_complete=bot_launched,
+            is_required=False,
+        ),
+    )
+    return PartnerOnboardingSnapshot(
+        partner=partner,
+        setup_status=setup_status,
+        bot_instance=bot_instance,
+        primary_contact=primary_contact,
+        required_steps=required_steps,
+        operational_steps=operational_steps,
     )
 
 

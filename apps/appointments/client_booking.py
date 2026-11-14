@@ -530,6 +530,118 @@ def create_requested_alternative_proposal(
         )
 
 
+def available_master_reschedule_dates(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    start_date: date,
+    days: int,
+    page: int = 1,
+    per_page: int = BOOKING_DATES_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingDateOption]:
+    """Return dates a master can propose for one future confirmed appointment."""
+
+    if days <= 0:
+        raise ValidationError({"days": "Search window must be positive."})
+    current_time = now or timezone.now()
+    _validate_master_reschedule_access(
+        actor=actor,
+        partner=partner,
+        appointment=appointment,
+        now=current_time,
+    )
+    options = _available_date_options_for_duration(
+        partner=partner,
+        booking_resource=appointment.booking_resource,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        start_date=start_date,
+        days=days,
+        exclude_appointment=appointment,
+        excluded_start_ats=frozenset({appointment.start_at}),
+        now=current_time,
+    )
+    return paginate_telegram_entities(options, page=page, per_page=per_page)
+
+
+def available_master_reschedule_slots(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    local_date: date,
+    page: int = 1,
+    per_page: int = BOOKING_SLOTS_PAGE_SIZE,
+    now: datetime | None = None,
+) -> Page[BookingSlotOption]:
+    """Return concrete slots a master can propose for a confirmed appointment."""
+
+    current_time = now or timezone.now()
+    _validate_master_reschedule_access(
+        actor=actor,
+        partner=partner,
+        appointment=appointment,
+        now=current_time,
+    )
+    slots = _reschedule_slot_options_for_local_date(
+        appointment=appointment,
+        duration_minutes=_appointment_duration_minutes(appointment),
+        local_date=local_date,
+        now=current_time,
+    )
+    return paginate_telegram_entities(slots, page=page, per_page=per_page)
+
+
+def create_master_reschedule_proposal(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    selected_start_ats: Iterable[datetime],
+    now: datetime | None = None,
+) -> AppointmentProposal:
+    """Create a multi-option reschedule proposal after fresh slot validation."""
+
+    current_time = now or timezone.now()
+    start_ats = _unique_aware_datetimes(selected_start_ats)
+    if not start_ats:
+        raise ValidationError({"options": "Select at least one alternative time."})
+
+    with transaction.atomic():
+        appointment = (
+            Appointment.objects.select_for_update()
+            .select_related("partner", "booking_resource", "client_profile")
+            .prefetch_related("service_items")
+            .get(id=appointment.id)
+        )
+        _validate_master_reschedule_access(
+            actor=actor,
+            partner=partner,
+            appointment=appointment,
+            now=current_time,
+        )
+        option_inputs = []
+        for start_at in start_ats:
+            matching_slot = _find_matching_reschedule_slot(
+                appointment=appointment,
+                start_at=start_at,
+                now=current_time,
+            )
+            option_inputs.append(
+                AppointmentProposalOptionInput(
+                    start_at=matching_slot.start_at,
+                    is_near_fit=matching_slot.is_near_fit,
+                )
+            )
+        return create_appointment_proposal(
+            actor=actor,
+            appointment=appointment,
+            proposal_type=AppointmentProposal.Type.RESCHEDULE_CONFIRMED,
+            options=option_inputs,
+        )
+
+
 def available_client_requested_alternative_dates(
     *,
     partner: Partner,
@@ -610,7 +722,7 @@ def select_client_requested_alternative_time(
 
     with transaction.atomic():
         proposal = (
-            AppointmentProposal.objects.select_for_update()
+            AppointmentProposal.objects.select_for_update(of=("self",))
             .select_related("partner", "appointment", "created_by")
             .get(id=proposal.id)
         )
@@ -638,8 +750,7 @@ def select_client_requested_alternative_time(
             now=current_time,
         )
         should_confirm = (
-            schedule_settings.confirmation_mode
-            == PartnerScheduleSettings.ConfirmationMode.AUTO
+            schedule_settings.confirmation_mode == PartnerScheduleSettings.ConfirmationMode.AUTO
             and not matching_slot.is_near_fit
         )
         previous_start_at = appointment.start_at
@@ -1211,6 +1322,22 @@ def _validate_requested_alternative_access(
         raise ValidationError({"appointment": "Appointment is not available to this partner."})
     if appointment.status != Appointment.Status.REQUESTED:
         raise ValidationError({"appointment": "Appointment is no longer requested."})
+
+
+def _validate_master_reschedule_access(
+    *,
+    actor: User,
+    partner: Partner,
+    appointment: Appointment,
+    now: datetime,
+) -> None:
+    ensure_partner_access(actor, partner)
+    if appointment.partner_id != partner.id:
+        raise ValidationError({"appointment": "Appointment is not available to this partner."})
+    if appointment.status != Appointment.Status.CONFIRMED:
+        raise ValidationError({"appointment": "Only a confirmed appointment can be moved."})
+    if appointment.start_at <= now:
+        raise ValidationError({"appointment": "Past appointments cannot be moved."})
 
 
 def _validate_client_requested_alternative_selection(

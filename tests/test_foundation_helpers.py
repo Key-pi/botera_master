@@ -6,6 +6,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
 from core.money import Money
+from core.security.config import validate_bot_security_configuration
 from core.security.crypto import decrypt_text, encrypt_text
 from core.security.fingerprints import token_fingerprint
 from core.security.masking import mask_phone, mask_token, redact_mapping
@@ -69,3 +70,60 @@ def test_token_fingerprint_is_stable_and_non_reversible() -> None:
     assert first == second
     assert first != "raw-token"
     assert len(first) == 64
+
+
+def test_bot_security_configuration_accepts_valid_independent_secrets() -> None:
+    validate_bot_security_configuration(
+        encryption_keys={"main": Fernet.generate_key().decode("utf-8")},
+        current_key_id="main",
+        fingerprint_key="independent-fingerprint-secret-0123456789",
+    )
+
+
+@pytest.mark.parametrize(
+    ("encryption_keys", "current_key_id", "fingerprint_key", "message"),
+    [
+        ({}, "main", "independent-fingerprint-secret-0123456789", "must be configured"),
+        (
+            {"main": "not-a-fernet-key"},
+            "main",
+            "independent-fingerprint-secret-0123456789",
+            "not a valid Fernet key",
+        ),
+        (
+            {"main": Fernet.generate_key().decode("utf-8")},
+            "missing",
+            "independent-fingerprint-secret-0123456789",
+            "must reference a configured encryption key",
+        ),
+        (
+            {"main": Fernet.generate_key().decode("utf-8")},
+            "main",
+            "too-short",
+            "at least 32 bytes",
+        ),
+    ],
+)
+def test_bot_security_configuration_rejects_unsafe_settings(
+    encryption_keys: dict[str, str],
+    current_key_id: str,
+    fingerprint_key: str,
+    message: str,
+) -> None:
+    with pytest.raises(ImproperlyConfigured, match=message):
+        validate_bot_security_configuration(
+            encryption_keys=encryption_keys,
+            current_key_id=current_key_id,
+            fingerprint_key=fingerprint_key,
+        )
+
+
+def test_bot_security_configuration_requires_key_separation() -> None:
+    shared_key = Fernet.generate_key().decode("utf-8")
+
+    with pytest.raises(ImproperlyConfigured, match="must be different"):
+        validate_bot_security_configuration(
+            encryption_keys={"main": shared_key},
+            current_key_id="main",
+            fingerprint_key=shared_key,
+        )

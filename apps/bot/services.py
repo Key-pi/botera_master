@@ -13,6 +13,7 @@ from django.utils.crypto import constant_time_compare, salted_hmac
 
 from apps.accounts.models import User
 from apps.accounts.services import ensure_partner_access
+from apps.audit.services import record_audit_event
 from apps.bot.content import SYSTEM_TEMPLATE_DEFINITION_BY_KEY, SYSTEM_TEMPLATE_DEFINITIONS
 from apps.bot.models import (
     DEFAULT_TEMPLATE_LANGUAGE,
@@ -67,6 +68,7 @@ class StartCommandResult:
     text: str
     telegram_identity: TelegramIdentity
     client_profile_id: str = ""
+    client_language: str = ""
     master_contact_id: str = ""
     master_contact_bound: bool = False
 
@@ -100,6 +102,17 @@ def set_bot_token(*, actor: User, partner: Partner, raw_token: str) -> BotInstan
         elif token_changed and bot_instance.status != BotInstance.Status.SUSPENDED:
             bot_instance.status = BotInstance.Status.PAUSED
         bot_instance.save()
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="bot.token_updated",
+            target=bot_instance,
+            message="Telegram bot token updated.",
+            payload={
+                "token_changed": token_changed,
+                "status": bot_instance.status,
+            },
+        )
 
     return bot_instance
 
@@ -170,6 +183,7 @@ def handle_start_command(
         text=text,
         telegram_identity=identity,
         client_profile_id=str(profile.id),
+        client_language=profile.language,
     )
 
 
@@ -234,12 +248,21 @@ def create_master_contact_link(
     signature = _master_contact_nonce_signature(nonce)
     start_payload = f"{MASTER_CONTACT_LINK_PREFIX}_{nonce}_{signature}"
     expires_at = current_time + MASTER_CONTACT_LINK_TTL
-    PartnerTelegramContactLink.objects.create(
-        partner=partner,
-        user=actor,
-        nonce_fingerprint=_master_contact_nonce_fingerprint(nonce),
-        expires_at=expires_at,
-    )
+    with transaction.atomic():
+        PartnerTelegramContactLink.objects.create(
+            partner=partner,
+            user=actor,
+            nonce_fingerprint=_master_contact_nonce_fingerprint(nonce),
+            expires_at=expires_at,
+        )
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="bot.master_contact_link_created",
+            target=bot_instance,
+            message="Master Telegram connection link created.",
+            payload={"expires_at": expires_at.isoformat()},
+        )
     username = bot_instance.telegram_username.lstrip("@")
     return MasterContactLink(
         url=f"https://t.me/{username}?start={start_payload}",
@@ -368,16 +391,36 @@ def set_bot_status(*, actor: User, bot_instance: BotInstance, status: str) -> Bo
     ensure_partner_access(actor, bot_instance.partner)
     if status not in BotInstance.Status.values:
         raise ValidationError({"status": "Unknown bot status."})
-    if status == BotInstance.Status.SUSPENDED and not actor.is_superuser:
-        raise PermissionDenied("Only a superuser can suspend a bot.")
-    if bot_instance.status == BotInstance.Status.SUSPENDED and not actor.is_superuser:
-        raise PermissionDenied("Only a superuser can change a suspended bot.")
-    if status == BotInstance.Status.ACTIVE and not bot_instance.has_token:
-        raise ValidationError({"status": "A bot token is required before activation."})
+    with transaction.atomic():
+        locked_bot = (
+            BotInstance.objects.select_for_update()
+            .select_related("partner")
+            .get(pk=bot_instance.pk)
+        )
+        ensure_partner_access(actor, locked_bot.partner)
+        if status == BotInstance.Status.SUSPENDED and not actor.is_superuser:
+            raise PermissionDenied("Only a superuser can suspend a bot.")
+        if locked_bot.status == BotInstance.Status.SUSPENDED and not actor.is_superuser:
+            raise PermissionDenied("Only a superuser can change a suspended bot.")
+        if status == BotInstance.Status.ACTIVE and not locked_bot.has_token:
+            raise ValidationError({"status": "A bot token is required before activation."})
 
-    bot_instance.status = status
-    bot_instance.save(update_fields=["status", "updated_at"])
-    return bot_instance
+        previous_status = locked_bot.status
+        locked_bot.status = status
+        locked_bot.save(update_fields=["status", "updated_at"])
+        if previous_status != status:
+            record_audit_event(
+                partner=locked_bot.partner,
+                actor=actor,
+                event_type="bot.status_changed",
+                target=locked_bot,
+                message="Telegram bot status changed.",
+                payload={
+                    "old_status": previous_status,
+                    "new_status": status,
+                },
+            )
+        return locked_bot
 
 
 def activate_partner_bot(*, actor: User, bot_instance: BotInstance) -> BotInstance:
@@ -452,17 +495,21 @@ def check_bot_connection(bot_instance: BotInstance, *, actor: User | None = None
         token = decrypt_bot_token(bot_instance)
         identity = async_to_sync(fetch_bot_identity)(token)
     except (ImproperlyConfigured, ValidationError) as exc:
-        return mark_bot_error(
+        checked = mark_bot_error(
             bot_instance,
             code="bot_config_invalid",
             message=str(exc),
         )
+        _record_connection_check(actor=actor, bot_instance=checked, success=False)
+        return checked
     except Exception as exc:
-        return mark_bot_error(
+        checked = mark_bot_error(
             bot_instance,
             code="telegram_connection_failed",
             message=str(exc),
         )
+        _record_connection_check(actor=actor, bot_instance=checked, success=False)
+        return checked
 
     update_fields = [
         "telegram_bot_id",
@@ -481,29 +528,64 @@ def check_bot_connection(bot_instance: BotInstance, *, actor: User | None = None
         bot_instance.status = BotInstance.Status.PAUSED
         update_fields.append("status")
     bot_instance.save(update_fields=update_fields)
+    _record_connection_check(actor=actor, bot_instance=bot_instance, success=True)
     return bot_instance
+
+
+def _record_connection_check(
+    *,
+    actor: User | None,
+    bot_instance: BotInstance,
+    success: bool,
+) -> None:
+    """Persist a safe business audit entry without logging the checked token."""
+
+    record_audit_event(
+        partner=bot_instance.partner,
+        actor=actor,
+        event_type="bot.connection_checked",
+        target=bot_instance,
+        message=(
+            "Telegram bot connection checked successfully."
+            if success
+            else "Telegram bot connection check failed."
+        ),
+        payload={
+            "success": success,
+            "status": bot_instance.status,
+            "telegram_username": bot_instance.telegram_username,
+            "failure_code": bot_instance.last_error_code,
+        },
+    )
 
 
 def seed_system_templates() -> int:
     """Synchronize code-owned MVP content defaults into editable DB records."""
 
-    changed = 0
-    for definition in SYSTEM_TEMPLATE_DEFINITIONS:
-        for language, body in definition.translations.items():
-            template, created = SystemTemplate.objects.update_or_create(
-                key=definition.key,
-                language=language,
-                defaults={
-                    "body": body,
-                    "content_type": definition.content_type,
-                    "editable": definition.editable,
-                    "is_required": definition.is_required,
-                    "placeholder_allowlist": list(definition.placeholders),
-                    "sample_context": dict(definition.sample_context),
-                },
-            )
-            changed += int(created or bool(template.updated_at))
-    return changed
+    synchronized_count = 0
+    with transaction.atomic():
+        for definition in SYSTEM_TEMPLATE_DEFINITIONS:
+            for language, body in definition.translations.items():
+                validate_template_body(
+                    body=body,
+                    allowed_placeholders=definition.placeholders,
+                    sample_context=definition.sample_context,
+                    content_type=definition.content_type,
+                )
+                SystemTemplate.objects.update_or_create(
+                    key=definition.key,
+                    language=language,
+                    defaults={
+                        "body": body,
+                        "content_type": definition.content_type,
+                        "editable": definition.editable,
+                        "is_required": definition.is_required,
+                        "placeholder_allowlist": list(definition.placeholders),
+                        "sample_context": dict(definition.sample_context),
+                    },
+                )
+                synchronized_count += 1
+    return synchronized_count
 
 
 def set_partner_template_override(
@@ -536,16 +618,29 @@ def set_partner_template_override(
             content_type=system_template.content_type,
         )
 
-    override, _created = PartnerTemplateOverride.objects.update_or_create(
-        partner=partner,
-        key=cleaned_key,
-        language=cleaned_language,
-        defaults={
-            "body": cleaned_body,
-            "is_active": bool(is_active),
-            "last_validated_at": timezone.now(),
-        },
-    )
+    with transaction.atomic():
+        override, _created = PartnerTemplateOverride.objects.update_or_create(
+            partner=partner,
+            key=cleaned_key,
+            language=cleaned_language,
+            defaults={
+                "body": cleaned_body,
+                "is_active": bool(is_active),
+                "last_validated_at": timezone.now(),
+            },
+        )
+        record_audit_event(
+            partner=partner,
+            actor=actor,
+            event_type="bot.content_override_saved",
+            target=override,
+            message="Localized bot content override saved.",
+            payload={
+                "template_key": cleaned_key,
+                "language": cleaned_language,
+                "content_type": system_template.content_type,
+            },
+        )
     return override
 
 
@@ -559,11 +654,73 @@ def reset_partner_template_override(
     """Remove a partner override so runtime falls back to the system default."""
 
     ensure_partner_access(actor, partner)
-    return PartnerTemplateOverride.objects.filter(
-        partner=partner,
-        key=key.strip(),
-        language=_normalize_template_language(language),
-    ).delete()[0]
+    cleaned_key = key.strip()
+    cleaned_language = _normalize_template_language(language)
+    system_template = _system_template_for_key_language(
+        key=cleaned_key,
+        language=cleaned_language,
+    )
+    if not system_template.editable:
+        raise ValidationError({"key": "This template is system-only."})
+
+    with transaction.atomic():
+        deleted_count = PartnerTemplateOverride.objects.filter(
+            partner=partner,
+            key=cleaned_key,
+            language=cleaned_language,
+        ).delete()[0]
+        if deleted_count:
+            record_audit_event(
+                partner=partner,
+                actor=actor,
+                event_type="bot.content_override_reset",
+                target=partner,
+                message="Localized bot content override reset to the system default.",
+                payload={
+                    "template_key": cleaned_key,
+                    "language": cleaned_language,
+                },
+            )
+    return deleted_count
+
+
+def preview_template_body(
+    *,
+    key: str,
+    language: str,
+    body: str,
+) -> RenderedTemplate:
+    """Validate and safely render an unsaved localized override with sample data."""
+
+    cleaned_key = key.strip()
+    cleaned_language = _normalize_template_language(language)
+    system_template = _system_template_for_key_language(
+        key=cleaned_key,
+        language=cleaned_language,
+    )
+    if not system_template.editable:
+        raise ValidationError({"key": "This template is system-only."})
+
+    cleaned_body = body.strip()
+    source = "draft"
+    if not cleaned_body:
+        cleaned_body = system_template.body
+        source = "system_default"
+    validate_template_body(
+        body=cleaned_body,
+        allowed_placeholders=tuple(system_template.placeholder_allowlist),
+        sample_context=system_template.sample_context,
+        content_type=system_template.content_type,
+    )
+    return RenderedTemplate(
+        key=cleaned_key,
+        language=cleaned_language,
+        body=_render_template_body(
+            cleaned_body,
+            _SafeTemplateContext(system_template.sample_context),
+        ),
+        source=source,
+    )
 
 
 def render_content_template(

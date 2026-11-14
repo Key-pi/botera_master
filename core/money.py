@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+MAX_MAJOR_AMOUNT = Decimal("21474836.47")
+
 
 @dataclass(frozen=True, slots=True)
 class Money:

@@ -1,27 +1,47 @@
+# BoteraMaster local pilot stack.
+#
+#   cp .env.example .env
+#   # Generate the two secrets documented in .env.example once.
+#   ./scripts/compose.sh dev up --build
+#
+# Start order: PostgreSQL/Redis (healthy) -> init (checks, migrations, local
+# demo) -> web, bot runner, beat, and isolated workers.
+name: botera-master
+
 x-app-service: &app-service
   build:
     context: .
     dockerfile: infrastructure/docker/Dockerfile
+    args:
+      INSTALL_DEV: "true"
+  image: botera-master:dev
+  user: app
   env_file:
-    - path: .env
-      required: false
+    - path: ${BOTERA_ENV_FILE:-.env}
+      required: true
   environment:
+    DJANGO_SETTINGS_MODULE: core.settings.local
     POSTGRES_DB: ${POSTGRES_DB:-botera_master}
     POSTGRES_USER: ${POSTGRES_USER:-botera_master}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
     POSTGRES_HOST: postgres
-    POSTGRES_PORT: 5432
+    POSTGRES_PORT: "5432"
     REDIS_URL: redis://redis:6379/0
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
+    WEB_PORT_ON_HOST: ${WEB_PORT_ON_HOST:-8001}
   volumes:
     - .:/app
+  restart: unless-stopped
+
+x-after-init: &after-init
   depends_on:
+    init:
+      condition: service_completed_successfully
     postgres:
       condition: service_healthy
     redis:
       condition: service_healthy
-  restart: unless-stopped
 
 services:
   postgres:
@@ -30,62 +50,105 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-botera_master}
       POSTGRES_USER: ${POSTGRES_USER:-botera_master}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botera_master}
-    ports:
-      - "5432:5432"
+      TZ: Europe/Kyiv
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test:
         - CMD-SHELL
         - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      interval: 3s
+      timeout: 3s
+      retries: 20
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 20
     restart: unless-stopped
 
-  web:
+  init:
     <<: *app-service
-    command: python manage.py runserver 0.0.0.0:8000
+    command: ["sh", "infrastructure/docker/init.sh"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    <<: [*app-service, *after-init]
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     ports:
-      - "8000:8000"
+      - "${WEB_BIND_ON_HOST:-127.0.0.1}:${WEB_PORT_ON_HOST:-8001}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=3).read(1)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   bot-runner:
-    <<: *app-service
-    command: python manage.py run_partner_bots
-    restart: on-failure
+    <<: [*app-service, *after-init]
+    command: ["python", "manage.py", "run_partner_bots", "--wait"]
 
   celery-beat:
-    <<: *app-service
-    command: celery -A core beat --loglevel=INFO
+    <<: [*app-service, *after-init]
+    command:
+      - celery
+      - -A
+      - core
+      - beat
+      - --loglevel=INFO
+      - --schedule=/tmp/celerybeat-schedule
 
   notifications-worker:
-    <<: *app-service
-    command: >-
-      celery -A core worker --loglevel=INFO
-      --queues=notifications --concurrency=4
+    <<: [*app-service, *after-init]
+    command:
+      - celery
+      - -A
+      - core
+      - worker
+      - --loglevel=INFO
+      - --queues=notifications
+      - --concurrency=${NOTIFICATIONS_WORKER_CONCURRENCY:-4}
 
   broadcast-worker:
-    <<: *app-service
-    command: >-
-      celery -A core worker --loglevel=INFO
-      --queues=broadcasts --concurrency=1
+    <<: [*app-service, *after-init]
+    command:
+      - celery
+      - -A
+      - core
+      - worker
+      - --loglevel=INFO
+      - --queues=broadcasts
+      - --concurrency=1
+      - --hostname=broadcast@%h
 
   default-worker:
-    <<: *app-service
-    command: >-
-      celery -A core worker --loglevel=INFO
-      --queues=default,maintenance --concurrency=1
+    <<: [*app-service, *after-init]
+    command:
+      - celery
+      - -A
+      - core
+      - worker
+      - --loglevel=INFO
+      - --queues=default,maintenance
+      - --concurrency=${DEFAULT_WORKER_CONCURRENCY:-1}
 
 volumes:
   postgres_data:
+  redis_data:

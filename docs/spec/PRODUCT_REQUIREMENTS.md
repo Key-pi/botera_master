@@ -240,6 +240,12 @@ Superuser can:
 - Partner can send concrete alternative slots to clients.
 - If proposed slots do not fit, client can choose another available slot or cancel.
 - Bulk actions for schedule conflicts are part of MVP.
+- From active conflicts, the partner can ask selected Telegram-linked clients to choose another
+  time. The current appointment stays `confirmed` until the client completes the existing
+  reschedule flow; manual clients without a Telegram connection are reported and skipped.
+- A repeated request for the same conflict facts must not create duplicate notifications. A queued
+  request becomes stale if the conflict disappears or its relevant schedule facts change before
+  delivery.
 - `Leave as is` keeps the appointment unchanged and moves the current conflict out of active review; the decision can be reopened.
 - Active conflict indicators return when conflict-relevant schedule or appointment facts change after `leave as is`.
 - Active and `kept as is` conflict lists support bulk keep/reopen decisions.
@@ -496,6 +502,42 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
 - Binding is created through a signed admin/deep link opened in the partner's own bot.
 - A normal client `/start` must never grant master-contact privileges.
 - MVP can expose one primary master contact, with room to add extra notification recipients later.
+- For an already linked active master contact, `/start` opens the master workspace instead of
+  creating or opening a partner-scoped client profile.
+- The MVP master workspace provides tenant-scoped views for pending booking requests, today's
+  appointments, tomorrow's appointments, upcoming appointments, appointment details, and the
+  master/bot language choice.
+- Pending requests opened from the workspace reuse the same confirm, decline, and propose-time
+  actions as actionable master notifications; callbacks never supply or override partner scope.
+- Confirmed appointment details expose only currently valid operational actions. Cancellation,
+  completion, and no-show require an explicit confirmation click and use the same appointment
+  services, audit, reminder invalidation, and client-notification flow as the admin workspace.
+- Completion and no-show become available only after the appointment starts. Final-status
+  correction remains in the audited admin correction flow rather than a Telegram quick action.
+- Appointment details show the combined amount of penalties already applied to that appointment.
+  The master may explicitly mark all still-active applications as paid through a separate
+  confirmation action; completing the appointment alone never marks them paid automatically.
+- Appointment details show the appointment-specific private master note when present. A verified
+  master may add, replace, or explicitly clear that note in Telegram without client confirmation
+  or notification. The note remains master-only and its raw text must not enter audit or technical
+  logs.
+- When penalties are enabled, a newly marked no-show offers the configured no-show penalty as a
+  separate confirmed action. The penalty is never created implicitly by the status transition.
+- After a confirmed or completed appointment has started, the workspace offers late-arrival
+  recording when penalties are enabled and no late-arrival penalty exists yet. The master enters
+  lateness minutes plus an optional note; the existing partner threshold, configured amount,
+  duplicate protection, audit, and client-notification flow remain authoritative.
+- A linked master can queue a direct message from appointment details when the client has a
+  reachable Telegram connection for that partner bot. Message delivery remains asynchronous and
+  durable through the existing messaging/notification worker path.
+- For a future confirmed appointment with a reachable linked client, the workspace lets the
+  master propose up to five freshly validated replacement times. Sending the proposal does not
+  move the appointment or reserve a slot: the old confirmed time remains until the client accepts
+  one option, and acceptance performs the existing fresh availability/overlap check.
+- Manual clients without a Telegram link and currently unreachable bot clients do not receive a
+  Telegram reschedule-proposal action; those appointments remain manageable through admin.
+- Business configuration remains admin-only in MVP. The Telegram workspace is an operational
+  surface, not a second settings panel.
 
 ### Multilingual Content
 
@@ -582,7 +624,7 @@ Exact moderation/abuse handling and detailed privacy/support policies remain des
   - `profile.penalties_empty` with no placeholders.
   - `profile.penalties_list` with `{penalties}`, `{total_penalties}`, `{currency}`.
   - `profile.contact_master_prompt` with `{partner_name}`.
-- `profile.updated_success`, `profile.marketing_unsubscribed`, `profile.marketing_subscribed`, and `profile.contact_master_sent` remain system-only localized in MVP.
+- `profile.edit_data`, `profile.edit_prompt`, `profile.edit_invalid`, `profile.updated_success`, `profile.marketing_preferences`, `profile.marketing_unsubscribed`, `profile.marketing_subscribed`, and `profile.contact_master_sent` remain system-only localized in MVP.
 - `profile.appointment_details` must be able to show penalties and total when penalties are applied to that appointment.
 - Profile detail `{comment}` and `{reason}` are optional; templates must render cleanly when either is empty.
 - Initial editable `penalties/no-show/late-arrival` keys:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from core.database.models import PartnerBoundModel, RetainUntilModel
 
@@ -15,42 +16,44 @@ class BroadcastCampaign(PartnerBoundModel):
     """Partner-created marketing broadcast campaign."""
 
     class Status(models.TextChoices):
-        DRAFT = "draft", "Draft"
-        SCHEDULED = "scheduled", "Scheduled"
-        QUEUED = "queued", "Queued"
-        SENDING = "sending", "Sending"
-        COMPLETED = "completed", "Completed"
-        CANCELLED = "cancelled", "Cancelled"
-        FAILED_PARTIAL = "failed_partial", "Failed partial"
+        DRAFT = "draft", _("Draft")
+        SCHEDULED = "scheduled", _("Scheduled")
+        QUEUED = "queued", _("Queued")
+        SENDING = "sending", _("Sending")
+        COMPLETED = "completed", _("Completed")
+        CANCELLED = "cancelled", _("Cancelled")
+        FAILED_PARTIAL = "failed_partial", _("Partially failed")
 
-    text = models.TextField(blank=True)
-    photo = models.CharField(max_length=512, blank=True)
-    buttons = models.JSONField(default=list, blank=True)
-    filters = models.JSONField(default=dict, blank=True)
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.DRAFT)
-    scheduled_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    queued_count = models.PositiveIntegerField(default=0)
-    sent_count = models.PositiveIntegerField(default=0)
-    failed_count = models.PositiveIntegerField(default=0)
-    skipped_count = models.PositiveIntegerField(default=0)
+    text = models.TextField(_("text"), blank=True)
+    photo = models.CharField(_("photo"), max_length=512, blank=True)
+    buttons = models.JSONField(_("buttons"), default=list, blank=True)
+    filters = models.JSONField(_("filters"), default=dict, blank=True)
+    status = models.CharField(
+        _("status"), max_length=32, choices=Status.choices, default=Status.DRAFT
+    )
+    scheduled_at = models.DateTimeField(_("scheduled at"), null=True, blank=True, db_index=True)
+    queued_count = models.PositiveIntegerField(_("queued count"), default=0)
+    sent_count = models.PositiveIntegerField(_("sent count"), default=0)
+    failed_count = models.PositiveIntegerField(_("failed count"), default=0)
+    skipped_count = models.PositiveIntegerField(_("skipped count"), default=0)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         related_name="created_broadcast_campaigns",
         null=True,
         blank=True,
+        verbose_name=_("created by"),
     )
-    started_at = models.DateTimeField(null=True, blank=True)
-    finished_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(_("started at"), null=True, blank=True)
+    finished_at = models.DateTimeField(_("finished at"), null=True, blank=True)
 
     class Meta:
+        verbose_name = _("broadcast campaign")
+        verbose_name_plural = _("broadcast campaigns")
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
-                condition=(
-                    models.Q(text__gt="")
-                    | models.Q(photo__gt="")
-                ),
+                condition=(models.Q(text__gt="") | models.Q(photo__gt="")),
                 name="broadcast_campaign_has_text_or_photo",
             ),
             models.CheckConstraint(
@@ -75,31 +78,41 @@ class BroadcastRecipient(PartnerBoundModel, RetainUntilModel):
     """Per-client delivery state for one broadcast campaign."""
 
     class Status(models.TextChoices):
-        QUEUED = "queued", "Queued"
-        SENDING = "sending", "Sending"
-        SENT = "sent", "Sent"
-        FAILED = "failed", "Failed"
-        SKIPPED = "skipped", "Skipped"
+        QUEUED = "queued", _("Queued")
+        SENDING = "sending", _("Sending")
+        SENT = "sent", _("Sent")
+        FAILED = "failed", _("Failed")
+        SKIPPED = "skipped", _("Skipped")
 
     campaign = models.ForeignKey(
         "broadcasts.BroadcastCampaign",
         on_delete=models.CASCADE,
         related_name="recipients",
+        verbose_name=_("campaign"),
     )
     client_profile = models.ForeignKey(
         "clients.ClientProfile",
         on_delete=models.CASCADE,
         related_name="broadcast_recipients",
+        verbose_name=_("client profile"),
     )
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
-    attempt_count = models.PositiveSmallIntegerField(default=0)
-    max_attempts = models.PositiveSmallIntegerField(default=DEFAULT_BROADCAST_MAX_ATTEMPTS)
-    next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    sent_at = models.DateTimeField(null=True, blank=True)
-    failure_code = models.CharField(max_length=128, blank=True)
-    failure_message_masked = models.TextField(blank=True)
+    status = models.CharField(
+        _("status"), max_length=16, choices=Status.choices, default=Status.QUEUED
+    )
+    attempt_count = models.PositiveSmallIntegerField(_("attempt count"), default=0)
+    max_attempts = models.PositiveSmallIntegerField(
+        _("maximum attempts"), default=DEFAULT_BROADCAST_MAX_ATTEMPTS
+    )
+    next_attempt_at = models.DateTimeField(
+        _("next attempt at"), null=True, blank=True, db_index=True
+    )
+    sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
+    failure_code = models.CharField(_("failure code"), max_length=128, blank=True)
+    failure_message_masked = models.TextField(_("masked failure message"), blank=True)
 
     class Meta:
+        verbose_name = _("broadcast recipient")
+        verbose_name_plural = _("broadcast recipients")
         ordering = ["created_at"]
         constraints = [
             models.UniqueConstraint(
@@ -133,19 +146,22 @@ class BroadcastRecipient(PartnerBoundModel, RetainUntilModel):
 class BroadcastTemplate(PartnerBoundModel):
     """Reusable partner-authored broadcast draft."""
 
-    name = models.CharField(max_length=255)
-    text = models.TextField(blank=True)
-    photo = models.CharField(max_length=512, blank=True)
-    buttons = models.JSONField(default=list, blank=True)
+    name = models.CharField(_("name"), max_length=255)
+    text = models.TextField(_("text"), blank=True)
+    photo = models.CharField(_("photo"), max_length=512, blank=True)
+    buttons = models.JSONField(_("buttons"), default=list, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         related_name="created_broadcast_templates",
         null=True,
         blank=True,
+        verbose_name=_("created by"),
     )
 
     class Meta:
+        verbose_name = _("broadcast template")
+        verbose_name_plural = _("broadcast templates")
         ordering = ["partner__name", "name"]
         indexes = [
             models.Index(fields=["partner", "name"]),

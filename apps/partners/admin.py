@@ -1,12 +1,13 @@
 from django.contrib import admin
-from django.utils.html import format_html_join
+from django.urls import reverse
+from django.utils.html import format_html, format_html_join
+from django.utils.translation import gettext_lazy as _
 
-from apps.bot.models import BotInstance, PartnerTelegramContact
 from apps.partners.forms import PartnerOnboardingAdminForm
 from apps.partners.models import Partner
-from apps.partners.selectors import visible_partners_for_user
-from apps.partners.services import create_partner_with_owner
-from apps.partners.setup import SetupStep, get_partner_setup_status
+from apps.partners.selectors import partner_onboarding_snapshot, visible_partners_for_user
+from apps.partners.services import create_partner_with_owner, update_partner_settings
+from apps.partners.setup import get_partner_setup_status
 
 
 @admin.register(Partner)
@@ -14,11 +15,11 @@ class PartnerAdmin(admin.ModelAdmin):
     add_form = PartnerOnboardingAdminForm
     add_fieldsets = (
         (
-            "Partner",
+            _("Partner"),
             {"fields": ("name", "timezone", "default_language")},
         ),
         (
-            "Owner account",
+            _("Owner account"),
             {
                 "fields": (
                     "owner_username",
@@ -64,60 +65,43 @@ class PartnerAdmin(admin.ModelAdmin):
         visible_ids = visible_partners_for_user(request.user).values_list("id", flat=True)
         return queryset.filter(id__in=visible_ids)
 
-    @admin.display(boolean=True, description="Setup complete")
+    @admin.display(boolean=True, description=_("Setup complete"))
     def setup_complete(self, obj: Partner) -> bool:
         return get_partner_setup_status(obj).is_complete
 
-    @admin.display(description="Missing setup")
+    @admin.display(description=_("Missing setup"))
     def missing_setup_steps(self, obj: Partner) -> str:
         missing_steps = get_partner_setup_status(obj).missing_steps
-        return ", ".join(missing_steps) if missing_steps else "Ready"
+        return ", ".join(missing_steps) if missing_steps else _("Ready")
 
-    @admin.display(description="Onboarding checklist")
+    @admin.display(description=_("Onboarding checklist"))
     def onboarding_checklist(self, obj: Partner) -> str:
-        setup_status = get_partner_setup_status(obj)
-        missing_steps = set(setup_status.missing_steps)
-        bot_instance = BotInstance.objects.filter(partner=obj).first()
-        bot_connection_checked = bool(
-            bot_instance
-            and bot_instance.last_checked_at
-            and bot_instance.telegram_bot_id
-            and bot_instance.telegram_username
-            and not bot_instance.last_error_code
-        )
-        master_contact_bound = PartnerTelegramContact.objects.filter(
-            partner=obj,
-            is_active=True,
-            is_primary=True,
-        ).exists()
-        bot_launched = bool(
-            bot_instance
-            and bot_instance.status == BotInstance.Status.ACTIVE
-            and obj.status == Partner.Status.ACTIVE
-        )
-        steps = (
-            ("Bot token", SetupStep.BOT_TOKEN not in missing_steps),
-            ("Language", SetupStep.LANGUAGE not in missing_steps),
-            ("Timezone", SetupStep.TIMEZONE not in missing_steps),
-            ("Category and service", SetupStep.CATALOG_SERVICE not in missing_steps),
-            ("Availability window", SetupStep.AVAILABILITY_WINDOW not in missing_steps),
-            (
-                "Booking confirmation mode",
-                SetupStep.BOOKING_CONFIRMATION_MODE not in missing_steps,
-            ),
-            ("Telegram connection checked", bot_connection_checked),
-            ("Master Telegram contact", master_contact_bound),
-            ("Bot launched", bot_launched),
-        )
-        return format_html_join(
+        onboarding = partner_onboarding_snapshot(partner=obj)
+        checklist = format_html_join(
             "",
             "<div><strong>{}</strong>: {}</div>",
-            ((label, "Done" if complete else "Pending") for label, complete in steps),
+            (
+                (step.label, _("Done") if step.is_complete else _("Pending"))
+                for step in onboarding.all_steps
+            ),
+        )
+        setup_url = f"{reverse('partners:setup')}?partner={obj.pk}"
+        return format_html(
+            _('{}<p><a class="button" href="{}">Open setup guide</a></p>'),
+            checklist,
+            setup_url,
         )
 
     def save_model(self, request, obj, form, change):
         if change:
-            super().save_model(request, obj, form, change)
+            stored = update_partner_settings(
+                actor=request.user,
+                partner=obj,
+                partner_name=form.cleaned_data["name"],
+                timezone=form.cleaned_data["timezone"],
+                default_language=form.cleaned_data["default_language"],
+            )
+            _copy_partner_state(target=obj, source=stored)
             return
 
         created = create_partner_with_owner(

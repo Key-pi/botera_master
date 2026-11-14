@@ -1,0 +1,19 @@
+{$BOTERA_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	handle_path /static/* {
+		root * /srv/static
+		file_server
+	}
+
+	handle {
+		reverse_proxy web:8000
+	}
+}

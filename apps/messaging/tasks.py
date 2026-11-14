@@ -8,7 +8,7 @@ from apps.messaging.selectors import queued_conversation_messages
 from apps.messaging.services import dispatch_conversation_message
 
 
-@shared_task(name="messaging.dispatch_queued_conversation_messages", queue="notifications")
+@shared_task(name="messaging.dispatch_queued_conversation_messages")
 def dispatch_queued_conversation_messages_task(limit: int = 100) -> int:
     """Dispatch queued bot-mediated client/master messages through Telegram."""
 

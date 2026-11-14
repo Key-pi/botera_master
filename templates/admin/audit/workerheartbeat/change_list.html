@@ -1,0 +1,219 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block content_title %}<h1>{% translate "Platform health" %}</h1>{% endblock %}
+
+{% block content %}
+  <style>
+    .health-dashboard {
+      --health-ok: #237804;
+      --health-warning: #ad6800;
+      --health-critical: #a8071a;
+      margin-bottom: 24px;
+    }
+
+    .health-summary {
+      align-items: center;
+      background: var(--darkened-bg);
+      border-left: 5px solid var(--health-ok);
+      display: flex;
+      gap: 18px;
+      justify-content: space-between;
+      padding: 16px 18px;
+    }
+
+    .health-summary--warning { border-left-color: var(--health-warning); }
+    .health-summary--critical { border-left-color: var(--health-critical); }
+    .health-summary h2 { margin: 0 0 4px; }
+    .health-summary p { color: var(--body-quiet-color); margin: 0; }
+
+    .health-status {
+      border: 1px solid currentColor;
+      border-radius: 6px;
+      color: var(--health-ok);
+      font-weight: 700;
+      padding: 5px 9px;
+      white-space: nowrap;
+    }
+
+    .health-status--warning { color: var(--health-warning); }
+    .health-status--critical { color: var(--health-critical); }
+
+    .health-checks {
+      display: grid;
+      gap: 1px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin: 1px 0 24px;
+    }
+
+    .health-check {
+      background: var(--body-bg);
+      border: 1px solid var(--hairline-color);
+      min-height: 94px;
+      padding: 14px;
+    }
+
+    .health-check__head {
+      align-items: center;
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+    }
+
+    .health-check h3 { font-size: 0.9rem; margin: 0; }
+    .health-check p { color: var(--body-quiet-color); margin: 10px 0 0; }
+
+    .health-section { margin: 24px 0; }
+    .health-section__head {
+      align-items: baseline;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .health-section__head h2 { margin: 0; }
+    .health-table-wrap { overflow-x: auto; }
+    .health-table { border-collapse: collapse; width: 100%; }
+    .health-table th, .health-table td {
+      border-bottom: 1px solid var(--hairline-color);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .health-empty {
+      border-bottom: 1px solid var(--hairline-color);
+      border-top: 1px solid var(--hairline-color);
+      color: var(--body-quiet-color);
+      padding: 14px 0;
+    }
+
+    @media (max-width: 767px) {
+      .health-summary, .health-section__head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .health-checks { grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <section class="health-dashboard" aria-label="{% translate 'Platform health summary' %}">
+    <header class="health-summary health-summary--{{ health_snapshot.overall_status }}">
+      <div>
+        <h2>{% translate "Current operational status" %}</h2>
+        <p>
+          {% blocktranslate with generated=health_snapshot.generated_at|date:"Y-m-d H:i:s T" %}
+            Generated from durable platform state at {{ generated }}.
+          {% endblocktranslate %}
+        </p>
+      </div>
+      <span class="health-status health-status--{{ health_snapshot.overall_status }}">
+        {{ health_snapshot.overall_status|upper }}
+      </span>
+    </header>
+
+    <div class="health-checks">
+      {% for check in health_snapshot.checks %}
+        <article class="health-check">
+          <div class="health-check__head">
+            <h3>{{ check.label }}</h3>
+            <span class="health-status health-status--{{ check.status }}">{{ check.status|upper }}</span>
+          </div>
+          <p>{{ check.summary }}</p>
+        </article>
+      {% endfor %}
+    </div>
+
+    <section class="health-section">
+      <div class="health-section__head">
+        <h2>{% translate "Active broadcasts" %}</h2>
+        <a href="{% url 'admin:broadcasts_broadcastcampaign_changelist' %}">
+          {% translate "Open broadcasts" %}
+        </a>
+      </div>
+      {% if health_snapshot.active_broadcasts %}
+        <div class="health-table-wrap">
+          <table class="health-table">
+            <thead>
+              <tr>
+                <th>{% translate "Partner" %}</th>
+                <th>{% translate "Campaign" %}</th>
+                <th>{% translate "Progress" %}</th>
+                <th>{% translate "Last progress" %}</th>
+                <th>{% translate "Health" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for broadcast in health_snapshot.active_broadcasts %}
+                <tr>
+                  <td>{{ broadcast.partner_name }}</td>
+                  <td>
+                    <a href="{% url 'admin:broadcasts_broadcastcampaign_change' broadcast.campaign_id %}">
+                      {{ broadcast.campaign_id }}
+                    </a>
+                  </td>
+                  <td>
+                    {{ broadcast.processed_count }}/{{ broadcast.total_count }}
+                    ({{ broadcast.progress_percent }}%)
+                  </td>
+                  <td>{{ broadcast.progress_age }} {% translate "ago" %}</td>
+                  <td>
+                    <span class="health-status health-status--{{ broadcast.health_status }}">
+                      {{ broadcast.health_status|upper }}
+                    </span>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="health-empty">{% translate "No broadcasts are currently dispatching." %}</p>
+      {% endif %}
+    </section>
+
+    <section class="health-section">
+      <div class="health-section__head">
+        <h2>{% translate "Unresolved platform problems" %}</h2>
+        <a href="{% url 'admin:audit_platformdiagnostic_changelist' %}?resolution=active">
+          {% translate "Open all unresolved diagnostics" %}
+        </a>
+      </div>
+      {% if health_snapshot.recent_problems %}
+        <div class="health-table-wrap">
+          <table class="health-table">
+            <thead>
+              <tr>
+                <th>{% translate "Severity" %}</th>
+                <th>{% translate "Component" %}</th>
+                <th>{% translate "Code" %}</th>
+                <th>{% translate "Partner" %}</th>
+                <th>{% translate "Created" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for diagnostic in health_snapshot.recent_problems %}
+                <tr>
+                  <td>{{ diagnostic.get_severity_display }}</td>
+                  <td>{{ diagnostic.get_component_display }}</td>
+                  <td>
+                    <a href="{% url 'admin:audit_platformdiagnostic_change' diagnostic.id %}">
+                      {{ diagnostic.code }}
+                    </a>
+                  </td>
+                  <td>{{ diagnostic.partner|default:"-" }}</td>
+                  <td>{{ diagnostic.created_at|date:"Y-m-d H:i:s T" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="health-empty">{% translate "No unresolved platform problems." %}</p>
+      {% endif %}
+    </section>
+  </section>
+
+  {{ block.super }}
+{% endblock %}

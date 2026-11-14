@@ -1,0 +1,49 @@
+.admin-language-form {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.admin-language-label {
+  color: var(--header-link-color);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.admin-language-form select {
+  background: var(--body-bg);
+  border: 1px solid var(--header-link-color);
+  border-radius: 4px;
+  color: var(--body-fg);
+  font: inherit;
+  min-height: 1.75rem;
+  padding: 0.15rem 1.7rem 0.15rem 0.45rem;
+}
+
+.admin-language-form noscript,
+.admin-language-form noscript button {
+  display: inline;
+}
+
+.admin-userlink-separator {
+  margin: 0 0.35rem;
+}
+
+@media (max-width: 767px) {
+  #user-tools {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: center;
+  }
+
+  .admin-language-label,
+  .admin-userlink-separator {
+    display: none;
+  }
+}

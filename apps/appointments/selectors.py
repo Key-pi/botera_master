@@ -1,23 +1,54 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime, time, timedelta
+from datetime import timezone as datetime_timezone
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
 from apps.accounts.selectors import partner_ids_for_user
 from apps.appointments.models import BLOCKING_APPOINTMENT_STATUSES, Appointment
+from apps.finance.models import Penalty, PenaltyApplication
 from apps.schedule.services import TimeInterval
+from core.timezones import get_zone
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from apps.accounts.models import User
     from apps.clients.models import ClientProfile
     from apps.partners.models import Partner
     from apps.schedule.models import BookingResource
+
+
+APPOINTMENT_PERIOD_TODAY = "today"
+APPOINTMENT_PERIOD_TOMORROW = "tomorrow"
+APPOINTMENT_PERIOD_NEXT_7_DAYS = "next_7_days"
+APPOINTMENT_PERIOD_NEXT_30_DAYS = "next_30_days"
+APPOINTMENT_PERIOD_UPCOMING = "upcoming"
+APPOINTMENT_PERIOD_PAST = "past"
+APPOINTMENT_OPERATIONAL_PERIODS = frozenset(
+    {
+        APPOINTMENT_PERIOD_TODAY,
+        APPOINTMENT_PERIOD_TOMORROW,
+        APPOINTMENT_PERIOD_NEXT_7_DAYS,
+        APPOINTMENT_PERIOD_NEXT_30_DAYS,
+        APPOINTMENT_PERIOD_UPCOMING,
+        APPOINTMENT_PERIOD_PAST,
+    }
+)
+
+APPOINTMENT_PENALTY_ANY = "any"
+APPOINTMENT_PENALTY_OUTSTANDING = "outstanding"
+APPOINTMENT_PENALTY_NONE = "none"
+APPOINTMENT_PENALTY_STATES = frozenset(
+    {
+        APPOINTMENT_PENALTY_ANY,
+        APPOINTMENT_PENALTY_OUTSTANDING,
+        APPOINTMENT_PENALTY_NONE,
+    }
+)
 
 
 def appointments_for_partner(partner: Partner) -> QuerySet[Appointment]:
@@ -126,6 +157,107 @@ def appointments_visible_to_user(user: User) -> QuerySet[Appointment]:
     if user.is_superuser:
         return queryset
     return queryset.filter(partner_id__in=partner_ids_for_user(user))
+
+
+def filter_appointments_by_operational_period(
+    queryset: QuerySet[Appointment],
+    *,
+    period: str,
+    now: datetime | None = None,
+) -> QuerySet[Appointment]:
+    """Filter an already scoped queryset using each partner's local calendar dates."""
+
+    if period not in APPOINTMENT_OPERATIONAL_PERIODS:
+        raise ValueError("Unknown appointment operational period.")
+
+    current_time = now or timezone.now()
+    if timezone.is_naive(current_time):
+        raise ValueError("Appointment period reference time must be timezone-aware.")
+    if period == APPOINTMENT_PERIOD_UPCOMING:
+        return queryset.filter(start_at__gte=current_time)
+    if period == APPOINTMENT_PERIOD_PAST:
+        return queryset.filter(start_at__lt=current_time)
+
+    period_query = Q(pk__in=[])
+    timezone_names = tuple(
+        queryset.order_by()
+        .values_list("partner__timezone", flat=True)
+        .distinct()
+    )
+    for timezone_name in timezone_names:
+        zone = get_zone(timezone_name)
+        local_today = current_time.astimezone(zone).date()
+        if period == APPOINTMENT_PERIOD_TODAY:
+            start_date = local_today
+            end_date = local_today + timedelta(days=1)
+        elif period == APPOINTMENT_PERIOD_TOMORROW:
+            start_date = local_today + timedelta(days=1)
+            end_date = local_today + timedelta(days=2)
+        elif period == APPOINTMENT_PERIOD_NEXT_7_DAYS:
+            start_date = local_today
+            end_date = local_today + timedelta(days=7)
+        else:
+            start_date = local_today
+            end_date = local_today + timedelta(days=30)
+
+        start_at = datetime.combine(start_date, time.min, tzinfo=zone).astimezone(
+            datetime_timezone.utc
+        )
+        end_at = datetime.combine(end_date, time.min, tzinfo=zone).astimezone(
+            datetime_timezone.utc
+        )
+        period_query |= Q(
+            partner__timezone=timezone_name,
+            start_at__gte=start_at,
+            start_at__lt=end_at,
+        )
+    return queryset.filter(period_query)
+
+
+def filter_appointments_by_penalty_state(
+    queryset: QuerySet[Appointment],
+    *,
+    penalty_state: str,
+) -> QuerySet[Appointment]:
+    """Filter appointments by source or applied penalties without duplicate rows."""
+
+    if penalty_state not in APPOINTMENT_PENALTY_STATES:
+        raise ValueError("Unknown appointment penalty state.")
+
+    source_penalties = Penalty.objects.filter(source_appointment_id=OuterRef("pk"))
+    applications = PenaltyApplication.objects.filter(appointment_id=OuterRef("pk"))
+    annotated = queryset.annotate(
+        _has_source_penalty=Exists(source_penalties),
+        _has_penalty_application=Exists(applications),
+    )
+    if penalty_state == APPOINTMENT_PENALTY_ANY:
+        return annotated.filter(
+            Q(_has_source_penalty=True) | Q(_has_penalty_application=True)
+        )
+    if penalty_state == APPOINTMENT_PENALTY_NONE:
+        return annotated.filter(
+            _has_source_penalty=False,
+            _has_penalty_application=False,
+        )
+
+    outstanding_statuses = (
+        Penalty.Status.UNPAID,
+        Penalty.Status.APPLIED_TO_APPOINTMENT,
+    )
+    return annotated.annotate(
+        _has_outstanding_source_penalty=Exists(
+            source_penalties.filter(status__in=outstanding_statuses)
+        ),
+        _has_outstanding_application=Exists(
+            applications.filter(
+                status=PenaltyApplication.Status.ACTIVE,
+                penalty__status__in=outstanding_statuses,
+            )
+        ),
+    ).filter(
+        Q(_has_outstanding_source_penalty=True)
+        | Q(_has_outstanding_application=True)
+    )
 
 
 def appointments_for_client(client_profile: ClientProfile) -> QuerySet[Appointment]:

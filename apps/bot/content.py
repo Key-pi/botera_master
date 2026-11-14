@@ -297,6 +297,13 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         placeholders=("date", "time", "services"),
     ),
     _definition(
+        "appointment.schedule_conflict_reschedule_requested",
+        uk="У графіку {partner_name} відбулися зміни. Будь ласка, оберіть інший час для запису {date} о {time}: {services}. Поточний запис залишається підтвердженим, доки ви не оберете новий час.",
+        ru="В графике {partner_name} произошли изменения. Пожалуйста, выберите другое время для записи {date} в {time}: {services}. Текущая запись остаётся подтверждённой, пока вы не выберете новое время.",
+        en="The schedule at {partner_name} has changed. Please choose another time for your booking on {date} at {time}: {services}. Your current booking stays confirmed until you choose a new time.",
+        placeholders=("partner_name", "date", "time", "services"),
+    ),
+    _definition(
         "appointment.reschedule_requested",
         uk="Запит на перенесення з {old_date} {old_time} на {new_date} {new_time}: {services}.",
         ru="Запрос на перенос с {old_date} {old_time} на {new_date} {new_time}: {services}.",
@@ -343,6 +350,362 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         uk="Скасувати вже не можна. Напишіть майстру.",
         ru="Отменить уже нельзя. Напишите мастеру.",
         en="Cancellation is no longer available. Message the master.",
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_main",
+        uk=(
+            "Робочий кабінет {partner_name}.\n"
+            "Заявки: {requested_count} · сьогодні: {today_count} · завтра: {tomorrow_count}\n"
+            "Проблеми доставки: {failed_count} · конфлікти календаря: {conflict_count}"
+        ),
+        ru=(
+            "Рабочий кабинет {partner_name}.\n"
+            "Заявки: {requested_count} · сегодня: {today_count} · завтра: {tomorrow_count}\n"
+            "Проблемы доставки: {failed_count} · конфликты календаря: {conflict_count}"
+        ),
+        en=(
+            "{partner_name} workspace.\n"
+            "Requests: {requested_count} · today: {today_count} · tomorrow: {tomorrow_count}\n"
+            "Delivery problems: {failed_count} · calendar conflicts: {conflict_count}"
+        ),
+        placeholders=(
+            "partner_name",
+            "requested_count",
+            "today_count",
+            "tomorrow_count",
+            "failed_count",
+            "conflict_count",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_list",
+        uk="{period}: {count}. Оберіть запис, щоб відкрити деталі.",
+        ru="{period}: {count}. Выберите запись, чтобы открыть детали.",
+        en="{period}: {count}. Choose an appointment to open its details.",
+        placeholders=("period", "count"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_empty",
+        uk="{period}: записів немає.",
+        ru="{period}: записей нет.",
+        en="{period}: no appointments.",
+        placeholders=("period", "count"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_appointment_details",
+        uk=(
+            "{client_name} · {client_phone}\n"
+            "Статус: {status}\n"
+            "{date}, {start_time}–{end_time}\n"
+            "{services}\n"
+            "Сума: {total} {currency}{comment}"
+        ),
+        ru=(
+            "{client_name} · {client_phone}\n"
+            "Статус: {status}\n"
+            "{date}, {start_time}–{end_time}\n"
+            "{services}\n"
+            "Сумма: {total} {currency}{comment}"
+        ),
+        en=(
+            "{client_name} · {client_phone}\n"
+            "Status: {status}\n"
+            "{date}, {start_time}–{end_time}\n"
+            "{services}\n"
+            "Total: {total} {currency}{comment}"
+        ),
+        placeholders=(
+            "client_name",
+            "client_phone",
+            "status",
+            "date",
+            "start_time",
+            "end_time",
+            "services",
+            "total",
+            "currency",
+            "comment",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_choose_language",
+        uk="Оберіть мову робочого кабінету та сповіщень майстра.",
+        ru="Выберите язык рабочего кабинета и уведомлений мастера.",
+        en="Choose the language for the master workspace and notifications.",
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_language_updated",
+        uk="Мову майстра змінено: {language}.",
+        ru="Язык мастера изменён: {language}.",
+        en="Master language changed to {language}.",
+        placeholders=("language",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_status_confirm",
+        uk="Підтвердити дію «{action}» для запису клієнта {client_name}?",
+        ru="Подтвердить действие «{action}» для записи клиента {client_name}?",
+        en="Confirm “{action}” for {client_name}'s appointment?",
+        placeholders=("action", "client_name"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_status_updated",
+        uk="Статус запису змінено: {status}.",
+        ru="Статус записи изменён: {status}.",
+        en="Appointment status changed to {status}.",
+        placeholders=("status",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_penalty_payment_confirm",
+        uk=(
+            "Позначити сплаченими застосовані штрафи клієнта {client_name}: "
+            "{penalty_count} на суму {penalty_amount} {currency}?"
+        ),
+        ru=(
+            "Отметить оплаченными применённые штрафы клиента {client_name}: "
+            "{penalty_count} на сумму {penalty_amount} {currency}?"
+        ),
+        en=(
+            "Mark {client_name}'s applied penalties as paid: {penalty_count} totaling "
+            "{penalty_amount} {currency}?"
+        ),
+        placeholders=(
+            "client_name",
+            "penalty_count",
+            "penalty_amount",
+            "currency",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_penalties_paid",
+        uk=(
+            "Застосовані штрафи позначено сплаченими: {penalty_count} на суму "
+            "{penalty_amount} {currency}."
+        ),
+        ru=(
+            "Применённые штрафы отмечены оплаченными: {penalty_count} на сумму "
+            "{penalty_amount} {currency}."
+        ),
+        en=(
+            "Applied penalties marked paid: {penalty_count} totaling "
+            "{penalty_amount} {currency}."
+        ),
+        placeholders=("penalty_count", "penalty_amount", "currency"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_penalties_already_paid",
+        uk="Застосовані штрафи вже сплачені або більше не очікують оплати.",
+        ru="Применённые штрафы уже оплачены или больше не ожидают оплаты.",
+        en="Applied penalties are already paid or no longer awaiting payment.",
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_private_note_prompt",
+        uk=(
+            "Надішліть приватну нотатку до запису клієнта {client_name}. "
+            "Її бачить лише майстер. Поточне значення:\n{current_note}\n\n"
+            "Максимум {max_length} символів."
+        ),
+        ru=(
+            "Отправьте приватную заметку к записи клиента {client_name}. "
+            "Её видит только мастер. Текущее значение:\n{current_note}\n\n"
+            "Максимум {max_length} символов."
+        ),
+        en=(
+            "Send a private note for {client_name}'s appointment. Only the master can "
+            "see it. Current value:\n{current_note}\n\nMaximum {max_length} characters."
+        ),
+        placeholders=("client_name", "current_note", "max_length"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_private_note_invalid",
+        uk="Нотатка має бути непорожньою і не довшою за {max_length} символів.",
+        ru="Заметка должна быть непустой и не длиннее {max_length} символов.",
+        en="The note must be non-empty and at most {max_length} characters.",
+        placeholders=("max_length",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_private_note_updated",
+        uk="Приватну нотатку оновлено.",
+        ru="Приватная заметка обновлена.",
+        en="Private note updated.",
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_no_show_penalty_confirm",
+        uk=("Створити для {client_name} штраф за неявку {penalty_amount} {currency}?"),
+        ru=("Создать для {client_name} штраф за неявку {penalty_amount} {currency}?"),
+        en=("Create a {penalty_amount} {currency} no-show penalty for {client_name}?"),
+        placeholders=("client_name", "penalty_amount", "currency"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_no_show_penalty_created",
+        uk="Штраф за неявку створено: {penalty_amount} {currency}.",
+        ru="Штраф за неявку создан: {penalty_amount} {currency}.",
+        en="No-show penalty created: {penalty_amount} {currency}.",
+        placeholders=("penalty_amount", "currency"),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_message_prompt",
+        uk="Надішліть повідомлення для {client_name} одним текстом.",
+        ru="Отправьте сообщение для {client_name} одним текстом.",
+        en="Send one text message for {client_name}.",
+        placeholders=("client_name",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_message_invalid",
+        uk="Потрібне непорожнє текстове повідомлення.",
+        ru="Нужно непустое текстовое сообщение.",
+        en="A non-empty text message is required.",
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_message_queued",
+        uk="Повідомлення для {client_name} поставлено в чергу доставки.",
+        ru="Сообщение для {client_name} поставлено в очередь доставки.",
+        en="Message for {client_name} was queued for delivery.",
+        placeholders=("client_name",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_late_arrival_prompt",
+        uk=(
+            "Надішліть кількість хвилин запізнення для {client_name} і, за бажанням, "
+            "причину через пробіл. Наприклад: 20 затор. Надсилання створить штраф "
+            "{penalty_amount} {currency}; мінімум — {threshold_minutes} хв."
+        ),
+        ru=(
+            "Отправьте количество минут опоздания для {client_name} и, при желании, "
+            "причину через пробел. Например: 20 пробка. Отправка создаст штраф "
+            "{penalty_amount} {currency}; минимум — {threshold_minutes} мин."
+        ),
+        en=(
+            "Send the number of minutes {client_name} was late and, optionally, a note "
+            "after a space. Example: 20 traffic. Sending creates a {penalty_amount} "
+            "{currency} penalty; minimum {threshold_minutes} min."
+        ),
+        placeholders=(
+            "client_name",
+            "threshold_minutes",
+            "penalty_amount",
+            "currency",
+        ),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_late_arrival_invalid",
+        uk=(
+            "Вкажіть число не менше {threshold_minutes}. Після нього можна додати причину."
+        ),
+        ru=(
+            "Укажите число не меньше {threshold_minutes}. После него можно добавить причину."
+        ),
+        en=(
+            "Enter a number of at least {threshold_minutes}. You may add a note after it."
+        ),
+        placeholders=("threshold_minutes",),
+        editable=False,
+    ),
+    _definition(
+        "master.workspace_late_arrival_created",
+        uk=(
+            "Запізнення {late_minutes} хв зафіксовано. Штраф створено: "
+            "{penalty_amount} {currency}."
+        ),
+        ru=(
+            "Опоздание {late_minutes} мин зафиксировано. Штраф создан: "
+            "{penalty_amount} {currency}."
+        ),
+        en=(
+            "Late arrival of {late_minutes} min recorded. Penalty created: "
+            "{penalty_amount} {currency}."
+        ),
+        placeholders=("late_minutes", "penalty_amount", "currency"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_dates",
+        uk=(
+            "Оберіть дати для нового часу запису {client_name}. "
+            "Вибрано {selected_count} з {selection_limit} варіантів."
+        ),
+        ru=(
+            "Выберите даты для нового времени записи {client_name}. "
+            "Выбрано {selected_count} из {selection_limit} вариантов."
+        ),
+        en=(
+            "Choose dates for {client_name}'s new appointment time. "
+            "Selected {selected_count} of {selection_limit} options."
+        ),
+        placeholders=("client_name", "selected_count", "selection_limit"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_slots",
+        uk=("Оберіть новий час на {date}. Вибрано {selected_count} з {selection_limit} варіантів."),
+        ru=(
+            "Выберите новое время на {date}. "
+            "Выбрано {selected_count} из {selection_limit} вариантов."
+        ),
+        en=("Choose a new time on {date}. Selected {selected_count} of {selection_limit} options."),
+        placeholders=("date", "selected_count", "selection_limit"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_review",
+        uk="Надіслати {client_name} ці варіанти перенесення?\n\n{options}",
+        ru="Отправить {client_name} эти варианты переноса?\n\n{options}",
+        en="Send these reschedule options to {client_name}?\n\n{options}",
+        placeholders=("client_name", "options"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_sent",
+        uk="Клієнту {client_name} надіслано варіанти перенесення: {option_count}.",
+        ru="Клиенту {client_name} отправлены варианты переноса: {option_count}.",
+        en="Sent {option_count} reschedule options to {client_name}.",
+        placeholders=("client_name", "option_count"),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_no_dates",
+        uk="Для запису {client_name} немає доступних дат для перенесення.",
+        ru="Для записи {client_name} нет доступных дат для переноса.",
+        en="No reschedule dates are available for {client_name}'s appointment.",
+        placeholders=("client_name",),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_no_slots",
+        uk="На {date} немає доступного часу. Оберіть іншу дату.",
+        ru="На {date} нет доступного времени. Выберите другую дату.",
+        en="No times are available on {date}. Choose another date.",
+        placeholders=("date",),
+        editable=False,
+    ),
+    _definition(
+        "master.reschedule_action_failed",
+        uk=("Не вдалося підготувати перенесення. Запис або доступний час могли змінитися."),
+        ru=("Не удалось подготовить перенос. Запись или доступное время могли измениться."),
+        en=(
+            "The reschedule could not be prepared. The appointment or available "
+            "time may have changed."
+        ),
         editable=False,
     ),
     _definition(
@@ -587,6 +950,59 @@ SYSTEM_TEMPLATE_DEFINITIONS: tuple[TemplateDefinition, ...] = (
         ru="Язык изменён на {language}.",
         en="Language changed to {language}.",
         placeholders=("language",),
+        editable=False,
+    ),
+    _definition(
+        "profile.edit_data",
+        uk="Дані профілю:\nІм'я: {name}\nТелефон: {phone}\nДодатково: {extra_text}",
+        ru="Данные профиля:\nИмя: {name}\nТелефон: {phone}\nДополнительно: {extra_text}",
+        en="Profile data:\nName: {name}\nPhone: {phone}\nAdditional information: {extra_text}",
+        placeholders=("name", "phone", "extra_text"),
+        editable=False,
+    ),
+    _definition(
+        "profile.edit_prompt",
+        uk="Надішліть нове значення для поля «{field_name}».\nПоточне значення: {current_value}",
+        ru="Отправьте новое значение для поля «{field_name}».\nТекущее значение: {current_value}",
+        en="Send a new value for “{field_name}”.\nCurrent value: {current_value}",
+        placeholders=("field_name", "current_value"),
+        editable=False,
+    ),
+    _definition(
+        "profile.edit_invalid",
+        uk="Не вдалося зберегти поле «{field_name}». Перевірте формат і довжину.",
+        ru="Не удалось сохранить поле «{field_name}». Проверьте формат и длину.",
+        en="Could not save “{field_name}”. Check the format and length.",
+        placeholders=("field_name",),
+        editable=False,
+    ),
+    _definition(
+        "profile.updated_success",
+        uk="Профіль оновлено.",
+        ru="Профиль обновлён.",
+        en="Profile updated.",
+        editable=False,
+    ),
+    _definition(
+        "profile.marketing_preferences",
+        uk="Розсилки: {marketing_status}.\nСервісні повідомлення про записи надходитимуть незалежно від цієї настройки.",
+        ru="Рассылки: {marketing_status}.\nСервисные сообщения о записях будут приходить независимо от этой настройки.",
+        en="Broadcasts: {marketing_status}.\nService messages about bookings are not affected by this setting.",
+        placeholders=("marketing_status",),
+        editable=False,
+    ),
+    _definition(
+        "profile.marketing_unsubscribed",
+        uk="Ви відписалися від розсилок. Сервісні повідомлення залишаються увімкненими.",
+        ru="Вы отписались от рассылок. Сервисные сообщения остаются включенными.",
+        en="You unsubscribed from broadcasts. Service messages remain enabled.",
+        editable=False,
+    ),
+    _definition(
+        "profile.marketing_subscribed",
+        uk="Ви підписалися на розсилки.",
+        ru="Вы подписались на рассылки.",
+        en="You subscribed to broadcasts.",
         editable=False,
     ),
     _definition(

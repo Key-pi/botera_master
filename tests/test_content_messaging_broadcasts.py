@@ -1,11 +1,14 @@
 from datetime import timedelta
+from io import StringIO
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.audit.models import AuditEvent
+from apps.bot.content import SYSTEM_TEMPLATE_DEFINITION_BY_KEY, SYSTEM_TEMPLATE_DEFINITIONS
 from apps.bot.models import PartnerTemplateOverride, SystemTemplate
 from apps.bot.services import (
     render_content_template,
@@ -120,6 +123,22 @@ def test_content_template_override_validation_and_language_fallback(content_cont
         key="appointment.no_show",
         language="en",
     )
+    marketing_preferences_template = SystemTemplate.objects.get(
+        key="profile.marketing_preferences",
+        language="en",
+    )
+    profile_edit_template = SystemTemplate.objects.get(
+        key="profile.edit_data",
+        language="en",
+    )
+    penalty_payment_template = SystemTemplate.objects.get(
+        key="master.workspace_penalty_payment_confirm",
+        language="en",
+    )
+    private_note_template = SystemTemplate.objects.get(
+        key="master.workspace_private_note_prompt",
+        language="en",
+    )
     assert required_field_template.editable is False
     assert required_field_template.placeholder_allowlist == ["missing_fields"]
     assert "comment" in final_confirm_template.placeholder_allowlist
@@ -130,6 +149,23 @@ def test_content_template_override_validation_and_language_fallback(content_cont
     assert "comment" in master_auto_confirm_template.placeholder_allowlist
     assert completed_template.editable is True
     assert no_show_template.editable is True
+    assert marketing_preferences_template.editable is False
+    assert marketing_preferences_template.placeholder_allowlist == ["marketing_status"]
+    assert profile_edit_template.editable is False
+    assert profile_edit_template.placeholder_allowlist == ["name", "phone", "extra_text"]
+    assert penalty_payment_template.editable is False
+    assert penalty_payment_template.placeholder_allowlist == [
+        "client_name",
+        "penalty_count",
+        "penalty_amount",
+        "currency",
+    ]
+    assert private_note_template.editable is False
+    assert private_note_template.placeholder_allowlist == [
+        "client_name",
+        "current_note",
+        "max_length",
+    ]
 
     override = set_partner_template_override(
         actor=created.owner,
@@ -183,6 +219,42 @@ def test_content_template_override_validation_and_language_fallback(content_cont
     )
 
     assert not PartnerTemplateOverride.objects.filter(id=override.id).exists()
+
+
+@pytest.mark.django_db
+def test_system_template_sync_command_is_idempotent_and_preserves_partner_overrides(
+    content_context,
+):
+    created = content_context
+    seed_system_templates()
+    system_template = SystemTemplate.objects.get(key="start.welcome", language="uk")
+    system_template.body = "Stale system default"
+    system_template.save(update_fields=["body", "updated_at"])
+    override = PartnerTemplateOverride.objects.create(
+        partner=created.partner,
+        key="start.welcome",
+        language="uk",
+        body="Партнерський текст {partner_name}",
+        is_active=True,
+    )
+    output = StringIO()
+
+    call_command("sync_system_templates", stdout=output)
+    call_command("sync_system_templates", stdout=output)
+
+    system_template.refresh_from_db()
+    override.refresh_from_db()
+    expected_count = sum(
+        len(definition.translations) for definition in SYSTEM_TEMPLATE_DEFINITIONS
+    )
+    assert SystemTemplate.objects.count() == expected_count
+    assert system_template.body == SYSTEM_TEMPLATE_DEFINITION_BY_KEY[
+        "start.welcome"
+    ].translations["uk"]
+    assert override.body == "Партнерський текст {partner_name}"
+    assert output.getvalue().count(
+        f"Synchronized {expected_count} system template rows."
+    ) == 2
 
 
 @pytest.mark.django_db

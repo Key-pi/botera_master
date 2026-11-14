@@ -1,7 +1,7 @@
 # BoteraMaster MVP Runbook
 
 Status: implemented operational baseline for the approved Pilot Wiring milestone.
-Last updated: 2026-10-22.
+Last updated: 2026-11-06.
 
 This runbook covers the implemented single-host Docker Compose pilot. Durable
 business state remains in PostgreSQL; Redis and Celery transport work but do not
@@ -12,6 +12,7 @@ replace database delivery records.
 MVP may run on a single VPS/server with Docker Compose.
 
 Required production MVP services:
+- `init` (one-shot startup gate)
 - `web`
 - `bot-runner`
 - `celery-beat`
@@ -20,6 +21,7 @@ Required production MVP services:
 - `default-worker`
 - `postgres`
 - `redis`
+- `caddy`
 
 Recommended worker roles:
 - `notifications-worker`: urgent reminders/service notifications, initial concurrency around 4.
@@ -30,38 +32,199 @@ Rules:
 - `broadcasts` must not share the urgent notification worker in production MVP.
 - `celery-beat` / scheduler must run explicitly; scheduled features are not supported if beat is down.
 - Docker Compose restart policies and healthchecks are enough for MVP process supervision.
+- Base Compose publishes only the local/pilot web port on `127.0.0.1`.
+  PostgreSQL and Redis stay on the internal network unless the explicit
+  `infrastructure/docker/compose.ports.yml` development override is used. The
+  production overlay publishes only Caddy on TCP `80/443` and UDP `443`.
+- Production HTTP is served by Gunicorn behind Caddy. Caddy owns automatic TLS,
+  HTTPS redirect, and static-file delivery. Its persistent data/config volumes
+  must survive deploys because they contain certificate state.
+- Caddy and Gunicorn request access logs are disabled by default. Admin search
+  query strings may contain sensitive business data and must not be copied into
+  unredacted technical logs.
 - Kubernetes/heavier orchestration is not required for MVP.
 - Sentry or equivalent error monitoring is nice-to-have/post-MVP.
 
 ## Standard Deploy / Restart Procedure
 
-Recommended flow:
-1. Pull the repository and prepare `.env` from `.env.example` with real secrets.
-2. Build the application image.
-3. Run database migrations before accepting normal traffic.
-4. Start or restart all services.
-5. Run Django's system check and inspect process state.
-6. Run the bot runtime dry-run and one configured partner readiness check.
-7. Inspect health records and recent masked platform diagnostics.
+### Local Docker pilot
+
+Docker Compose is the default local workflow. It uses PostgreSQL rather than a
+separate SQLite state, so locks, migrations, bot runtime, Celery delivery, and
+the admin all exercise the same deployment shape.
+
+1. Copy `.env.example` to ignored `.env`.
+2. Generate the Fernet key and independent fingerprint secret using the
+   commands in that file. Keep those values stable after storing bot tokens.
+3. Run `./scripts/compose.sh dev up --build -d`.
+4. Inspect `./scripts/compose.sh dev logs init`. The idempotent init service validates
+   bot-token security, runs checks/migrations, synchronizes the code-owned multilingual
+   system-template registry and owner permissions,
+   and ensures local demo users, catalog, booking settings, and seven upcoming
+   availability windows.
+5. Open `http://127.0.0.1:${WEB_PORT_ON_HOST:-8001}/admin/`. Add the real test
+   token through **Bot instances**; never put it in `.env` or a CLI argument.
 
 ```bash
-docker compose build
-docker compose run --rm web python manage.py migrate
-docker compose up -d
-docker compose exec web python manage.py check
-docker compose exec web python manage.py sync_partner_owner_access
-docker compose ps
-docker compose exec web python manage.py run_partner_bots --dry-run
-docker compose exec web python manage.py check_pilot_readiness \
+cp .env.example .env
+./scripts/compose.sh dev up --build -d
+./scripts/compose.sh dev ps
+./scripts/compose.sh dev logs init
+./scripts/compose.sh dev logs -f web bot-runner notifications-worker broadcast-worker
+```
+
+The web source is bind-mounted and auto-reloads. Restart workers, beat, or the
+bot runner after changing their code. Bot token/status changes also require
+`./scripts/compose.sh dev restart bot-runner`; `--wait` only keeps an empty runner alive
+and does not implement hot reload.
+
+Before treating a pilot/release candidate as ready, run the complete suite in
+the web container as well as the fast host-side suite. The container run uses
+an isolated PostgreSQL test database and covers backend-specific advisory-lock
+and row-lock behavior that SQLite cannot validate:
+
+```bash
+./scripts/compose.sh dev exec web env \
+  DJANGO_SETTINGS_MODULE=core.settings.postgres_test pytest -q
+```
+
+Do not omit the settings override: the running `web` service normally uses
+`core.settings.local`, including Ukrainian as the interface default. The dedicated
+container test settings keep the Compose PostgreSQL connection while making test
+language, password hashing, and eager Celery behavior deterministic.
+
+Rehearse a completely fresh local installation in an isolated Compose project
+and isolated volumes without touching the active pilot stack:
+
+```bash
+./scripts/check_clean_bootstrap.sh .env
+```
+
+The script accepts only project names beginning with
+`botera-master-acceptance`, uses host port `18081` by default, reruns the
+idempotent startup synchronizers, checks migrations/health, and removes its
+containers and volumes on exit. Set `KEEP_ACCEPTANCE_STACK=true` only when a
+failed rehearsal must remain available for debugging.
+
+PostgreSQL and Redis intentionally have no host ports. For temporary host-side
+CLI access, use:
+
+```bash
+./scripts/compose.sh dev \
+  -f infrastructure/docker/compose.ports.yml up -d postgres redis
+```
+
+### Public production
+
+The base `docker-compose.yml` remains the local/pilot stack. Public production
+deploys explicitly add `docker-compose.production.yml`. The overlay requires
+Docker Compose 2.24.4 or newer for `!reset` / `!override` merge tags.
+
+Before the first public deploy:
+1. Point the public DNS A/AAAA records for `BOTERA_DOMAIN` to the VPS. Remove a
+   broken AAAA record when the host has no working public IPv6.
+2. Allow inbound TCP `80/443`; allow UDP `443` when HTTP/3 is desired. Do not
+   expose the Django, PostgreSQL, or Redis container ports.
+3. Prepare `.env.production` from `.env.production.example`. Set a random
+   `DJANGO_SECRET_KEY` of at least 50 characters, strong PostgreSQL and Redis
+   passwords, the real `BOTERA_DOMAIN`, and all three bot-token
+   encryption/fingerprint settings.
+   Generate the Fernet and fingerprint secrets independently using the commands
+   documented in `.env.production.example`; do not reuse one secret for both
+   purposes.
+   Production settings reject development/default secrets, wildcard hosts,
+   invalid Fernet key rings, unknown current key ids, and weak/reused
+   fingerprint secrets before any production process starts.
+4. Keep `.env.production` readable only by the deployment account and never
+   commit it.
+
+Recommended production flow:
+1. Pull the reviewed revision.
+2. Validate the merged Compose configuration.
+3. Build/start the stack. The one-shot production `init` service runs deployment
+   checks, migrations, system-template synchronization, and owner permission
+   synchronization before long-running application processes are allowed to start.
+4. Inspect service/init health, run the bot runtime dry-run, and run one
+   configured partner readiness check.
+5. Inspect health records and recent masked platform diagnostics.
+
+```bash
+./scripts/compose.sh prod config --quiet
+./scripts/compose.sh prod up --build -d
+./scripts/compose.sh prod ps
+./scripts/compose.sh prod logs init
+./scripts/compose.sh prod exec web python manage.py run_partner_bots --dry-run
+./scripts/compose.sh prod exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid>
-docker compose logs --tail=200 bot-runner celery-beat \
+./scripts/compose.sh prod logs --tail=200 caddy web bot-runner celery-beat \
   notifications-worker broadcast-worker default-worker
 ```
 
-Use `docker compose restart bot-runner` after bot token/status/setup changes.
+Verify `https://<BOTERA_DOMAIN>/admin/login/` and one static admin asset after
+startup. Caddy obtains and renews certificates automatically once DNS and public
+ports are correct. `static_data` is populated by `collectstatic` before Gunicorn
+starts; application source comes from the built image, not a host bind mount.
+
+Use `./scripts/compose.sh prod restart bot-runner` after bot token/status/setup
+changes.
 The runner intentionally does not hot-reload configs. A fresh installation with
-no eligible bot lets `bot-runner` exit cleanly instead of entering a restart
-loop; start it after the first partner is eligible.
+no eligible bot stays idle without polling; restart it after the first partner
+becomes eligible.
+
+## PostgreSQL Backup And Restore Safety
+
+Create a custom-format PostgreSQL backup from the running Compose database. The
+script writes to the ignored `backups/` directory by default and immediately
+checks that `pg_restore` can read the archive catalog.
+
+```bash
+./scripts/backup_postgres.sh dev
+BACKUP_DIR=/secure/off-host/path ./scripts/backup_postgres.sh prod
+./scripts/verify_postgres_backup.sh prod backups/botera_master_<timestamp>.dump
+./scripts/rehearse_postgres_restore.sh prod backups/botera_master_<timestamp>.dump
+```
+
+The mode argument is mandatory. It routes every database command through the
+same mode-safe Compose launcher as deploy/restart operations, preventing a
+production backup from silently targeting the local `botera-master` project.
+Backups are written to a private partial file, verified, and only then renamed
+to the final `0600` archive.
+
+Rules:
+- Copy successful backups off the VPS and protect them like production data;
+  they contain client and partner business records.
+- A zero-byte file or successful `pg_dump` process alone is not enough. Keep the
+  archive only after the catalog verification succeeds.
+- Rehearse restores into a separate temporary database first. Do not overwrite
+  the active database merely to test a backup.
+- An actual production restore is an incident operation: stop web, bot runner,
+  beat, and workers; create one fresh pre-restore backup; record the selected
+  archive and operator; then restore under an approved recovery plan.
+- Never commit backup archives or place them under the repository working tree
+  for long-term storage.
+
+The rehearsal script always uses the fixed temporary database
+`botera_master_restore_check`, verifies that the restored Django migration
+history is readable, and drops the database on success or failure. Its
+equivalent low-level flow is:
+
+```bash
+./scripts/compose.sh prod exec -T postgres sh -c \
+  'dropdb --if-exists --username="$POSTGRES_USER" botera_master_restore_check'
+./scripts/compose.sh prod exec -T postgres sh -c \
+  'createdb --username="$POSTGRES_USER" botera_master_restore_check'
+./scripts/compose.sh prod exec -T postgres sh -c \
+  'pg_restore --exit-on-error --no-owner --no-privileges \
+  --username="$POSTGRES_USER" --dbname=botera_master_restore_check' \
+  < backups/botera_master_<timestamp>.dump
+./scripts/compose.sh prod exec -T postgres sh -c \
+  'dropdb --username="$POSTGRES_USER" botera_master_restore_check'
+```
+
+The rehearsal commands intentionally target only
+`botera_master_restore_check`. Do not substitute the active database name while
+testing. Final production restore commands depend on the selected VPS backup
+storage and incident procedure and are not automated in the repository.
 
 ## Partner And Owner Onboarding
 
@@ -75,8 +238,16 @@ Partner creation is controlled by a superuser in the Django admin.
    resource, schedule settings, notification defaults, and penalty defaults.
 4. Give the credentials to the intended owner through an appropriate private
    channel. Do not include credentials in logs or diagnostics.
-5. The owner signs in to the same admin and completes the onboarding checklist
-   shown on their partner record before launching the bot.
+5. The owner signs in to the same admin and opens **Setup guide** from the
+   partner dashboard. Each required and operational step links directly to its
+   tenant-scoped configuration surface.
+
+The setup guide, Bot workspace, superuser Partner record, and
+`check_pilot_readiness` command use the same composed setup selector, so token,
+catalog, availability, booking-mode, connection, master contact, and launch
+state cannot drift between the operational views. Superusers can select any
+visible partner in the guide; partner owners remain restricted to their own
+membership scope.
 
 Partner-owner access is maintained by one reviewed Django permission group.
 Run `python manage.py sync_partner_owner_access` after deployment when owner
@@ -173,9 +344,40 @@ flow.
    appointment/proposal state in partner admin. From a past confirmed visit,
    verify that master cancellation, **Completed**, and **No-show** each create
    the corresponding durable client notification.
+   From the already linked master account, send `/start` and verify that the
+   master workspace opens instead of the client menu. Check **Requests**,
+   **Today**, **Tomorrow**, **Upcoming**, one appointment detail, and the
+   workspace language switch. For a confirmed appointment, verify cancellation
+   requires a second click and **Completed**/**No-show** appear only after its
+   start. Add, replace, and explicitly clear the appointment private note; verify
+   it appears only in the verified master workspace, creates no client notification,
+   and its raw text is absent from audit payloads and technical logs. Verify both
+   client and master appointment details show each snapshotted service price and
+   duration, and mark a manually overridden catalog service as changed by the master.
+   For an appointment with applied penalties, verify the combined amount
+   is visible, **Completed** does not silently settle the debt, and the separate
+   **Mark penalties paid** confirmation settles each active application exactly once.
+   With penalties enabled, **No-show** should offer (but not silently
+   create) the configured no-show penalty. A started confirmed/completed visit
+   should also expose **Record late arrival**: enter minutes and an optional
+   note, then verify the configured threshold is enforced and exactly one
+   late-arrival penalty/client notification is created. A linked reachable client should
+   expose **Message client** and queue the entered text for the notifications
+   worker. A future confirmed appointment for that client should also expose
+   **Propose reschedule**: select multiple options, review them, send, and verify
+   that the original appointment time remains confirmed while a pending
+   proposal/client notification is created. `/master`, `/requests`, `/today`,
+   and `/tomorrow` are equivalent direct entry commands for the linked master.
 7. From the client profile, send a message to the master. Verify the linked master
    contact receives it with **Reply**, then answer in Telegram and verify the client
-   receives the queued reply through the partner bot.
+   receives the queued reply through the partner bot. Open **Edit profile** and update
+   the client name, phone, and additional information; verify that clearing an optional
+   value works and no private master note is exposed. Open **Broadcasts**, unsubscribe,
+   and verify the client is excluded from a new marketing campaign while service
+   appointment notifications remain enabled. Subscribe again and verify the client is
+   eligible for subsequent campaigns. If the client has unpaid or applied penalties,
+   open **Penalties** and verify the paginated debt list, reason, status, and total;
+   paid or waived penalties must not appear there.
 8. Send a test broadcast with **Book** and **My appointments** actions. Verify
    each action opens its existing partner-scoped bot flow in a new message; this
    must also work when the broadcast itself contains a photo.
@@ -188,12 +390,12 @@ flow.
    reports the missing master contact.
 
 ```bash
-docker compose exec web python manage.py check_bot_connection \
+./scripts/compose.sh dev exec web python manage.py check_bot_connection \
   --partner-id <partner-uuid>
-docker compose exec web python manage.py check_pilot_readiness \
+./scripts/compose.sh dev exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid> --check-telegram
-docker compose restart bot-runner
-docker compose logs --tail=200 -f bot-runner notifications-worker
+./scripts/compose.sh dev restart bot-runner
+./scripts/compose.sh dev logs --tail=200 -f bot-runner notifications-worker
 ```
 
 Do not paste a raw token into shell arguments. Partner token setup must use the
@@ -202,7 +404,9 @@ encryption and duplicate fingerprint checks are applied.
 
 ## Health Dashboard Checklist
 
-Superuser health dashboard should show:
+Open **Audit > Worker heartbeats** as a superuser. The changelist includes a
+composed health dashboard above the individual durable heartbeat records. It
+shows:
 - overall status: OK / Warning / Critical
 - `web`
 - `bot-runner`
@@ -217,6 +421,17 @@ Superuser health dashboard should show:
 - PostgreSQL connectivity
 - Redis connectivity
 - recent platform diagnostics count by severity
+
+The PostgreSQL row is healthy when the dashboard's composed queries complete.
+The Redis/broker row is intentionally inferred from scheduled Celery heartbeat
+tasks reaching beat and the isolated workers; the web request does not make a
+blocking Redis network call. Use container logs and the Redis checks below when
+that inferred row is Warning or Critical.
+
+The polling runner records its own durable heartbeat once per minute while it
+is running. Celery worker/beat heartbeats are scheduled through their target
+queues, so a stale row indicates a real scheduler, broker, routing, or worker
+problem rather than only an old display value.
 
 Partner-facing admin shows only partner-relevant bot health/status, not internal queue/worker infrastructure.
 
@@ -271,12 +486,12 @@ Check when a bot does not respond or partner says the bot is unavailable:
 Commands:
 
 ```bash
-docker compose exec web python manage.py run_partner_bots --dry-run
-docker compose exec web python manage.py check_bot_connection \
+./scripts/compose.sh prod exec web python manage.py run_partner_bots --dry-run
+./scripts/compose.sh prod exec web python manage.py check_bot_connection \
   --partner-id <partner-uuid>
-docker compose exec web python manage.py check_pilot_readiness \
+./scripts/compose.sh prod exec web python manage.py check_pilot_readiness \
   --partner-id <partner-uuid>
-docker compose logs --tail=200 bot-runner
+./scripts/compose.sh prod logs --tail=200 bot-runner
 ```
 
 MVP runtime does not hot-reload bot token/status changes. After token/status changes, restart/redeploy `bot-runner` for live polling to pick up the new active bot set.
@@ -415,7 +630,5 @@ Forbidden:
 ## Still Implementation-Specific
 
 To finalize in later pilot/admin slices:
-- polished onboarding checklist and dedicated partner creation form
-- a dedicated composed health dashboard URL beyond current Django admin records
-- production TLS/reverse-proxy and backup/restore commands for the chosen VPS
+- concrete VPS provisioning, firewall rules, DNS values, and off-host backup destination
 - per-bot broadcast parallelism beyond the conservative pilot dispatcher

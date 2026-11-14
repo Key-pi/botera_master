@@ -33,14 +33,19 @@ PARTNER_OWNER_PERMISSION_RULES = (
     ("appointments", "appointmentproposaloption", ("view",)),
     ("appointments", "appointmentproposaloptionitem", ("view",)),
     ("clients", "clientprofile", ("view", "change")),
-    ("notifications", "partnernotificationsettings", ("view", "change")),
+    # Partner mutations use the service-backed Bot > Notifications workspace.
+    ("notifications", "partnernotificationsettings", ("view",)),
     ("notifications", "reminderrule", ("view",)),
     ("notifications", "schedulednotification", ("view",)),
     ("notifications", "deliveryattempt", ("view",)),
     # Direct model adds remain disabled; `add` authorizes the reviewed
     # service-backed "message client" admin action.
     ("messaging", "conversationmessage", ("view", "add")),
+    ("broadcasts", "broadcastcampaign", ("view", "add", "change")),
+    ("broadcasts", "broadcastrecipient", ("view",)),
+    ("broadcasts", "broadcasttemplate", ("view", "add", "change", "delete")),
     ("finance", "partnerpenaltysettings", ("view", "change")),
+    ("finance", "expense", ("view", "add", "change", "delete")),
     ("audit", "auditevent", ("view",)),
 )
 

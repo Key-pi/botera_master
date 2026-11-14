@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from core.database.models import TimeStampedModel
 
@@ -17,22 +18,26 @@ class PartnerMembership(TimeStampedModel):
     """Admin access link between a user account and a partner tenant."""
 
     class Role(models.TextChoices):
-        OWNER = "owner", "Owner/master"
+        OWNER = "owner", _("Owner/master")
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="partner_memberships",
+        verbose_name=_("user"),
     )
     partner = models.ForeignKey(
         "partners.Partner",
         on_delete=models.CASCADE,
         related_name="memberships",
+        verbose_name=_("partner"),
     )
-    role = models.CharField(max_length=32, choices=Role.choices, default=Role.OWNER)
-    is_active = models.BooleanField(default=True)
+    role = models.CharField(_("role"), max_length=32, choices=Role.choices, default=Role.OWNER)
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
+        verbose_name = _("partner membership")
+        verbose_name_plural = _("partner memberships")
         ordering = ["partner__name", "user__username"]
         constraints = [
             models.UniqueConstraint(

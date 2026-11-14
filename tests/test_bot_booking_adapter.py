@@ -235,6 +235,69 @@ def test_confirm_booking_reply_creates_confirmed_appointment(
     assert appointment.service_items.count() == 2
     assert appointment.end_at - appointment.start_at == timedelta(minutes=90)
     assert "confirmed" in reply.text
+    assert _callback_data(reply) == [
+        f"pf:details:{appointment.id.hex}:future:1",
+        "pf:main",
+    ]
+
+
+@pytest.mark.django_db
+def test_confirm_booking_reply_keeps_requested_booking_actionable(
+    bot_booking_context,
+    bot_booking_start,
+):
+    context = bot_booking_context
+    update_schedule_settings(
+        actor=context["owner"],
+        partner=context["partner"],
+        confirmation_mode=PartnerScheduleSettings.ConfirmationMode.MANUAL,
+    )
+    _open_window(context, bot_booking_start)
+
+    reply = confirm_booking_reply(
+        partner=context["partner"],
+        client_profile=context["client"],
+        selected_service_ids=[context["service"].id],
+        start_at=bot_booking_start,
+        language="en",
+        now=bot_booking_start - timedelta(hours=1),
+    )
+
+    appointment = Appointment.objects.get(partner=context["partner"])
+    assert appointment.status == Appointment.Status.REQUESTED
+    assert _callback_data(reply) == [
+        f"pf:cancel:{appointment.id.hex}:future:1",
+        f"pf:details:{appointment.id.hex}:future:1",
+        "pf:main",
+    ]
+
+
+@pytest.mark.django_db
+def test_booking_empty_catalog_states_keep_client_navigation(bot_booking_context):
+    context = bot_booking_context
+    context["category"].is_active = False
+    context["category"].save(update_fields=["is_active", "updated_at"])
+    context["second_category"].is_active = False
+    context["second_category"].save(update_fields=["is_active", "updated_at"])
+
+    categories = build_booking_categories_reply(
+        partner=context["partner"],
+        language="en",
+    )
+
+    assert _callback_data(categories) == ["pf:contact", "pf:main"]
+
+    context["category"].is_active = True
+    context["category"].save(update_fields=["is_active", "updated_at"])
+    context["service"].is_active = False
+    context["service"].save(update_fields=["is_active", "updated_at"])
+    services = build_booking_services_reply(
+        partner=context["partner"],
+        category_id=context["category"].id,
+        language="en",
+    )
+
+    assert _callback_data(services) == ["bk:cat:1", "pf:contact", "pf:main"]
 
 
 @pytest.mark.django_db

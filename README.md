@@ -3,8 +3,8 @@
 BoteraMaster is a planned Django modular monolith for Telegram-first scheduling,
 CRM, reminders, messaging, broadcasts, and lightweight finance for solo masters.
 
-The repository is in approved early MVP implementation. The domain foundations
-and the current Pilot Wiring slice are in place. See `AGENTS.md` and
+The explicitly approved MVP milestones, including Pilot Wiring and the Docker
+production ingress baseline, are implemented. See `AGENTS.md` and
 `docs/spec/IMPLEMENTATION_PLAN.md` before changing code.
 
 ## Local checks
@@ -14,6 +14,14 @@ python manage.py check
 python manage.py makemigrations --check --dry-run
 pytest
 ruff check .
+```
+
+Before a pilot/release candidate, also run the suite against the Compose
+PostgreSQL backend. The default fast suite uses SQLite and cannot exercise
+PostgreSQL advisory locks or every `SELECT ... FOR UPDATE` rule:
+
+```bash
+./scripts/compose.sh dev exec web pytest -q
 ```
 
 ## Bot runtime smoke check
@@ -30,12 +38,44 @@ a raw bot token in a command argument, committed file, issue, or log.
 
 ## Docker Compose pilot stack
 
+Docker is the default local workflow. Copy the example once and generate the
+Fernet/fingerprint secrets using the commands beside those variables:
+
 ```bash
-docker compose build
-docker compose run --rm web python manage.py migrate
-docker compose up -d
-docker compose ps
+cp .env.example .env
+./scripts/compose.sh dev up --build -d
+./scripts/compose.sh dev ps
+./scripts/compose.sh dev logs init
 ```
 
-The stack runs `web`, `bot-runner`, `celery-beat`, isolated notification and
-broadcast workers, a default/maintenance worker, PostgreSQL, and Redis.
+PostgreSQL and Redis become healthy first. The one-shot `init` service validates
+token-security settings, applies migrations, synchronizes owner permissions,
+and ensures an idempotent local `Preview Studio` demo. Only then do `web`,
+`bot-runner`, `celery-beat`, isolated notification/broadcast workers, and the
+default/maintenance worker start.
+
+Admin is at `http://127.0.0.1:8001/admin/`. Demo usernames and passwords are in
+the ignored `.env`; `init` logs the usernames without printing passwords.
+PostgreSQL and Redis are internal by default. Use
+`infrastructure/docker/compose.ports.yml` only when a host-side database or
+Redis client needs loopback access.
+
+## Production Compose ingress
+
+Public production deploys use the reviewed overlay with Gunicorn and Caddy:
+
+```bash
+cp .env.production.example .env.production
+./scripts/compose.sh prod config --quiet
+./scripts/compose.sh prod up --build -d
+```
+
+Set every production-only value documented in `.env.production.example`. DNS must
+point `BOTERA_DOMAIN` to the server and public TCP ports `80/443` must reach
+Caddy. Django, PostgreSQL, and Redis are not published by the production
+overlay. See `docs/spec/RUNBOOK_DRAFT.md` for the complete deploy and recovery
+procedure.
+
+The mode launcher is intentionally strict: `dev` always uses `.env` and local
+settings, while `prod` always uses `.env.production`, the production settings,
+and a separate `botera-master-production` Compose project.

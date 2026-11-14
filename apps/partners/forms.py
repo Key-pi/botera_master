@@ -3,32 +3,27 @@ from __future__ import annotations
 from django import forms
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import User
-from apps.partners.models import Partner
-from core.timezones import get_zone
-
-PARTNER_LANGUAGE_CHOICES = (
-    ("uk", "Ukrainian"),
-    ("ru", "Russian"),
-    ("en", "English"),
-)
+from apps.partners.models import PARTNER_LANGUAGE_CHOICES, Partner
+from core.timezones import get_zone, normalize_timezone_name
 
 
 class PartnerOnboardingAdminForm(forms.ModelForm):
     """Superuser form for atomically creating a partner and its owner account."""
 
     default_language = forms.ChoiceField(choices=PARTNER_LANGUAGE_CHOICES, initial="uk")
-    owner_username = forms.CharField(max_length=150)
-    owner_email = forms.EmailField(required=False)
-    owner_first_name = forms.CharField(max_length=150, required=False)
-    owner_last_name = forms.CharField(max_length=150, required=False)
+    owner_username = forms.CharField(label=_("Owner username"), max_length=150)
+    owner_email = forms.EmailField(label=_("Owner email"), required=False)
+    owner_first_name = forms.CharField(label=_("Owner first name"), max_length=150, required=False)
+    owner_last_name = forms.CharField(label=_("Owner last name"), max_length=150, required=False)
     owner_password1 = forms.CharField(
-        label="Owner password",
+        label=_("Owner password"),
         widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
     )
     owner_password2 = forms.CharField(
-        label="Confirm owner password",
+        label=_("Confirm owner password"),
         widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
     )
 
@@ -37,17 +32,17 @@ class PartnerOnboardingAdminForm(forms.ModelForm):
         fields = ("name", "timezone", "default_language")
 
     def clean_timezone(self) -> str:
-        timezone_name = self.cleaned_data["timezone"].strip()
+        timezone_name = normalize_timezone_name(self.cleaned_data["timezone"])
         try:
             get_zone(timezone_name)
         except Exception as exc:
-            raise forms.ValidationError("Unknown timezone.") from exc
+            raise forms.ValidationError(_("Unknown timezone.")) from exc
         return timezone_name
 
     def clean_owner_username(self) -> str:
         username = self.cleaned_data["owner_username"].strip()
         if User.objects.filter(username__iexact=username).exists():
-            raise forms.ValidationError("A user with this username already exists.")
+            raise forms.ValidationError(_("A user with this username already exists."))
         return username
 
     def clean(self):
@@ -55,7 +50,7 @@ class PartnerOnboardingAdminForm(forms.ModelForm):
         password1 = cleaned_data.get("owner_password1")
         password2 = cleaned_data.get("owner_password2")
         if password1 and password2 and password1 != password2:
-            self.add_error("owner_password2", "Passwords do not match.")
+            self.add_error("owner_password2", _("Passwords do not match."))
             return cleaned_data
         if not password2:
             return cleaned_data
